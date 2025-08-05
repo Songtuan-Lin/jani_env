@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import copy
+import random
 
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -21,15 +22,33 @@ class Action:
 class Variable:
     name: str
     idx: int
+    type: str
     value: Union[int, float, bool]
+    kind: Union[str, None] = None
+    upper_bound: Union[int, float, None] = None
+    lower_bound: Union[int, float, None] = None
+
 
     def __hash__(self) -> int:
         return hash(self.name)
-    
 
-# treat constants as variables
+    def random(self) -> None:
+        if self.type == 'int':
+            assert self.lower_bound is not None and self.upper_bound is not None
+            assert isinstance(self.lower_bound, int) and isinstance(self.upper_bound, int)
+            self.value = random.randint(self.lower_bound, self.upper_bound)
+        elif self.type == 'real':
+            assert self.lower_bound is not None and self.upper_bound is not None
+            assert isinstance(self.lower_bound, float) and isinstance(self.upper_bound, float)
+            self.value = random.uniform(self.lower_bound, self.upper_bound)
+        elif self.type == 'bool':
+            self.value = random.choice([True, False])
+        else:
+            raise ValueError(f'Unsupported variable type: {self.type}')
+
+
+# Constant is a special type of variable
 type Constant = Variable
-
 
 @dataclass
 class State:
@@ -55,10 +74,12 @@ class Expression(ABC):
         pass
 
     @staticmethod
-    def construct(expr: Union[dict, str]) -> Expression:
+    def construct(expr: Union[dict, str, int, float, bool]) -> Expression:
         """Construct an expression from a JSON object recursively."""
         if isinstance(expr, str):
             return VarExpression(expr)
+        elif isinstance(expr, (int, float, bool)):
+            return ConstantExpression(expr)
         elif expr['op'] == '+':
             return AddExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '-':
@@ -79,6 +100,14 @@ class VarExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return state[self.variable].value
+
+
+class ConstantExpression(Expression):
+    def __init__(self, value: Union[int, float, bool]):
+        self.value = value
+
+    def evaluate(self, state: State) -> Union[int, float, bool]:
+        return self.value
     
 
 class AddExpression(Expression):
@@ -106,6 +135,15 @@ class MulExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) * self.right.evaluate(state)
+    
+
+class DivExpression(Expression):
+    def __init__(self, left: Expression, right: Expression):
+        self.left = left
+        self.right = right
+
+    def evaluate(self, state: State) -> float:
+        return self.left.evaluate(state) / self.right.evaluate(state)
     
 
 class ConjExpression(Expression):
@@ -177,12 +215,26 @@ class JANI:
 
         def add_variable(variable_info: dict, idx: int) -> Variable:
             """Add a new variable to the variable list."""
-            return Variable(variable_info['name'], idx, variable_info['initial-value'])
+            properties: dict = variable_info['type']
+            if not properties['kind'] == 'bounded':
+                raise ValueError(f'Unsupported variable kind: {properties["kind"]}')
+            variable_type = properties['base']
+            variable_kind = properties['kind']
+            if variable_type == 'int':
+                lower_bound, upper_bound = int(properties['lower-bound']), int(properties['upper-bound'])
+            elif variable_type == 'real':
+                lower_bound, upper_bound = float(properties['lower-bound']), float(properties['upper-bound'])
+            elif variable_type == 'bool':
+                lower_bound, upper_bound = None, None
+            else:
+                raise ValueError(f'Unsupported variable type: {variable_type}')
+            return Variable(variable_info['name'], idx, variable_type, variable_info['initial-value'], variable_kind, lower_bound, upper_bound)
         
         def add_constant(constant_info: dict, idx: int) -> Constant:
             """Add a new constant to the constant list."""
             name = constant_info['name']
             value = constant_info['value']
+            constant_type = constant_info['type']
             if constant_info['type'] == 'int':
                 value = int(value)
             elif constant_info['type'] == 'real':
@@ -191,10 +243,15 @@ class JANI:
                 value = value == 'true'
             else:
                 raise ValueError(f'Unsupported constant type: {constant_info["type"]}')
-            return Constant(name, idx, value)
+            return Variable(name, idx, constant_type, value)
+        
+        def add_edge(edge_info: dict) -> Edge:
+            """Add a new edge to the edge list."""
+            return Edge(edge_info)
 
         jani_obj = json.loads(Path(file_path).read_text('utf-8'))
         # extract actions, constants, and variables
-        self._actions = [add_action(action, idx) for idx, action in enumerate(jani_obj['actions'])]
-        self._constants = [add_constant(constant, idx) for idx, constant in enumerate(jani_obj['constants'])]
-        self._variables = [add_variable(variable, idx + len(self._constants)) for idx, variable in enumerate(jani_obj['variables'])]
+        self._actions: list[Action] = [add_action(action, idx) for idx, action in enumerate(jani_obj['actions'])]
+        self._constants: list[Constant] = [add_constant(constant, idx) for idx, constant in enumerate(jani_obj['constants'])]
+        self._variables: list[Variable] = [add_variable(variable, idx + len(self._constants)) for idx, variable in enumerate(jani_obj['variables'])]
+        self._edges: list[Edge] = [add_edge(edge) for edge in jani_obj['edges']]

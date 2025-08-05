@@ -1,0 +1,141 @@
+{
+    "jani-version": 1,
+    "name": "simple-test-model",
+    "type": "lts",
+    "actions": [
+        {
+            "name": "increment"
+        },
+        {
+            "name": "toggle"
+        },
+        {
+            "name": "multiply"
+        }
+    ],
+    "constants": [
+        {
+            "name": "step_size",
+            "type": "int",
+            "value": 2
+        },
+        {
+            "name": "multiplier",
+            "type": "real",
+            "value": 1.5
+        }
+    ],
+    "variables": [
+        {
+            "name": "count",
+            "type": {
+                "base": "int",
+                "kind": "bounded",
+                "lower-bound": 0,
+                "upper-bound": 50
+            },
+            "initial-value": 10
+        },
+        {
+            "name": "value",
+            "type": {
+                "base": "real",
+                "kind": "bounded",
+                "lower-bound": 0.0,
+                "upper-bound": 100.0
+            },
+            "initial-value": 5.0
+        },
+        {
+            "name": "enabled",
+            "type": {
+                "base": "bool",
+                "kind": "bounded"
+            },
+            "initial-value": true
+        }
+    ],
+    "edges": [
+        {
+            "action": "increment",
+            "guard": {
+                "exp": {
+                    "op": "∧",
+                    "left": "enabled",
+                    "right": {
+                        "op": "≤",
+                        "left": {
+                            "op": "+",
+                            "left": "count",
+                            "right": "step_size"
+                        },
+                        "right": 50
+                    }
+                }
+            },
+            "destinations": [{
+                "assignments": [{
+                    "target": "count",
+                    "value": {
+                        "op": "+",
+                        "left": "count",
+                        "right": "step_size"
+                    }
+                }],
+                "probability": 1.0
+            }]
+        },
+        {
+            "action": "toggle",
+            "guard": {
+                "exp": "enabled"
+            },
+            "destinations": [{
+                "assignments": [{
+                    "target": "enabled",
+                    "value": "enabled"
+                }],
+                "probability": 1.0
+            }]
+        },
+        {
+            "action": "multiply",
+            "guard": {
+                "exp": {
+                    "op": "∧",
+                    "left": "enabled",
+                    "right": {
+                        "op": "≤",
+                        "left": {
+                            "op": "*",
+                            "left": "value",
+                            "right": "multiplier"
+                        },
+                        "right": 100.0
+                    }
+                }
+            },
+            "destinations": [{
+                "assignments": [
+                    {
+                        "target": "value",
+                        "value": {
+                            "op": "*",
+                            "left": "value",
+                            "right": "multiplier"
+                        }
+                    },
+                    {
+                        "target": "count",
+                        "value": {
+                            "op": "-",
+                            "left": "count",
+                            "right": 1
+                        }
+                    }
+                ],
+                "probability": 1.0
+            }]
+        }
+    ]
+}
