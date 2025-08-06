@@ -4,8 +4,8 @@ import tempfile
 from pathlib import Path
 from jani import (
     JANI, Edge, State, Variable, Expression, VarExpression, ConstantExpression,
-    AddExpression, SubExpression, MulExpression, ConjExpression,
-    LeExpression, Assignment
+    AddExpression, SubExpression, MulExpression, ConjExpression, DisjExpression,
+    LeExpression, EqExpression, Assignment
 )
 
 
@@ -128,6 +128,374 @@ class TestExpressionEvaluation:
         }
         expr = Expression.construct(json_expr)
         assert expr.evaluate(self.state) == 15  # 5 + 10
+
+    def test_disjunction_both_true(self):
+        """Test disjunction expression where both operands are true."""
+        # true OR true = true
+        left_expr = ConstantExpression(True)
+        right_expr = ConstantExpression(True)
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == True
+
+    def test_disjunction_left_true_right_false(self):
+        """Test disjunction expression where left operand is true, right is false."""
+        # true OR false = true
+        left_expr = ConstantExpression(True)
+        right_expr = ConstantExpression(False)
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == True
+
+    def test_disjunction_left_false_right_true(self):
+        """Test disjunction expression where left operand is false, right is true."""
+        # false OR true = true
+        left_expr = ConstantExpression(False)
+        right_expr = ConstantExpression(True)
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == True
+
+    def test_disjunction_both_false(self):
+        """Test disjunction expression where both operands are false."""
+        # false OR false = false
+        left_expr = ConstantExpression(False)
+        right_expr = ConstantExpression(False)
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == False
+
+    def test_disjunction_with_variables(self):
+        """Test disjunction expression with variable expressions."""
+        # flag OR (x > 10) = true OR false = true
+        left_expr = VarExpression("flag")  # true
+        right_expr = LeExpression(ConstantExpression(10), VarExpression("x"))  # 10 <= 5 = false
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == True
+
+        # (x > 10) OR (y > 10) = false OR false = false
+        left_expr = LeExpression(ConstantExpression(10), VarExpression("x"))  # 10 <= 5 = false
+        right_expr = LeExpression(ConstantExpression(10), VarExpression("y"))  # 10 <= 3 = false
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == False
+
+    def test_disjunction_with_arithmetic_expressions(self):
+        """Test disjunction expression with arithmetic sub-expressions."""
+        # (x + y <= 10) OR (x * y <= 10) = (8 <= 10) OR (15 <= 10) = true OR false = true
+        left_expr = LeExpression(
+            AddExpression(VarExpression("x"), VarExpression("y")),
+            ConstantExpression(10)
+        )
+        right_expr = LeExpression(
+            MulExpression(VarExpression("x"), VarExpression("y")),
+            ConstantExpression(10)
+        )
+        disj_expr = DisjExpression(left_expr, right_expr)
+        assert disj_expr.evaluate(self.state) == True
+
+    def test_disjunction_nested_complex(self):
+        """Test complex nested disjunction expressions."""
+        # ((x <= y) OR (z > 5)) OR ((flag) OR (x + y > 20))
+        # = ((5 <= 3) OR (2.5 > 5)) OR ((true) OR (8 > 20))
+        # = (false OR false) OR (true OR false)
+        # = false OR true = true
+        inner_left = DisjExpression(
+            LeExpression(VarExpression("x"), VarExpression("y")),  # 5 <= 3 = false
+            LeExpression(ConstantExpression(5), VarExpression("z"))  # 5 <= 2.5 = false
+        )
+        inner_right = DisjExpression(
+            VarExpression("flag"),  # true
+            LeExpression(ConstantExpression(20), AddExpression(VarExpression("x"), VarExpression("y")))  # 20 <= 8 = false
+        )
+        outer_disj = DisjExpression(inner_left, inner_right)
+        assert outer_disj.evaluate(self.state) == True
+
+    def test_equality_equal_integers(self):
+        """Test equality expression with equal integer values."""
+        # x == 5 = true (since x = 5)
+        left_expr = VarExpression("x")
+        right_expr = ConstantExpression(5)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # 3 == y = true (since y = 3)
+        left_expr = ConstantExpression(3)
+        right_expr = VarExpression("y")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+    def test_equality_unequal_integers(self):
+        """Test equality expression with unequal integer values."""
+        # x == 10 = false (since x = 5)
+        left_expr = VarExpression("x")
+        right_expr = ConstantExpression(10)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+        # x == y = false (since x = 5, y = 3)
+        left_expr = VarExpression("x")
+        right_expr = VarExpression("y")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+    def test_equality_equal_reals(self):
+        """Test equality expression with equal real/float values."""
+        # z == 2.5 = true (since z = 2.5)
+        left_expr = VarExpression("z")
+        right_expr = ConstantExpression(2.5)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # 2.5 == z = true (since z = 2.5)
+        left_expr = ConstantExpression(2.5)
+        right_expr = VarExpression("z")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+    def test_equality_unequal_reals(self):
+        """Test equality expression with unequal real/float values."""
+        # z == 3.0 = false (since z = 2.5)
+        left_expr = VarExpression("z")
+        right_expr = ConstantExpression(3.0)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+        # z == x = false (since z = 2.5, x = 5)
+        left_expr = VarExpression("z")
+        right_expr = VarExpression("x")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+    def test_equality_equal_booleans(self):
+        """Test equality expression with equal boolean values."""
+        # flag == true = true (since flag = true)
+        left_expr = VarExpression("flag")
+        right_expr = ConstantExpression(True)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # true == flag = true (since flag = true)
+        left_expr = ConstantExpression(True)
+        right_expr = VarExpression("flag")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+    def test_equality_unequal_booleans(self):
+        """Test equality expression with unequal boolean values."""
+        # flag == false = false (since flag = true)
+        left_expr = VarExpression("flag")
+        right_expr = ConstantExpression(False)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+        # false == flag = false (since flag = true)
+        left_expr = ConstantExpression(False)
+        right_expr = VarExpression("flag")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+    def test_equality_with_arithmetic_expressions(self):
+        """Test equality expression with arithmetic sub-expressions."""
+        # (x + y) == 8 = true (since 5 + 3 = 8)
+        left_expr = AddExpression(VarExpression("x"), VarExpression("y"))
+        right_expr = ConstantExpression(8)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # (x * y) == 15 = true (since 5 * 3 = 15)
+        left_expr = MulExpression(VarExpression("x"), VarExpression("y"))
+        right_expr = ConstantExpression(15)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # (x - y) == 3 = false (since 5 - 3 = 2, not 3)
+        left_expr = SubExpression(VarExpression("x"), VarExpression("y"))
+        right_expr = ConstantExpression(3)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+    def test_equality_complex_expressions_both_sides(self):
+        """Test equality expression with complex expressions on both sides."""
+        # (x + y) == (z * 3.2) = 8 == 8.0 = true (since 5 + 3 = 8, 2.5 * 3.2 = 8.0)
+        left_expr = AddExpression(VarExpression("x"), VarExpression("y"))
+        right_expr = MulExpression(VarExpression("z"), ConstantExpression(3.2))
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # (x * y) == (x + y + z) = 15 == 10.5 = false (since 5 * 3 = 15, 5 + 3 + 2.5 = 10.5)
+        left_expr = MulExpression(VarExpression("x"), VarExpression("y"))
+        right_expr = AddExpression(
+            AddExpression(VarExpression("x"), VarExpression("y")),
+            VarExpression("z")
+        )
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == False
+
+    def test_equality_with_boolean_expressions(self):
+        """Test equality expression with boolean sub-expressions."""
+        # (x <= y) == false = true (since 5 <= 3 is false)
+        left_expr = LeExpression(VarExpression("x"), VarExpression("y"))
+        right_expr = ConstantExpression(False)
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+        # (y <= x) == flag = true (since 3 <= 5 is true, and flag is true)
+        left_expr = LeExpression(VarExpression("y"), VarExpression("x"))
+        right_expr = VarExpression("flag")
+        eq_expr = EqExpression(left_expr, right_expr)
+        assert eq_expr.evaluate(self.state) == True
+
+    def test_equality_nested_with_disjunction(self):
+        """Test equality expression nested with disjunction expressions."""
+        # ((x == 5) OR (y == 5)) == true = true (since x == 5 is true, so the OR is true)
+        inner_disj = DisjExpression(
+            EqExpression(VarExpression("x"), ConstantExpression(5)),
+            EqExpression(VarExpression("y"), ConstantExpression(5))
+        )
+        eq_expr = EqExpression(inner_disj, ConstantExpression(True))
+        assert eq_expr.evaluate(self.state) == True
+
+        # ((x == 10) OR (y == 10)) == false = true (since both comparisons are false, so the OR is false)
+        inner_disj = DisjExpression(
+            EqExpression(VarExpression("x"), ConstantExpression(10)),
+            EqExpression(VarExpression("y"), ConstantExpression(10))
+        )
+        eq_expr = EqExpression(inner_disj, ConstantExpression(False))
+        assert eq_expr.evaluate(self.state) == True
+
+    def test_disjunction_construct_from_json(self):
+        """Test disjunction expression construction from JSON."""
+        # Simple disjunction: flag ∨ false = true
+        json_expr = {
+            "op": "∨",
+            "left": "flag",
+            "right": False
+        }
+        expr = Expression.construct(json_expr)
+        assert isinstance(expr, DisjExpression)
+        assert expr.evaluate(self.state) == True
+
+        # Complex disjunction: (x ≤ y) ∨ (x = 5) = false ∨ true = true
+        json_expr = {
+            "op": "∨",
+            "left": {
+                "op": "≤",
+                "left": "x",
+                "right": "y"
+            },
+            "right": {
+                "op": "=",
+                "left": "x",
+                "right": 5
+            }
+        }
+        expr = Expression.construct(json_expr)
+        assert isinstance(expr, DisjExpression)
+        assert expr.evaluate(self.state) == True
+
+    def test_equality_construct_from_json(self):
+        """Test equality expression construction from JSON."""
+        # Simple equality: x = 5 = true
+        json_expr = {
+            "op": "=",
+            "left": "x",
+            "right": 5
+        }
+        expr = Expression.construct(json_expr)
+        assert isinstance(expr, EqExpression)
+        assert expr.evaluate(self.state) == True
+
+        # Complex equality: (x + y) = 8 = true
+        json_expr = {
+            "op": "=",
+            "left": {
+                "op": "+",
+                "left": "x",
+                "right": "y"
+            },
+            "right": 8
+        }
+        expr = Expression.construct(json_expr)
+        assert isinstance(expr, EqExpression)
+        assert expr.evaluate(self.state) == True
+
+        # Nested equality with disjunction: ((x = 5) ∨ (y = 5)) = true = true
+        json_expr = {
+            "op": "=",
+            "left": {
+                "op": "∨",
+                "left": {
+                    "op": "=",
+                    "left": "x",
+                    "right": 5
+                },
+                "right": {
+                    "op": "=",
+                    "left": "y",
+                    "right": 5
+                }
+            },
+            "right": True
+        }
+        expr = Expression.construct(json_expr)
+        assert isinstance(expr, EqExpression)
+        assert expr.evaluate(self.state) == True
+
+    def test_mixed_boolean_expressions_comprehensive(self):
+        """Test comprehensive combinations of disjunction, equality, and other boolean expressions."""
+        # Complex expression: ((x = 5) ∧ (flag)) ∨ ((y ≤ x) = true)
+        # = ((true) ∧ (true)) ∨ ((true) = true)
+        # = true ∨ true = true
+        json_expr = {
+            "op": "∨",
+            "left": {
+                "op": "∧",
+                "left": {
+                    "op": "=",
+                    "left": "x",
+                    "right": 5
+                },
+                "right": "flag"
+            },
+            "right": {
+                "op": "=",
+                "left": {
+                    "op": "≤",
+                    "left": "y",
+                    "right": "x"
+                },
+                "right": True
+            }
+        }
+        expr = Expression.construct(json_expr)
+        assert expr.evaluate(self.state) == True
+
+        # Another complex expression: ((x + y) = (z * 3.2)) ∨ ((x * y) = 20)
+        # = (8 = 8.0) ∨ (15 = 20)
+        # = true ∨ false = true
+        json_expr = {
+            "op": "∨",
+            "left": {
+                "op": "=",
+                "left": {
+                    "op": "+",
+                    "left": "x",
+                    "right": "y"
+                },
+                "right": {
+                    "op": "*",
+                    "left": "z",
+                    "right": 3.2
+                }
+            },
+            "right": {
+                "op": "=",
+                "left": {
+                    "op": "*",
+                    "left": "x",
+                    "right": "y"
+                },
+                "right": 20
+            }
+        }
+        expr = Expression.construct(json_expr)
+        assert expr.evaluate(self.state) == True
 
 
 class TestGuardEvaluation:
@@ -339,7 +707,7 @@ class TestStateTransitions:
         }
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         assert len(new_states) == 1
         assert new_states[0]["x"].value == 6  # 5 + 1
@@ -382,7 +750,7 @@ class TestStateTransitions:
         }
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         assert len(new_states) == 1
         assert new_states[0]["x"].value == 10  # 5 * 2
@@ -418,7 +786,7 @@ class TestStateTransitions:
         }
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         assert len(new_states) == 1
         # z = (x * z) + (y - 1) = (5 * 2.5) + (3 - 1) = 12.5 + 2 = 14.5
@@ -444,7 +812,7 @@ class TestStateTransitions:
         }
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         assert len(new_states) == 0  # No transition should occur
 
@@ -473,7 +841,7 @@ class TestStateTransitions:
         }
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         assert len(new_states) == 1
         assert new_states[0]["x"].value == 6
@@ -504,7 +872,7 @@ class TestStateTransitions:
         edge = Edge(edge_json)
         assert edge.is_enabled(self.state) == True  # 10 ≤ 10 should be true
 
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
         assert len(new_states) == 1
         assert new_states[0]["y"].value == 100
 
@@ -551,7 +919,7 @@ class TestEdgeCases:
         edge = Edge(edge_json)
         assert edge.is_enabled(self.state) == True  # 0 ≤ 0
 
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
         assert len(new_states) == 1
         assert new_states[0]["y"].value == 0.0  # 0 * 0.0
 
@@ -585,7 +953,7 @@ class TestEdgeCases:
         edge = Edge(edge_json)
         assert edge.is_enabled(self.state) == True  # -5 ≤ 0
 
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
         assert len(new_states) == 1
         assert new_states[0]["x"].value == 5  # -5 * -1
 
@@ -616,7 +984,7 @@ class TestEdgeCases:
         edge = Edge(edge_json)
         assert edge.is_enabled(self.state) == False  # false ∧ true = false
 
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
         assert len(new_states) == 0
 
     def test_state_immutability_during_evaluation(self):
@@ -649,7 +1017,7 @@ class TestEdgeCases:
         }
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         # Original state should be unchanged
         assert self.state["x"].value == original_x
@@ -697,7 +1065,7 @@ class TestEdgeCases:
         self.state["flag"] = True
 
         edge = Edge(edge_json)
-        new_states = edge.apply(self.state)
+        new_states, distribution = edge.apply(self.state)
 
         assert len(new_states) == 1
         assert new_states[0]["x"].value == 8.0   # 5 + 3 (original y)
@@ -745,77 +1113,82 @@ class TestJANIIntegration:
                     "initial-value": True
                 }
             ],
-            "edges": [
-                {
-                    "action": "increment",
-                    "guard": {
-                        "exp": {
-                            "op": "∧",
-                            "left": "active",
-                            "right": {
-                                "op": "≤",
-                                "left": "counter",
-                                "right": "max_value"
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["init"],
+                "locations": [{"name": "init"}],
+                "edges": [
+                    {
+                        "action": "increment",
+                        "guard": {
+                            "exp": {
+                                "op": "∧",
+                                "left": "active",
+                                "right": {
+                                    "op": "≤",
+                                    "left": "counter",
+                                    "right": "max_value"
+                                }
                             }
-                        }
-                    },
-                    "destinations": [{
-                        "assignments": [{
-                            "target": "counter",
-                            "value": {
-                                "op": "+",
-                                "left": "counter",
-                                "right": 1
-                            }
-                        }],
-                        "probability": 1.0
-                    }]
-                },
-                {
-                    "action": "decrement",
-                    "guard": {
-                        "exp": {
-                            "op": "∧",
-                            "left": "active",
-                            "right": {
-                                "op": "≤",
-                                "left": 1,
-                                "right": "counter"
-                            }
-                        }
-                    },
-                    "destinations": [{
-                        "assignments": [{
-                            "target": "counter",
-                            "value": {
-                                "op": "-",
-                                "left": "counter",
-                                "right": 1
-                            }
-                        }],
-                        "probability": 1.0
-                    }]
-                },
-                {
-                    "action": "reset",
-                    "guard": {
-                        "exp": "active"
-                    },
-                    "destinations": [{
-                        "assignments": [
-                            {
+                        },
+                        "destinations": [{
+                            "assignments": [{
                                 "target": "counter",
-                                "value": 0
-                            },
-                            {
-                                "target": "active",
-                                "value": "active"  # Keep same value
+                                "value": {
+                                    "op": "+",
+                                    "left": "counter",
+                                    "right": 1
+                                }
+                            }],
+                            "probability": 1.0
+                        }]
+                    },
+                    {
+                        "action": "decrement",
+                        "guard": {
+                            "exp": {
+                                "op": "∧",
+                                "left": "active",
+                                "right": {
+                                    "op": "≤",
+                                    "left": 1,
+                                    "right": "counter"
+                                }
                             }
-                        ],
-                        "probability": 1.0
-                    }]
-                }
-            ]
+                        },
+                        "destinations": [{
+                            "assignments": [{
+                                "target": "counter",
+                                "value": {
+                                    "op": "-",
+                                    "left": "counter",
+                                    "right": 1
+                                }
+                            }],
+                            "probability": 1.0
+                        }]
+                    },
+                    {
+                        "action": "reset",
+                        "guard": {
+                            "exp": "active"
+                        },
+                        "destinations": [{
+                            "assignments": [
+                                {
+                                    "target": "counter",
+                                    "value": 0
+                                },
+                                {
+                                    "target": "active",
+                                    "value": "active"  # Keep same value
+                                }
+                            ],
+                            "probability": 1.0
+                        }]
+                    }
+                ]
+            }]
         }
 
         # Create temporary file
@@ -842,28 +1215,28 @@ class TestJANIIntegration:
             initial_state = State(state_vars)
 
             # Test increment edge (should be enabled)
-            increment_edge = jani._edges[0]  # First edge is increment
+            increment_edge = jani._automata[0]._edges["increment"][0]  # First increment edge
             assert increment_edge.is_enabled(initial_state) == True
 
             # Apply increment transition
-            new_states = increment_edge.apply(initial_state)
+            new_states, distribution = increment_edge.apply(initial_state)
             assert len(new_states) == 1
             assert new_states[0]["counter"].value == 6  # 5 + 1
 
             # Test decrement edge (should be enabled)
-            decrement_edge = jani._edges[1]  # Second edge is decrement
+            decrement_edge = jani._automata[0]._edges["decrement"][0]  # First decrement edge
             assert decrement_edge.is_enabled(initial_state) == True
 
             # Apply decrement transition
-            new_states = decrement_edge.apply(initial_state)
+            new_states, distribution = decrement_edge.apply(initial_state)
             assert len(new_states) == 1
             assert new_states[0]["counter"].value == 4  # 5 - 1
 
             # Test reset edge
-            reset_edge = jani._edges[2]  # Third edge is reset
+            reset_edge = jani._automata[0]._edges["reset"][0]  # First reset edge
             assert reset_edge.is_enabled(initial_state) == True
 
-            new_states = reset_edge.apply(initial_state)
+            new_states, distribution = reset_edge.apply(initial_state)
             assert len(new_states) == 1
             assert new_states[0]["counter"].value == 0
             assert new_states[0]["active"].value == True
@@ -890,11 +1263,11 @@ class TestJANIIntegration:
             boundary_state["counter"] = 10  # At max_value
 
             # Increment should still be enabled (counter ≤ max_value)
-            increment_edge = jani._edges[0]
+            increment_edge = jani._automata[0]._edges["increment"][0]
             assert increment_edge.is_enabled(boundary_state) == True
 
             # Apply increment
-            new_states = increment_edge.apply(boundary_state)
+            new_states, distribution = increment_edge.apply(boundary_state)
             assert len(new_states) == 1
             assert new_states[0]["counter"].value == 11
 
@@ -906,7 +1279,7 @@ class TestJANIIntegration:
             assert increment_edge.is_enabled(above_boundary_state) == False
 
             # No transition should occur
-            new_states = increment_edge.apply(above_boundary_state)
+            new_states, distribution = increment_edge.apply(above_boundary_state)
             assert len(new_states) == 0
 
         finally:
@@ -953,7 +1326,7 @@ class TestWithSimpleJANIFile:
         assert len(jani._actions) == 3
         assert len(jani._constants) == 2
         assert len(jani._variables) == 3
-        assert len(jani._edges) == 3
+        assert len(jani._automata) == 1
 
         # Create initial state
         state_vars = {}
@@ -965,18 +1338,18 @@ class TestWithSimpleJANIFile:
         initial_state = State(state_vars)
 
         # Test increment edge
-        increment_edge = jani._edges[0]
+        increment_edge = jani._automata[0]._edges["increment"][0]
         assert increment_edge.is_enabled(initial_state) == True
 
-        new_states = increment_edge.apply(initial_state)
+        new_states, distribution = increment_edge.apply(initial_state)
         assert len(new_states) == 1
         assert new_states[0]["count"].value == 12  # 10 + 2 (step_size)
 
         # Test multiply edge
-        multiply_edge = jani._edges[2]
+        multiply_edge = jani._automata[0]._edges["multiply"][0]
         assert multiply_edge.is_enabled(initial_state) == True
 
-        new_states = multiply_edge.apply(initial_state)
+        new_states, distribution = multiply_edge.apply(initial_state)
         assert len(new_states) == 1
         assert new_states[0]["value"].value == 7.5  # 5.0 * 1.5
         assert new_states[0]["count"].value == 9    # 10 - 1
@@ -1001,7 +1374,7 @@ class TestWithSimpleJANIFile:
         boundary_state["count"] = 48  # 48 + 2 = 50 (at boundary)
 
         # Increment should be enabled (48 + 2 ≤ 50)
-        increment_edge = jani._edges[0]
+        increment_edge = jani._automata[0]._edges["increment"][0]
         assert increment_edge.is_enabled(boundary_state) == True
 
         # Set count to 49 (49 + 2 = 51 > 50)

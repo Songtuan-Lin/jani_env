@@ -6,12 +6,13 @@ import random
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import dataclass
+from collections import defaultdict
 from typing import Any, Union
 
 
 @dataclass
 class Action:
-    name: str
+    label: str
     idx: int
 
     def __hash__(self) -> int:
@@ -88,6 +89,10 @@ class Expression(ABC):
             return MulExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '∧':
             return ConjExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
+        elif expr['op'] == '∨':
+            return DisjExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
+        elif expr['op'] == '=':
+            return EqExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '≤':
             return LeExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         else:
@@ -153,6 +158,24 @@ class ConjExpression(Expression):
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) and self.right.evaluate(state)
+
+
+class DisjExpression(Expression):
+    def __init__(self, left: Expression, right: Expression):
+        self.left = left
+        self.right = right
+
+    def evaluate(self, state: State) -> bool:
+        return self.left.evaluate(state) or self.right.evaluate(state)
+
+
+class EqExpression(Expression):
+    def __init__(self, left: Expression, right: Expression):
+        self.left = left
+        self.right = right
+
+    def evaluate(self, state: State) -> bool:
+        return self.left.evaluate(state) == self.right.evaluate(state)
     
 
 class LeExpression(Expression):
@@ -194,17 +217,50 @@ class Edge:
     def is_enabled(self, state: State) -> bool:
         return self._guard.evaluate(state)
 
-    def apply(self, state: State) -> list[State]:
+    def apply(self, state: State) -> tuple[list[State], list[float]]:
         if self._guard.evaluate(state):
             new_states = []
+            distribution = []
             for destination in self._destinations:
                 new_state = copy.deepcopy(state)
                 for assignment in destination.assignments:
                     new_state[assignment.target] = assignment.value.evaluate(state)
                 new_states.append(new_state)
-            return new_states
+                distribution.append(destination.probability)
+            assert sum(distribution) == 1.0
+            return (new_states, distribution)
         else:
-            return []
+            return ([], [])
+
+
+class Automaton:
+    def __init__(self, json_obj: dict):
+        def create_edge_dict() -> dict[str, list[Edge]]:
+            """Create a dictionary of edges, indexed by the action label."""
+            edge_dict = defaultdict(list)
+            for edge in json_obj['edges']:
+                edge_obj = Edge(edge)
+                edge_dict[edge_obj._label].append(edge_obj)
+            return edge_dict
+
+        self._name: str = json_obj['name']
+        self._edges = create_edge_dict()
+        # So far, we won't use the following fields
+        self._initial_locations: list[str] = json_obj['initial-locations']
+        self._locations: list[dict[str, str]] = json_obj['locations']
+
+    def transit(self, state: State, action: Action) -> list[State]:
+        """Apply the given action to the given state."""
+        if action.label not in self._edges:
+            raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
+        new_states = []
+        for edge in self._edges[action.label]:
+            if not edge.is_enabled(state):
+                continue
+            successors, distribution = edge.apply(state)
+            next_state = random.choices(successors, distribution)[0]
+            new_states.append(next_state)
+        return new_states
 
 
 class JANI:
@@ -245,13 +301,11 @@ class JANI:
                 raise ValueError(f'Unsupported constant type: {constant_info["type"]}')
             return Variable(name, idx, constant_type, value)
         
-        def add_edge(edge_info: dict) -> Edge:
-            """Add a new edge to the edge list."""
-            return Edge(edge_info)
-
         jani_obj = json.loads(Path(file_path).read_text('utf-8'))
         # extract actions, constants, and variables
         self._actions: list[Action] = [add_action(action, idx) for idx, action in enumerate(jani_obj['actions'])]
         self._constants: list[Constant] = [add_constant(constant, idx) for idx, constant in enumerate(jani_obj['constants'])]
         self._variables: list[Variable] = [add_variable(variable, idx + len(self._constants)) for idx, variable in enumerate(jani_obj['variables'])]
-        self._edges: list[Edge] = [add_edge(edge) for edge in jani_obj['edges']]
+        self._automata: list[Automaton] = [Automaton(automaton) for automaton in jani_obj['automata']]
+        if len(self._automata) > 1:
+            raise ValueError('Multiple automata are not supported yet.')
