@@ -309,3 +309,31 @@ class JANI:
         self._automata: list[Automaton] = [Automaton(automaton) for automaton in jani_obj['automata']]
         if len(self._automata) > 1:
             raise ValueError('Multiple automata are not supported yet.')
+        
+    class InitGenerator(ABC):
+        '''Generate initial states.'''
+        @abstractmethod
+        def generate(self) -> State:
+            pass
+
+    class FixedGenerator(InitGenerator):
+        '''Generate a fixed set of initial states.'''
+        def __init__(self, json_obj: dict, model: JANI):
+            def create_state(state_value: list[dict]) -> State:
+                variable_dict = {variable_info['var']: variable_info['value'] for variable_info in state_value['variables']}
+                # Copy the constants
+                state_dict = copy.deepcopy(model._constants)
+                for _variable in model._variables:
+                    variable = copy.deepcopy(_variable)
+                    value = variable_dict[variable.name]
+                    variable.value = value
+                    state_dict[variable.name] = variable
+                return State(state_dict)
+
+            self._pool: list[State] = []
+            for state_value in json_obj['values']:
+                state = create_state(state_value)
+                self._pool.append(state)
+      
+        def generate(self) -> State:
+            return random.choice(self._pool)
