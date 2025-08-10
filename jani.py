@@ -264,7 +264,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, start_file: str):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -300,7 +300,12 @@ class JANI:
             else:
                 raise ValueError(f'Unsupported constant type: {constant_info["type"]}')
             return Variable(name, idx, constant_type, value)
-        
+
+        def init_state_generator(json_obj: dict) -> InitGenerator:
+            if json_obj['op'] == "state-values":
+                return FixedGenerator(json_obj, self)
+            raise ValueError(f"Unsupported init state generator operation: {json_obj['op']}")
+
         jani_obj = json.loads(Path(file_path).read_text('utf-8'))
         # extract actions, constants, and variables
         self._actions: list[Action] = [add_action(action, idx) for idx, action in enumerate(jani_obj['actions'])]
