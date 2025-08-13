@@ -5,7 +5,7 @@ from pathlib import Path
 from jani import (
     JANI, Edge, State, Variable, Expression, VarExpression, ConstantExpression,
     AddExpression, SubExpression, MulExpression, ConjExpression, DisjExpression,
-    LeExpression, EqExpression, Assignment
+    LeExpression, LtExpression, EqExpression, Assignment
 )
 
 
@@ -1197,13 +1197,33 @@ class TestJANIIntegration:
         temp_file.close()
         return temp_file.name
 
+    def create_minimal_start_file_for_integration(self):
+        """Create a minimal start file for integration testing."""
+        start_data = {
+            "op": "states-values",
+            "values": [
+                {
+                    "variables": [
+                        {"var": "counter", "value": 5},
+                        {"var": "active", "value": True}
+                    ]
+                }
+            ]
+        }
+        
+        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, temp_file, indent=2)
+        temp_file.close()
+        return temp_file.name
+
     def test_jani_model_loading_and_edge_evaluation(self):
         """Test loading JANI model and evaluating edges."""
         jani_file = self.create_sample_jani_file()
+        start_file = self.create_minimal_start_file_for_integration()
 
         try:
             # Load JANI model
-            jani = JANI(jani_file)
+            jani = JANI(jani_file, start_file)
 
             # Create initial state
             state_vars = {}
@@ -1242,15 +1262,17 @@ class TestJANIIntegration:
             assert new_states[0]["active"].value == True
 
         finally:
-            # Clean up temporary file
+            # Clean up temporary files
             Path(jani_file).unlink()
+            Path(start_file).unlink()
 
     def test_boundary_conditions_with_jani_model(self):
         """Test boundary conditions using JANI model."""
         jani_file = self.create_sample_jani_file()
 
         try:
-            jani = JANI(jani_file)
+            start_file = self.create_minimal_start_file_for_integration()
+            jani = JANI(jani_file, start_file)
 
             # Create state at upper boundary
             state_vars = {}
@@ -1284,6 +1306,7 @@ class TestJANIIntegration:
 
         finally:
             Path(jani_file).unlink()
+            Path(start_file).unlink()
 
 
 class TestErrorHandling:
@@ -1319,40 +1342,62 @@ class TestWithSimpleJANIFile:
         # Check if file exists, skip test if not
         if not Path(jani_file).exists():
             pytest.skip(f"Test JANI file {jani_file} not found")
+        
+        # Need to create a start file for the simple test
+        start_data = {
+            "op": "states-values",
+            "values": [
+                {
+                    "variables": [
+                        {"var": "count", "value": 10},
+                        {"var": "value", "value": 5.0},
+                        {"var": "enabled", "value": True}
+                    ]
+                }
+            ]
+        }
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        try:
+            jani = JANI(jani_file, start_file.name)
 
-        jani = JANI(jani_file)
+            # Verify model loaded correctly
+            assert len(jani._actions) == 3
+            assert len(jani._constants) == 2
+            assert len(jani._variables) == 3
+            assert len(jani._automata) == 1
 
-        # Verify model loaded correctly
-        assert len(jani._actions) == 3
-        assert len(jani._constants) == 2
-        assert len(jani._variables) == 3
-        assert len(jani._automata) == 1
+            # Create initial state
+            state_vars = {}
+            for var in jani._variables:
+                state_vars[var.name] = var
+            for const in jani._constants:
+                state_vars[const.name] = const
 
-        # Create initial state
-        state_vars = {}
-        for var in jani._variables:
-            state_vars[var.name] = var
-        for const in jani._constants:
-            state_vars[const.name] = const
+            initial_state = State(state_vars)
 
-        initial_state = State(state_vars)
+            # Test increment edge
+            increment_edge = jani._automata[0]._edges["increment"][0]
+            assert increment_edge.is_enabled(initial_state) == True
 
-        # Test increment edge
-        increment_edge = jani._automata[0]._edges["increment"][0]
-        assert increment_edge.is_enabled(initial_state) == True
+            new_states, distribution = increment_edge.apply(initial_state)
+            assert len(new_states) == 1
+            assert new_states[0]["count"].value == 12  # 10 + 2 (step_size)
 
-        new_states, distribution = increment_edge.apply(initial_state)
-        assert len(new_states) == 1
-        assert new_states[0]["count"].value == 12  # 10 + 2 (step_size)
+            # Test multiply edge
+            multiply_edge = jani._automata[0]._edges["multiply"][0]
+            assert multiply_edge.is_enabled(initial_state) == True
 
-        # Test multiply edge
-        multiply_edge = jani._automata[0]._edges["multiply"][0]
-        assert multiply_edge.is_enabled(initial_state) == True
-
-        new_states, distribution = multiply_edge.apply(initial_state)
-        assert len(new_states) == 1
-        assert new_states[0]["value"].value == 7.5  # 5.0 * 1.5
-        assert new_states[0]["count"].value == 9    # 10 - 1
+            new_states, distribution = multiply_edge.apply(initial_state)
+            assert len(new_states) == 1
+            assert new_states[0]["value"].value == 7.5  # 5.0 * 1.5
+            assert new_states[0]["count"].value == 9    # 10 - 1
+        
+        finally:
+            Path(start_file.name).unlink()
 
     def test_complex_guard_evaluation_with_constants(self):
         """Test guard evaluation involving constants."""
@@ -1360,26 +1405,681 @@ class TestWithSimpleJANIFile:
 
         if not Path(jani_file).exists():
             pytest.skip(f"Test JANI file {jani_file} not found")
+        
+        # Need to create a start file for the simple test
+        start_data = {
+            "op": "states-values",
+            "values": [
+                {
+                    "variables": [
+                        {"var": "count", "value": 10},
+                        {"var": "value", "value": 5.0},
+                        {"var": "enabled", "value": True}
+                    ]
+                }
+            ]
+        }
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        try:
+            jani = JANI(jani_file, start_file.name)
 
-        jani = JANI(jani_file)
+            # Create state at boundary
+            state_vars = {}
+            for var in jani._variables:
+                state_vars[var.name] = var
+            for const in jani._constants:
+                state_vars[const.name] = const
 
-        # Create state at boundary
-        state_vars = {}
-        for var in jani._variables:
-            state_vars[var.name] = var
-        for const in jani._constants:
-            state_vars[const.name] = const
+            boundary_state = State(state_vars)
+            boundary_state["count"] = 48  # 48 + 2 = 50 (at boundary)
 
-        boundary_state = State(state_vars)
-        boundary_state["count"] = 48  # 48 + 2 = 50 (at boundary)
+            # Increment should be enabled (48 + 2 ≤ 50)
+            increment_edge = jani._automata[0]._edges["increment"][0]
+            assert increment_edge.is_enabled(boundary_state) == True
 
-        # Increment should be enabled (48 + 2 ≤ 50)
-        increment_edge = jani._automata[0]._edges["increment"][0]
-        assert increment_edge.is_enabled(boundary_state) == True
+            # Set count to 49 (49 + 2 = 51 > 50)
+            boundary_state["count"] = 49
+            assert increment_edge.is_enabled(boundary_state) == False
+        
+        finally:
+            Path(start_file.name).unlink()
 
-        # Set count to 49 (49 + 2 = 51 > 50)
-        boundary_state["count"] = 49
-        assert increment_edge.is_enabled(boundary_state) == False
+
+class TestJANIFileLoading:
+    """Test cases for JANI file loading functionality."""
+
+    def create_minimal_jani_file(self):
+        """Create a minimal JANI file for testing."""
+        jani_data = {
+            "jani-version": 1,
+            "name": "minimal-test",
+            "type": "lts",
+            "actions": [
+                {"name": "action1"}
+            ],
+            "constants": [
+                {
+                    "name": "const1",
+                    "type": "int",
+                    "value": 42
+                }
+            ],
+            "variables": [
+                {
+                    "name": "var1",
+                    "type": {
+                        "base": "int",
+                        "kind": "bounded",
+                        "lower-bound": 0,
+                        "upper-bound": 100
+                    },
+                    "initial-value": 10
+                }
+            ],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": [{
+                    "action": "action1",
+                    "guard": {"exp": True},
+                    "destinations": [{
+                        "assignments": [],
+                        "probability": 1.0
+                    }]
+                }]
+            }]
+        }
+        
+        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(jani_data, temp_file, indent=2)
+        temp_file.close()
+        return temp_file.name
+
+    def create_minimal_start_file(self):
+        """Create a minimal start file for testing."""
+        start_data = {
+            "op": "states-values",
+            "values": [
+                {
+                    "variables": [
+                        {"var": "var1", "value": 5}
+                    ]
+                },
+                {
+                    "variables": [
+                        {"var": "var1", "value": 15}
+                    ]
+                },
+                {
+                    "variables": [
+                        {"var": "var1", "value": 25}
+                    ]
+                }
+            ]
+        }
+        
+        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, temp_file, indent=2)
+        temp_file.close()
+        return temp_file.name
+
+    def test_jani_file_loading_basic(self):
+        """Test basic JANI file loading."""
+        jani_file = self.create_minimal_jani_file()
+        start_file = self.create_minimal_start_file()
+        
+        try:
+            jani = JANI(jani_file, start_file)
+            
+            # Test that model loaded correctly
+            assert len(jani._actions) == 1
+            assert jani._actions[0].label == "action1"
+            assert len(jani._constants) == 1
+            assert jani._constants[0].name == "const1"
+            assert jani._constants[0].value == 42
+            assert len(jani._variables) == 1
+            assert jani._variables[0].name == "var1"
+            assert jani._variables[0].value == 10
+            assert len(jani._automata) == 1
+            assert jani._automata[0]._name == "test_automaton"
+            
+        finally:
+            Path(jani_file).unlink()
+            Path(start_file).unlink()
+
+    def test_jani_constants_loading(self):
+        """Test loading of constants with different types."""
+        jani_data = {
+            "jani-version": 1,
+            "name": "constants-test",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [
+                {"name": "int_const", "type": "int", "value": 123},
+                {"name": "real_const", "type": "real", "value": 3.14},
+                {"name": "bool_const", "type": "bool", "value": "true"}
+            ],
+            "variables": [],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {"op": "states-values", "values": []}
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(jani_data, jani_file, indent=2)
+        jani_file.close()
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name)
+            
+            assert len(jani._constants) == 3
+            
+            # Find constants by name
+            int_const = next(c for c in jani._constants if c.name == "int_const")
+            real_const = next(c for c in jani._constants if c.name == "real_const")
+            bool_const = next(c for c in jani._constants if c.name == "bool_const")
+            
+            assert int_const.value == 123
+            assert int_const.type == "int"
+            assert real_const.value == 3.14
+            assert real_const.type == "real"
+            assert bool_const.value == True
+            assert bool_const.type == "bool"
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+
+    def test_jani_variables_loading(self):
+        """Test loading of variables with different types and bounds."""
+        jani_data = {
+            "jani-version": 1,
+            "name": "variables-test",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [
+                {
+                    "name": "int_var",
+                    "type": {"base": "int", "kind": "bounded", "lower-bound": -10, "upper-bound": 50},
+                    "initial-value": 25
+                },
+                {
+                    "name": "real_var",
+                    "type": {"base": "real", "kind": "bounded", "lower-bound": 0.0, "upper-bound": 100.0},
+                    "initial-value": 42.5
+                },
+                {
+                    "name": "bool_var",
+                    "type": {"base": "bool", "kind": "bounded"},
+                    "initial-value": False
+                }
+            ],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {"op": "states-values", "values": []}
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(jani_data, jani_file, indent=2)
+        jani_file.close()
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name)
+            
+            assert len(jani._variables) == 3
+            
+            # Find variables by name
+            int_var = next(v for v in jani._variables if v.name == "int_var")
+            real_var = next(v for v in jani._variables if v.name == "real_var")
+            bool_var = next(v for v in jani._variables if v.name == "bool_var")
+            
+            assert int_var.value == 25
+            assert int_var.type == "int"
+            assert int_var.lower_bound == -10
+            assert int_var.upper_bound == 50
+            
+            assert real_var.value == 42.5
+            assert real_var.type == "real"
+            assert real_var.lower_bound == 0.0
+            assert real_var.upper_bound == 100.0
+            
+            assert bool_var.value == False
+            assert bool_var.type == "bool"
+            assert bool_var.lower_bound is None
+            assert bool_var.upper_bound is None
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+
+    def test_multiple_automata_error(self):
+        """Test that multiple automata raise an error."""
+        jani_data = {
+            "jani-version": 1,
+            "name": "multi-automata",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [],
+            "automata": [
+                {
+                    "name": "automaton1",
+                    "initial-locations": ["loc1"],
+                    "locations": [{"name": "loc1"}],
+                    "edges": []
+                },
+                {
+                    "name": "automaton2",
+                    "initial-locations": ["loc1"],
+                    "locations": [{"name": "loc1"}],
+                    "edges": []
+                }
+            ]
+        }
+        
+        start_data = {"op": "states-values", "values": []}
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(jani_data, jani_file, indent=2)
+        jani_file.close()
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        try:
+            with pytest.raises(ValueError, match="Multiple automata are not supported yet"):
+                JANI(jani_file.name, start_file.name)
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+
+
+class TestResetMethod:
+    """Test cases for the reset method and initial state generation."""
+
+    def create_test_jani_with_start_states(self):
+        """Create test JANI and start files for reset testing."""
+        jani_data = {
+            "jani-version": 1,
+            "name": "reset-test",
+            "type": "lts",
+            "actions": [{"name": "test_action"}],
+            "constants": [
+                {"name": "const1", "type": "int", "value": 100}
+            ],
+            "variables": [
+                {
+                    "name": "x",
+                    "type": {"base": "int", "kind": "bounded", "lower-bound": 0, "upper-bound": 100},
+                    "initial-value": 10
+                },
+                {
+                    "name": "y",
+                    "type": {"base": "real", "kind": "bounded", "lower-bound": 0.0, "upper-bound": 50.0},
+                    "initial-value": 5.0
+                }
+            ],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [
+                {
+                    "variables": [
+                        {"var": "x", "value": 1},
+                        {"var": "y", "value": 1.5}
+                    ]
+                },
+                {
+                    "variables": [
+                        {"var": "x", "value": 2},
+                        {"var": "y", "value": 2.5}
+                    ]
+                },
+                {
+                    "variables": [
+                        {"var": "x", "value": 3},
+                        {"var": "y", "value": 3.5}
+                    ]
+                },
+                {
+                    "variables": [
+                        {"var": "x", "value": 4},
+                        {"var": "y", "value": 4.5}
+                    ]
+                },
+                {
+                    "variables": [
+                        {"var": "x", "value": 5},
+                        {"var": "y", "value": 5.5}
+                    ]
+                }
+            ]
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(jani_data, jani_file, indent=2)
+        jani_file.close()
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        return jani_file.name, start_file.name
+
+    def test_reset_returns_valid_state(self):
+        """Test that reset method returns a valid state from the pool."""
+        jani_file, start_file = self.create_test_jani_with_start_states()
+        
+        try:
+            jani = JANI(jani_file, start_file)
+            
+            # Test multiple resets to ensure they all return valid states
+            expected_x_values = {1, 2, 3, 4, 5}
+            expected_y_values = {1.5, 2.5, 3.5, 4.5, 5.5}
+            
+            for _ in range(20):  # Test multiple times
+                state = jani.reset()
+                
+                # Verify state structure
+                assert isinstance(state, State)
+                assert "x" in state.variable_dict
+                assert "y" in state.variable_dict
+                assert "const1" in state.variable_dict
+                
+                # Verify values are from the expected pool
+                assert state["x"].value in expected_x_values
+                assert state["y"].value in expected_y_values
+                assert state["const1"].value == 100
+                
+                # Verify corresponding x and y values
+                x_val = state["x"].value
+                y_val = state["y"].value
+                expected_y = x_val + 0.5
+                assert y_val == expected_y
+                
+        finally:
+            Path(jani_file).unlink()
+            Path(start_file).unlink()
+
+    def test_reset_randomness(self):
+        """Test that reset method actually selects randomly from the pool."""
+        jani_file, start_file = self.create_test_jani_with_start_states()
+        
+        try:
+            jani = JANI(jani_file, start_file)
+            
+            # Collect results from many resets
+            results = []
+            for _ in range(100):
+                state = jani.reset()
+                results.append(state["x"].value)
+            
+            # Check that we got variety in results (not just one value)
+            unique_results = set(results)
+            assert len(unique_results) > 1, "Reset should return different values over multiple calls"
+            
+            # Check that all unique results are valid
+            expected_values = {1, 2, 3, 4, 5}
+            assert unique_results.issubset(expected_values)
+            
+        finally:
+            Path(jani_file).unlink()
+            Path(start_file).unlink()
+
+    def test_reset_state_independence(self):
+        """Test that states returned by reset are independent (deep copied)."""
+        jani_file, start_file = self.create_test_jani_with_start_states()
+        
+        try:
+            jani = JANI(jani_file, start_file)
+            
+            # Get two states
+            state1 = jani.reset()
+            state2 = jani.reset()
+            
+            # Modify first state
+            original_x1 = state1["x"].value
+            state1["x"] = 999
+            
+            # Verify second state is unaffected
+            assert state2["x"].value != 999
+            
+            # Get another state and verify it's also unaffected
+            state3 = jani.reset()
+            assert state3["x"].value != 999
+            
+        finally:
+            Path(jani_file).unlink()
+            Path(start_file).unlink()
+
+    def test_fixed_generator_state_creation(self):
+        """Test the FixedGenerator state creation directly."""
+        jani_file, start_file = self.create_test_jani_with_start_states()
+        
+        try:
+            jani = JANI(jani_file, start_file)
+            
+            # Test that the init generator was created correctly
+            assert hasattr(jani, '_init_generator')
+            assert isinstance(jani._init_generator, jani.FixedGenerator)
+            
+            # Test that the pool has the correct size
+            assert len(jani._init_generator._pool) == 5
+            
+            # Test that each state in the pool is valid
+            for state in jani._init_generator._pool:
+                assert isinstance(state, State)
+                assert "x" in state.variable_dict
+                assert "y" in state.variable_dict
+                assert "const1" in state.variable_dict
+                
+        finally:
+            Path(jani_file).unlink()
+            Path(start_file).unlink()
+
+    def test_unsupported_init_generator_type(self):
+        """Test error handling for unsupported init generator types."""
+        jani_data = {
+            "jani-version": 1,
+            "name": "unsupported-test",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "unsupported-operation",
+            "values": []
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(jani_data, jani_file, indent=2)
+        jani_file.close()
+        
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        json.dump(start_data, start_file, indent=2)
+        start_file.close()
+        
+        try:
+            with pytest.raises(ValueError, match="Unsupported init state generator operation"):
+                JANI(jani_file.name, start_file.name)
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+
+
+class TestBouncingBallIntegration:
+    """Integration tests using the actual bouncing_ball.jani and start.jani files."""
+
+    def test_bouncing_ball_file_loading(self):
+        """Test loading the actual bouncing ball JANI file."""
+        jani_file = "examples/bouncing_ball.jani"
+        start_file = "examples/start.jani"
+        
+        if not Path(jani_file).exists() or not Path(start_file).exists():
+            pytest.skip(f"Required files {jani_file} or {start_file} not found")
+        
+        # This should not raise an exception
+        jani = JANI(jani_file, start_file)
+        
+        # Verify basic structure
+        assert len(jani._actions) >= 1
+        assert len(jani._constants) >= 1
+        assert len(jani._variables) >= 1
+        assert len(jani._automata) == 1
+        
+        # Verify specific bouncing ball variables are present
+        variable_names = {var.name for var in jani._variables}
+        assert "height" in variable_names
+        assert "velocity" in variable_names
+        assert "episode" in variable_names
+        
+        # Verify actions
+        action_names = {action.label for action in jani._actions}
+        assert "push" in action_names or "skip" in action_names
+
+    def test_bouncing_ball_reset_functionality(self):
+        """Test reset functionality with actual bouncing ball files."""
+        jani_file = "examples/bouncing_ball.jani"
+        start_file = "examples/start.jani"
+        
+        if not Path(jani_file).exists() or not Path(start_file).exists():
+            pytest.skip(f"Required files {jani_file} or {start_file} not found")
+        
+        jani = JANI(jani_file, start_file)
+        
+        # Test that reset works and returns valid states
+        for _ in range(10):
+            state = jani.reset()
+            
+            # Verify state structure
+            assert isinstance(state, State)
+            assert "height" in state.variable_dict
+            assert "velocity" in state.variable_dict
+            assert "episode" in state.variable_dict
+            
+            # Verify types and bounds are reasonable for bouncing ball
+            height = state["height"].value
+            velocity = state["velocity"].value
+            episode = state["episode"].value
+            
+            assert isinstance(height, (int, float))
+            assert isinstance(velocity, (int, float))
+            assert isinstance(episode, int)
+            
+            # Basic sanity checks for bouncing ball physics
+            assert height >= 0  # Height should be non-negative
+            assert episode >= 0  # Episode should be non-negative
+
+    def test_bouncing_ball_state_diversity(self):
+        """Test that reset returns diverse states from the bouncing ball model."""
+        jani_file = "examples/bouncing_ball.jani"
+        start_file = "examples/start.jani"
+        
+        if not Path(jani_file).exists() or not Path(start_file).exists():
+            pytest.skip(f"Required files {jani_file} or {start_file} not found")
+        
+        jani = JANI(jani_file, start_file)
+        
+        # Collect initial states
+        heights = []
+        velocities = []
+        
+        for _ in range(50):
+            state = jani.reset()
+            heights.append(state["height"].value)
+            velocities.append(state["velocity"].value)
+        
+        # Check for diversity
+        unique_heights = set(heights)
+        unique_velocities = set(velocities)
+        
+        # Should have multiple different initial states
+        assert len(unique_heights) > 1, "Should have diverse height values"
+        assert len(unique_velocities) > 1, "Should have diverse velocity values"
+
+    def test_bouncing_ball_automaton_integration(self):
+        """Test that automaton can be used with reset states."""
+        jani_file = "examples/bouncing_ball.jani"
+        start_file = "examples/start.jani"
+        
+        if not Path(jani_file).exists() or not Path(start_file).exists():
+            pytest.skip(f"Required files {jani_file} or {start_file} not found")
+        
+        jani = JANI(jani_file, start_file)
+        
+        # Get an initial state
+        state = jani.reset()
+        
+        # Test that we can use the automaton with this state
+        automaton = jani._automata[0]
+        
+        # Check that some actions have edges
+        assert len(automaton._edges) > 0
+        
+        # Try to find an enabled action
+        found_enabled_action = False
+        for action_label, edges in automaton._edges.items():
+            for edge in edges:
+                if edge.is_enabled(state):
+                    found_enabled_action = True
+                    
+                    # Try to apply the edge
+                    new_states, distribution = edge.apply(state)
+                    
+                    # Should get some result if enabled
+                    if len(new_states) > 0:
+                        # Verify new state structure
+                        new_state = new_states[0]
+                        assert isinstance(new_state, State)
+                        assert "height" in new_state.variable_dict
+                        assert "velocity" in new_state.variable_dict
+                        assert "episode" in new_state.variable_dict
+                        break
+            if found_enabled_action:
+                break
+        
+        # Note: We don't assert found_enabled_action because initial states 
+        # might not have any enabled transitions
 
 
 if __name__ == "__main__":

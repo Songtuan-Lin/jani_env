@@ -95,6 +95,8 @@ class Expression(ABC):
             return EqExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '≤':
             return LeExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
+        elif expr['op'] == '<':
+            return LtExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         else:
             raise ValueError(f'Unsupported operator: {expr["op"]}')
 
@@ -185,6 +187,15 @@ class LeExpression(Expression):
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) <= self.right.evaluate(state)
+
+
+class LtExpression(Expression):
+    def __init__(self, left: Expression, right: Expression):
+        self.left = left
+        self.right = right
+
+    def evaluate(self, state: State) -> bool:
+        return self.left.evaluate(state) < self.right.evaluate(state)
     
 
 @dataclass
@@ -207,7 +218,9 @@ class Edge:
         for destination in json_obj['destinations']:
             assignments = []
             for assignment in destination['assignments']:
-                assignments.append(Assignment(assignment['target'], Expression.construct(assignment['value'])))
+                # Handle both 'target' and 'ref' field names for assignment target
+                target_field = assignment.get('target') or assignment.get('ref')
+                assignments.append(Assignment(target_field, Expression.construct(assignment['value'])))
             if 'probability' in destination:
                 probability = destination['probability']
             else:
@@ -284,7 +297,7 @@ class JANI:
                 lower_bound, upper_bound = None, None
             else:
                 raise ValueError(f'Unsupported variable type: {variable_type}')
-            return Variable(variable_info['name'], idx, variable_type, variable_info['initial-value'], variable_kind, lower_bound, upper_bound)
+            return Variable(variable_info['name'], idx, variable_type, variable_info['initial-value'], variable_kind, upper_bound, lower_bound)
         
         def add_constant(constant_info: dict, idx: int) -> Constant:
             """Add a new constant to the constant list."""
@@ -301,9 +314,9 @@ class JANI:
                 raise ValueError(f'Unsupported constant type: {constant_info["type"]}')
             return Variable(name, idx, constant_type, value)
 
-        def init_state_generator(json_obj: dict) -> InitGenerator:
-            if json_obj['op'] == "state-values":
-                return FixedGenerator(json_obj, self)
+        def init_state_generator(json_obj: dict) -> JANI.InitGenerator:
+            if json_obj['op'] == "states-values":
+                return JANI.FixedGenerator(json_obj, self)
             raise ValueError(f"Unsupported init state generator operation: {json_obj['op']}")
 
         jani_obj = json.loads(Path(file_path).read_text('utf-8'))
@@ -314,7 +327,10 @@ class JANI:
         self._automata: list[Automaton] = [Automaton(automaton) for automaton in jani_obj['automata']]
         if len(self._automata) > 1:
             raise ValueError('Multiple automata are not supported yet.')
-        
+        # start states
+        start_spec = json.loads(Path(start_file).read_text('utf-8'))
+        self._init_generator = init_state_generator(start_spec)
+
     class InitGenerator(ABC):
         '''Generate initial states.'''
         @abstractmethod
@@ -327,7 +343,9 @@ class JANI:
             def create_state(state_value: list[dict]) -> State:
                 variable_dict = {variable_info['var']: variable_info['value'] for variable_info in state_value['variables']}
                 # Copy the constants
-                state_dict = copy.deepcopy(model._constants)
+                state_dict = {}
+                for constant in model._constants:
+                    state_dict[constant.name] = copy.deepcopy(constant)
                 for _variable in model._variables:
                     variable = copy.deepcopy(_variable)
                     value = variable_dict[variable.name]
@@ -342,3 +360,7 @@ class JANI:
       
         def generate(self) -> State:
             return random.choice(self._pool)
+        
+    def reset(self) -> State:
+        """Reset the JANI model to a random initial state."""
+        return self._init_generator.generate()
