@@ -1,0 +1,11 @@
+{
+    "goal": {
+        "exp": {
+            "left": "count",
+            "op": "=",
+            "right": 50
+        },
+        "op": "state-condition"
+    },
+    "op": "objective"
+}

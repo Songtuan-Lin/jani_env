@@ -87,6 +87,8 @@ class Expression(ABC):
             return SubExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '*':
             return MulExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
+        elif expr['op'] == '/':
+            return DivExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '∧':
             return ConjExpression(Expression.construct(expr['left']), Expression.construct(expr['right']))
         elif expr['op'] == '∨':
@@ -277,7 +279,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, file_path: str, start_file: str, goal_file: str, failure_file: str):
+    def __init__(self, file_path: str, start_file: str, goal_file: str = None, failure_file: str = None):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -321,11 +323,11 @@ class JANI:
 
         def goal_expression(json_obj: dict) -> Expression:
             if json_obj['op'] == "objective":
-                goal_expr = json_obj['goal']['exp']
-                if goal_expr['op'] == "state-condition":
-                    return Expression.construct(goal_expr['exp'])
+                goal_section = json_obj['goal']
+                if goal_section['op'] == "state-condition":
+                    return Expression.construct(goal_section['exp'])
                 else:
-                    raise ValueError(f"Unsupported goal expression operation: {goal_expr['op']}")
+                    raise ValueError(f"Unsupported goal expression operation: {goal_section['op']}")
             else:
                 raise ValueError(f"Unsupported goal expression operation: {json_obj['op']}")
 
@@ -401,6 +403,11 @@ class JANI:
         if len(next_states) > 1:
             print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
         return next_states[0]
+
+    def get_action(self, action_index: int) -> Action:
+        if action_index < 0 or action_index >= len(self._actions):
+            raise ValueError(f"Invalid action index {action_index}. Must be between 0 and {len(self._actions)-1}")
+        return self._actions[action_index]
 
     def goal_reached(self, state: State) -> bool:
         # Implement the logic to check if the goal state is reached

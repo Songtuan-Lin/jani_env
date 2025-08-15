@@ -9,6 +9,35 @@ from jani import (
 )
 
 
+def create_dummy_goal_failure_files():
+    """Create dummy goal and failure files for testing legacy functionality."""
+    # Default goal: always true (any state is a goal state)
+    goal_data = {
+        "goal": {
+            "exp": {"left": 0, "op": "≤", "right": 1},
+            "op": "state-condition"
+        },
+        "op": "objective"
+    }
+    
+    # Default failure: never true (no state is a failure state)
+    failure_data = {
+        "exp": {"left": 1, "op": "≤", "right": 0},
+        "op": "state-condition"
+    }
+    
+    goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+    failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+    
+    json.dump(goal_data, goal_file, indent=2)
+    json.dump(failure_data, failure_file, indent=2)
+    
+    goal_file.close()
+    failure_file.close()
+    
+    return goal_file.name, failure_file.name
+
+
 class TestExpressionEvaluation:
     """Test cases for expression evaluation functionality."""
     
@@ -1223,7 +1252,10 @@ class TestJANIIntegration:
 
         try:
             # Load JANI model
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
 
             # Create initial state
             state_vars = {}
@@ -1265,6 +1297,8 @@ class TestJANIIntegration:
             # Clean up temporary files
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_boundary_conditions_with_jani_model(self):
         """Test boundary conditions using JANI model."""
@@ -1272,7 +1306,10 @@ class TestJANIIntegration:
 
         try:
             start_file = self.create_minimal_start_file_for_integration()
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
 
             # Create state at upper boundary
             state_vars = {}
@@ -1307,6 +1344,8 @@ class TestJANIIntegration:
         finally:
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
 
 class TestErrorHandling:
@@ -1362,7 +1401,9 @@ class TestWithSimpleJANIFile:
         start_file.close()
         
         try:
-            jani = JANI(jani_file, start_file.name)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file.name, goal_file, failure_file)
 
             # Verify model loaded correctly
             assert len(jani._actions) == 3
@@ -1425,7 +1466,9 @@ class TestWithSimpleJANIFile:
         start_file.close()
         
         try:
-            jani = JANI(jani_file, start_file.name)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file.name, goal_file, failure_file)
 
             # Create state at boundary
             state_vars = {}
@@ -1534,7 +1577,9 @@ class TestJANIFileLoading:
         start_file = self.create_minimal_start_file()
         
         try:
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
             
             # Test that model loaded correctly
             assert len(jani._actions) == 1
@@ -1551,6 +1596,8 @@ class TestJANIFileLoading:
         finally:
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_jani_constants_loading(self):
         """Test loading of constants with different types."""
@@ -1584,7 +1631,9 @@ class TestJANIFileLoading:
         start_file.close()
         
         try:
-            jani = JANI(jani_file.name, start_file.name)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file.name, start_file.name, goal_file, failure_file)
             
             assert len(jani._constants) == 3
             
@@ -1603,6 +1652,8 @@ class TestJANIFileLoading:
         finally:
             Path(jani_file.name).unlink()
             Path(start_file.name).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_jani_variables_loading(self):
         """Test loading of variables with different types and bounds."""
@@ -1648,7 +1699,9 @@ class TestJANIFileLoading:
         start_file.close()
         
         try:
-            jani = JANI(jani_file.name, start_file.name)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file.name, start_file.name, goal_file, failure_file)
             
             assert len(jani._variables) == 3
             
@@ -1675,6 +1728,8 @@ class TestJANIFileLoading:
         finally:
             Path(jani_file.name).unlink()
             Path(start_file.name).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_multiple_automata_error(self):
         """Test that multiple automata raise an error."""
@@ -1712,11 +1767,14 @@ class TestJANIFileLoading:
         start_file.close()
         
         try:
+            goal_file, failure_file = create_dummy_goal_failure_files()
             with pytest.raises(ValueError, match="Multiple automata are not supported yet"):
-                JANI(jani_file.name, start_file.name)
+                JANI(jani_file.name, start_file.name, goal_file, failure_file)
         finally:
             Path(jani_file.name).unlink()
             Path(start_file.name).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
 
 class TestResetMethod:
@@ -1803,7 +1861,9 @@ class TestResetMethod:
         jani_file, start_file = self.create_test_jani_with_start_states()
         
         try:
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
             
             # Test multiple resets to ensure they all return valid states
             expected_x_values = {1, 2, 3, 4, 5}
@@ -1832,13 +1892,17 @@ class TestResetMethod:
         finally:
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_reset_randomness(self):
         """Test that reset method actually selects randomly from the pool."""
         jani_file, start_file = self.create_test_jani_with_start_states()
         
         try:
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
             
             # Collect results from many resets
             results = []
@@ -1857,13 +1921,17 @@ class TestResetMethod:
         finally:
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_reset_state_independence(self):
         """Test that states returned by reset are independent (deep copied)."""
         jani_file, start_file = self.create_test_jani_with_start_states()
         
         try:
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
             
             # Get two states
             state1 = jani.reset()
@@ -1883,13 +1951,17 @@ class TestResetMethod:
         finally:
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_fixed_generator_state_creation(self):
         """Test the FixedGenerator state creation directly."""
         jani_file, start_file = self.create_test_jani_with_start_states()
         
         try:
-            jani = JANI(jani_file, start_file)
+            goal_file, failure_file = create_dummy_goal_failure_files()
+
+            jani = JANI(jani_file, start_file, goal_file, failure_file)
             
             # Test that the init generator was created correctly
             assert hasattr(jani, '_init_generator')
@@ -1908,6 +1980,8 @@ class TestResetMethod:
         finally:
             Path(jani_file).unlink()
             Path(start_file).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
     def test_unsupported_init_generator_type(self):
         """Test error handling for unsupported init generator types."""
@@ -1940,11 +2014,14 @@ class TestResetMethod:
         start_file.close()
         
         try:
+            goal_file, failure_file = create_dummy_goal_failure_files()
             with pytest.raises(ValueError, match="Unsupported init state generator operation"):
-                JANI(jani_file.name, start_file.name)
+                JANI(jani_file.name, start_file.name, goal_file, failure_file)
         finally:
             Path(jani_file.name).unlink()
             Path(start_file.name).unlink()
+            Path(goal_file).unlink()
+            Path(failure_file).unlink()
 
 
 class TestBouncingBallIntegration:
@@ -1959,7 +2036,9 @@ class TestBouncingBallIntegration:
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
         
         # This should not raise an exception
-        jani = JANI(jani_file, start_file)
+        goal_file, failure_file = create_dummy_goal_failure_files()
+
+        jani = JANI(jani_file, start_file, goal_file, failure_file)
         
         # Verify basic structure
         assert len(jani._actions) >= 1
@@ -1985,7 +2064,10 @@ class TestBouncingBallIntegration:
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
         
-        jani = JANI(jani_file, start_file)
+        goal_file, failure_file = create_dummy_goal_failure_files()
+
+        
+        jani = JANI(jani_file, start_file, goal_file, failure_file)
         
         # Test that reset works and returns valid states
         for _ in range(10):
@@ -2018,7 +2100,10 @@ class TestBouncingBallIntegration:
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
         
-        jani = JANI(jani_file, start_file)
+        goal_file, failure_file = create_dummy_goal_failure_files()
+
+        
+        jani = JANI(jani_file, start_file, goal_file, failure_file)
         
         # Collect initial states
         heights = []
@@ -2045,7 +2130,10 @@ class TestBouncingBallIntegration:
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
         
-        jani = JANI(jani_file, start_file)
+        goal_file, failure_file = create_dummy_goal_failure_files()
+
+        
+        jani = JANI(jani_file, start_file, goal_file, failure_file)
         
         # Get an initial state
         state = jani.reset()
@@ -2080,6 +2168,682 @@ class TestBouncingBallIntegration:
         
         # Note: We don't assert found_enabled_action because initial states 
         # might not have any enabled transitions
+
+
+class TestGoalAndFailureConditions:
+    """Test cases for goal and failure condition functionality."""
+    
+    def test_simple_goal_expression_construction(self):
+        """Test construction of simple goal expressions from JSON."""
+        # Test simple comparison goal (episode >= 1000)
+        goal_json = {
+            "goal": {
+                "exp": {
+                    "left": 1000,
+                    "op": "≤",
+                    "right": "episode"
+                },
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        # Create temp files for testing
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-goal",
+            "type": "lts",
+            "actions": [{"name": "increment"}],
+            "constants": [],
+            "variables": [{
+                "name": "episode",
+                "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 2000},
+                "initial-value": 0
+            }],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{
+                "variables": [{"var": "episode", "value": 500}]
+            }]
+        }
+        
+        failure_data = {
+            "exp": {"left": "episode", "op": "≤", "right": -1},
+            "op": "state-condition"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_json, goal_file, indent=2)
+        json.dump(failure_data, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+            
+            # Verify goal expression was constructed
+            assert jani._goal_expr is not None
+            assert hasattr(jani._goal_expr, 'evaluate')
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_simple_failure_expression_construction(self):
+        """Test construction of simple failure expressions from JSON."""
+        # Test simple failure condition
+        failure_json = {
+            "exp": {
+                "left": "height",
+                "op": "≤",
+                "right": 0
+            },
+            "op": "state-condition"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-failure",
+            "type": "lts",
+            "actions": [{"name": "fall"}],
+            "constants": [],
+            "variables": [{
+                "name": "height",
+                "type": {"kind": "bounded", "base": "real", "lower-bound": 0.0, "upper-bound": 100.0},
+                "initial-value": 50.0
+            }],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{
+                "variables": [{"var": "height", "value": 25.0}]
+            }]
+        }
+        
+        goal_data = {
+            "goal": {
+                "exp": {"left": "height", "op": "≤", "right": 100},
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_data, goal_file, indent=2)
+        json.dump(failure_json, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+            
+            # Verify failure expression was constructed
+            assert jani._failure_expr is not None
+            assert hasattr(jani._failure_expr, 'evaluate')
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_complex_goal_expression_construction(self):
+        """Test construction of complex goal expressions with nested operations."""
+        # Test complex arithmetic and boolean goal condition
+        goal_json = {
+            "goal": {
+                "exp": {
+                    "left": {
+                        "left": "x",
+                        "op": "+",
+                        "right": "y"
+                    },
+                    "op": "≤",
+                    "right": {
+                        "left": "z",
+                        "op": "*",
+                        "right": 2
+                    }
+                },
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-complex-goal",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [
+                {"name": "x", "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 50}, "initial-value": 10},
+                {"name": "y", "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 50}, "initial-value": 20},
+                {"name": "z", "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 50}, "initial-value": 30}
+            ],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{
+                "variables": [
+                    {"var": "x", "value": 10},
+                    {"var": "y", "value": 20},
+                    {"var": "z", "value": 30}
+                ]
+            }]
+        }
+        
+        failure_data = {
+            "exp": {"left": "x", "op": "≤", "right": -1},
+            "op": "state-condition"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_json, goal_file, indent=2)
+        json.dump(failure_data, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+            
+            # Verify complex goal expression was constructed
+            assert jani._goal_expr is not None
+            
+            # Test expression structure by evaluating
+            state = jani.reset()
+            result = jani._goal_expr.evaluate(state)
+            assert isinstance(result, bool)
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_goal_state_evaluation(self):
+        """Test evaluation of states against goal conditions."""
+        # Create a simple goal: episode >= 1000
+        goal_json = {
+            "goal": {
+                "exp": {
+                    "left": 1000,
+                    "op": "≤",
+                    "right": "episode"
+                },
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-goal-eval",
+            "type": "lts",
+            "actions": [{"name": "increment"}],
+            "constants": [],
+            "variables": [{
+                "name": "episode",
+                "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 2000},
+                "initial-value": 0
+            }],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [
+                {"variables": [{"var": "episode", "value": 999}]},
+                {"variables": [{"var": "episode", "value": 1000}]},
+                {"variables": [{"var": "episode", "value": 1001}]}
+            ]
+        }
+        
+        failure_data = {
+            "exp": {"left": "episode", "op": "≤", "right": -1},
+            "op": "state-condition"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_json, goal_file, indent=2)
+        json.dump(failure_data, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+            
+            # Create test states manually
+            var_episode_999 = Variable("episode", 0, "int", 999, "bounded", 2000, 0)
+            var_episode_1000 = Variable("episode", 0, "int", 1000, "bounded", 2000, 0)
+            var_episode_1001 = Variable("episode", 0, "int", 1001, "bounded", 2000, 0)
+            
+            state_999 = State({"episode": var_episode_999})
+            state_1000 = State({"episode": var_episode_1000})
+            state_1001 = State({"episode": var_episode_1001})
+            
+            # Test goal evaluation
+            assert not jani.goal_reached(state_999)  # 999 < 1000, so goal not reached
+            assert jani.goal_reached(state_1000)     # 1000 >= 1000, so goal reached
+            assert jani.goal_reached(state_1001)     # 1001 >= 1000, so goal reached
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_failure_state_evaluation(self):
+        """Test evaluation of states against failure conditions."""
+        # Create a simple failure condition: height <= 0
+        failure_json = {
+            "exp": {
+                "left": "height",
+                "op": "≤",
+                "right": 0
+            },
+            "op": "state-condition"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-failure-eval",
+            "type": "lts",
+            "actions": [{"name": "fall"}],
+            "constants": [],
+            "variables": [{
+                "name": "height",
+                "type": {"kind": "bounded", "base": "real", "lower-bound": -10.0, "upper-bound": 100.0},
+                "initial-value": 50.0
+            }],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{
+                "variables": [{"var": "height", "value": 25.0}]
+            }]
+        }
+        
+        goal_data = {
+            "goal": {
+                "exp": {"left": "height", "op": "≤", "right": 100},
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_data, goal_file, indent=2)
+        json.dump(failure_json, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+            
+            # Create test states manually
+            var_height_positive = Variable("height", 0, "real", 5.0, "bounded", 100.0, -10.0)
+            var_height_zero = Variable("height", 0, "real", 0.0, "bounded", 100.0, -10.0)
+            var_height_negative = Variable("height", 0, "real", -2.0, "bounded", 100.0, -10.0)
+            
+            state_positive = State({"height": var_height_positive})
+            state_zero = State({"height": var_height_zero})
+            state_negative = State({"height": var_height_negative})
+            
+            # Test failure evaluation
+            assert not jani.failure_reached(state_positive)  # height > 0, not failure
+            assert jani.failure_reached(state_zero)          # height = 0, failure
+            assert jani.failure_reached(state_negative)      # height < 0, failure
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_complex_conjunction_failure_condition(self):
+        """Test complex failure conditions with conjunction and arithmetic."""
+        # Test conjunction failure condition: (x + y > 100) AND (z < 5)
+        failure_json = {
+            "exp": {
+                "left": {
+                    "left": {
+                        "left": "x",
+                        "op": "+",
+                        "right": "y"
+                    },
+                    "op": "<",
+                    "right": 100
+                },
+                "op": "∧",
+                "right": {
+                    "left": "z",
+                    "op": "≤",
+                    "right": 5
+                }
+            },
+            "op": "state-condition"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-complex-failure",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [
+                {"name": "x", "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 100}, "initial-value": 10},
+                {"name": "y", "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 100}, "initial-value": 20},
+                {"name": "z", "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 100}, "initial-value": 30}
+            ],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{
+                "variables": [
+                    {"var": "x", "value": 10},
+                    {"var": "y", "value": 20},
+                    {"var": "z", "value": 30}
+                ]
+            }]
+        }
+        
+        goal_data = {
+            "goal": {
+                "exp": {"left": "x", "op": "≤", "right": 100},
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_data, goal_file, indent=2)
+        json.dump(failure_json, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            jani = JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+            
+            # Create test states to verify complex condition
+            var_x1 = Variable("x", 0, "int", 40, "bounded", 100, 0)
+            var_y1 = Variable("y", 1, "int", 50, "bounded", 100, 0)
+            var_z1 = Variable("z", 2, "int", 3, "bounded", 100, 0)
+            state1 = State({"x": var_x1, "y": var_y1, "z": var_z1})  # x+y=90<100 AND z=3<=5 -> failure
+            
+            var_x2 = Variable("x", 0, "int", 60, "bounded", 100, 0)
+            var_y2 = Variable("y", 1, "int", 50, "bounded", 100, 0)
+            var_z2 = Variable("z", 2, "int", 3, "bounded", 100, 0)
+            state2 = State({"x": var_x2, "y": var_y2, "z": var_z2})  # x+y=110>=100 -> no failure
+            
+            var_x3 = Variable("x", 0, "int", 40, "bounded", 100, 0)
+            var_y3 = Variable("y", 1, "int", 50, "bounded", 100, 0)
+            var_z3 = Variable("z", 2, "int", 10, "bounded", 100, 0)
+            state3 = State({"x": var_x3, "y": var_y3, "z": var_z3})  # x+y=90<100 but z=10>5 -> no failure
+            
+            # Test complex failure evaluation
+            assert jani.failure_reached(state1)      # Both conditions true
+            assert not jani.failure_reached(state2)  # First condition false
+            assert not jani.failure_reached(state3)  # Second condition false
+            
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_with_actual_example_files(self):
+        """Test with actual example files objective.jani and safe.jani."""
+        jani_file = "examples/bouncing_ball.jani"
+        start_file = "examples/start.jani"
+        goal_file = "examples/objective.jani"
+        failure_file = "examples/safe.jani"
+        
+        if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
+            pytest.skip("Required example files not found")
+        
+        # This should successfully load all files
+        jani = JANI(jani_file, start_file, goal_file, failure_file)
+        
+        # Verify expressions were constructed
+        assert jani._goal_expr is not None
+        assert jani._failure_expr is not None
+        
+        # Test with actual states
+        for _ in range(10):
+            state = jani.reset()
+            
+            # Should be able to evaluate goal and failure conditions
+            goal_result = jani.goal_reached(state)
+            failure_result = jani.failure_reached(state)
+            
+            assert isinstance(goal_result, bool)
+            assert isinstance(failure_result, bool)
+            
+            # For bouncing ball, we shouldn't have both goal and failure simultaneously
+            # (though this depends on the specific conditions in the files)
+
+    def test_error_handling_invalid_goal_format(self):
+        """Test error handling for invalid goal specification format."""
+        # Invalid goal format - missing 'goal' field
+        invalid_goal = {
+            "exp": {"left": "x", "op": "≤", "right": 10},
+            "op": "objective"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-invalid-goal",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [{
+                "name": "x",
+                "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 100},
+                "initial-value": 0
+            }],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{"variables": [{"var": "x", "value": 0}]}]
+        }
+        
+        failure_data = {
+            "exp": {"left": "x", "op": "≤", "right": -1},
+            "op": "state-condition"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(invalid_goal, goal_file, indent=2)
+        json.dump(failure_data, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            with pytest.raises(KeyError):
+                JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
+
+    def test_error_handling_invalid_failure_format(self):
+        """Test error handling for invalid failure specification format."""
+        # Invalid failure format - wrong operation
+        invalid_failure = {
+            "exp": {"left": "x", "op": "≤", "right": 0},
+            "op": "invalid-operation"
+        }
+        
+        jani_data = {
+            "jani-version": 1,
+            "name": "test-invalid-failure",
+            "type": "lts",
+            "actions": [{"name": "test"}],
+            "constants": [],
+            "variables": [{
+                "name": "x",
+                "type": {"kind": "bounded", "base": "int", "lower-bound": 0, "upper-bound": 100},
+                "initial-value": 0
+            }],
+            "automata": [{
+                "name": "test_automaton",
+                "initial-locations": ["loc1"],
+                "locations": [{"name": "loc1"}],
+                "edges": []
+            }]
+        }
+        
+        start_data = {
+            "op": "states-values",
+            "values": [{"variables": [{"var": "x", "value": 0}]}]
+        }
+        
+        goal_data = {
+            "goal": {
+                "exp": {"left": "x", "op": "≤", "right": 100},
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        
+        jani_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        start_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        goal_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        failure_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jani', delete=False)
+        
+        json.dump(jani_data, jani_file, indent=2)
+        json.dump(start_data, start_file, indent=2)
+        json.dump(goal_data, goal_file, indent=2)
+        json.dump(invalid_failure, failure_file, indent=2)
+        
+        jani_file.close()
+        start_file.close()
+        goal_file.close()
+        failure_file.close()
+        
+        try:
+            with pytest.raises(ValueError, match="Unsupported safe expression operation"):
+                JANI(jani_file.name, start_file.name, goal_file.name, failure_file.name)
+        finally:
+            Path(jani_file.name).unlink()
+            Path(start_file.name).unlink()
+            Path(goal_file.name).unlink()
+            Path(failure_file.name).unlink()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,26 @@
+{
+    "op": "states-values",
+    "values": [
+        {
+            "variables": [
+                {"var": "count", "value": 10},
+                {"var": "value", "value": 5.0},
+                {"var": "enabled", "value": true}
+            ]
+        },
+        {
+            "variables": [
+                {"var": "count", "value": 20},
+                {"var": "value", "value": 10.0},
+                {"var": "enabled", "value": true}
+            ]
+        },
+        {
+            "variables": [
+                {"var": "count", "value": 0},
+                {"var": "value", "value": 1.0},
+                {"var": "enabled", "value": false}
+            ]
+        }
+    ]
+}
