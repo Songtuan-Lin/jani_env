@@ -277,7 +277,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, file_path: str, start_file: str):
+    def __init__(self, file_path: str, start_file: str, goal_file: str, failure_file: str):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -319,6 +319,22 @@ class JANI:
                 return JANI.FixedGenerator(json_obj, self)
             raise ValueError(f"Unsupported init state generator operation: {json_obj['op']}")
 
+        def goal_expression(json_obj: dict) -> Expression:
+            if json_obj['op'] == "objective":
+                goal_expr = json_obj['goal']['exp']
+                if goal_expr['op'] == "state-condition":
+                    return Expression.construct(goal_expr['exp'])
+                else:
+                    raise ValueError(f"Unsupported goal expression operation: {goal_expr['op']}")
+            else:
+                raise ValueError(f"Unsupported goal expression operation: {json_obj['op']}")
+
+        def failure_expression(json_obj: dict) -> Expression:
+            if json_obj['op'] == "state-condition":
+                return Expression.construct(json_obj['exp'])
+            else:
+                raise ValueError(f"Unsupported safe expression operation: {json_obj['op']}")
+
         jani_obj = json.loads(Path(file_path).read_text('utf-8'))
         # extract actions, constants, and variables
         self._actions: list[Action] = [add_action(action, idx) for idx, action in enumerate(jani_obj['actions'])]
@@ -330,6 +346,12 @@ class JANI:
         # start states
         start_spec = json.loads(Path(start_file).read_text('utf-8'))
         self._init_generator = init_state_generator(start_spec)
+        # goal states
+        goal_spec = json.loads(Path(goal_file).read_text('utf-8'))
+        self._goal_expr = goal_expression(goal_spec)
+        # failure condition
+        failure_spec = json.loads(Path(failure_file).read_text('utf-8'))
+        self._failure_expr = failure_expression(failure_spec)
 
     class InitGenerator(ABC):
         '''Generate initial states.'''
@@ -364,3 +386,26 @@ class JANI:
     def reset(self) -> State:
         """Reset the JANI model to a random initial state."""
         return self._init_generator.generate()
+    
+    def get_action_count(self) -> int:
+        return len(self._actions)
+    
+    def get_constants_variables(self) -> list[Variable]:
+        return self._constants + self._variables
+    
+    def get_transition(self, state: State, action: Action) -> State:
+        # Implement the logic to get the next state based on the current state and action
+        next_states = self._automata[0].transit(state, action)
+        if len(next_states) == 0:
+            return None
+        if len(next_states) > 1:
+            print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
+        return next_states[0]
+
+    def goal_reached(self, state: State) -> bool:
+        # Implement the logic to check if the goal state is reached
+        return self._goal_expr.evaluate(state)
+
+    def failure_reached(self, state: State) -> bool:
+        # Implement the logic to check if the failure state is reached
+        return self._failure_expr.evaluate(state)

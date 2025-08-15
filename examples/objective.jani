@@ -1,0 +1,11 @@
+{
+    "goal": {
+        "exp": {
+            "left": 1000,
+            "op": "≤",
+            "right": "episode"
+        },
+        "op": "state-condition"
+    },
+    "op": "objective"
+}
