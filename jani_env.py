@@ -23,7 +23,6 @@ class JaniEnv(gym.Env):
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
         self._current_state = self._jani.reset()
-        print(self._current_state)
         return np.array(self._current_state.to_vector(), dtype=np.float32), {}
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
@@ -38,9 +37,8 @@ class JaniEnv(gym.Env):
         next_state = self._jani.get_transition(self._current_state, action_obj)
         reward = 0.0
         done = False
-        print(next_state)
         if next_state is None:
-            reward = -1.0
+            reward = 0.0
             done = True
         elif self._jani.goal_reached(next_state):
             reward = 1.0
