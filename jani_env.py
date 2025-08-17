@@ -35,16 +35,20 @@ class JaniEnv(gym.Env):
 
         action_obj = self._jani.get_action(action)
         next_state = self._jani.get_transition(self._current_state, action_obj)
-        reward = 0.0
+        # non-sparse reward works clearly better
+        # we can use this as an argument for why we
+        # would like to predicate whether a state
+        # is safe or not
+        reward = 1.0
         done = False
         if next_state is None:
             reward = 0.0
             done = True
         elif self._jani.goal_reached(next_state):
-            reward = 1.0
+            # reward = 1.0
             done = True
         elif self._jani.failure_reached(next_state):
-            reward = -1.0
+            reward = -10.0
             done = True
         self._current_state = next_state
         return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {}

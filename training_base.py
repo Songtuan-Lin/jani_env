@@ -11,4 +11,4 @@ safe_file = "examples/safe.jani"
 env = JaniEnv(model_file, start_file, goal_file, safe_file)
 envs = make_vec_env(JaniEnv, n_envs=5, env_kwargs=dict(model_file=model_file, start_file=start_file, goal_file=goal_file, safe_file=safe_file))
 
-model = PPO("MlpPolicy", envs, n_steps=100, verbose=1).learn(total_timesteps=10000)
+model = PPO("MlpPolicy", envs, n_steps=100, verbose=1).learn(total_timesteps=1000000)
