@@ -4,7 +4,7 @@ from stable_baselines3.common.env_util import make_vec_env
 
 
 model_file = "examples/bouncing_ball.jani"
-start_file = "examples/start.jani"
+start_file = "examples/start_compact.jani"
 goal_file = "examples/objective.jani"
 safe_file = "examples/safe.jani"
 

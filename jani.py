@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from typing import Any, Union
 from z3 import *
+from z3.z3 import Z3_INT_SORT, Z3_REAL_SORT, Z3_BOOL_SORT
 
 
 @dataclass
@@ -50,7 +51,7 @@ class Variable:
 
 
 # Constant is a special type of variable
-type Constant = Variable
+Constant = Variable
 
 @dataclass
 class State:
@@ -145,8 +146,8 @@ class ConstantExpression(Expression):
 
     def evaluate(self, state: State) -> Union[int, float, bool]:
         return self.value
-    
-    def to_clause(self, ctx: JANI) -> ExprRef:
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
         return self.value, []
 
 
@@ -394,7 +395,7 @@ class JANI:
         def init_state_generator(json_obj: dict) -> JANI.InitGenerator:
             if json_obj['op'] == "states-values":
                 return JANI.FixedGenerator(json_obj, self)
-            elif json_obj['op'] == "states-condition":
+            elif json_obj['op'] == "states-condition" or json_obj['op'] == "state-condition":
                 return JANI.ConstraintsGenerator(json_obj, self)
             raise ValueError(f"Unsupported init state generator operation: {json_obj['op']}")
 
@@ -469,11 +470,15 @@ class JANI:
             constraint_expr = json_obj['exp']
             expr = Expression.construct(constraint_expr)
             self._main_clause, self._additional_clauses = expr.to_clause(self._model)
+            self._pool = []
 
         def generate(self) -> State:
             # Implement constraint-based state generation
             s = Tactic('qflra').solver()
-            s.set(random_seed=random.randint(0, 2**32 - 1))
+            set_option('smt.arith.random_initial_value', True)
+            set_option('smt.random_seed', random.randint(0, 2**32 - 1))
+            # s.set(random_seed=random.randint(0, 2**32 - 1))
+            # s.set("smt.arith.random_initial_value", True)
             s.add(self._main_clause)
             for clause in self._additional_clauses:
                 s.add(clause)
@@ -481,12 +486,26 @@ class JANI:
                 model = s.model()
                 target_vars = {}
                 for v in model.decls():
-                    target_vars[v.name()] = model[v]
+                    z3_value = model[v]
+                    # Convert Z3 values to Python values
+                    if z3_value.sort().kind() == Z3_INT_SORT:
+                        python_value = z3_value.as_long()
+                    elif z3_value.sort().kind() == Z3_REAL_SORT:
+                        python_value = float(z3_value.as_decimal(10).replace('?', ''))
+                    elif z3_value.sort().kind() == Z3_BOOL_SORT:
+                        python_value = is_true(z3_value)
+                    else:
+                        python_value = z3_value
+                    target_vars[v.name()] = python_value
                 state_dict = {}
                 for constant in self._model._constants:
                     c = copy.deepcopy(constant)
                     if c.name in target_vars:
-                        assert c.value == target_vars[c.name], f"Constant {c.name} value mismatch in model."
+                        # For constants, just verify they match (don't update)
+                        expected_value = c.value
+                        actual_value = target_vars[c.name]
+                        if abs(expected_value - actual_value) > 1e-6 if isinstance(expected_value, float) else expected_value != actual_value:
+                            raise ValueError(f"Constant {c.name} value mismatch: expected {expected_value}, got {actual_value}")
                     state_dict[constant.name] = c
                 for variable in self._model._variables:
                     v = copy.deepcopy(variable)
