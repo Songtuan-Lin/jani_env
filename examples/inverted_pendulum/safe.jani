@@ -1,0 +1,16 @@
+{
+    "exp": {
+        "left": {
+            "left": 0.785,
+            "op": "≤",
+            "right": "angle"
+        },
+        "op": "∨",
+        "right": {
+            "left": "angle",
+            "op": "≤",
+            "right": -0.785
+        }
+    },
+    "op": "state-condition"
+}
