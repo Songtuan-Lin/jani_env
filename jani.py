@@ -8,6 +8,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import Any, Union
+from z3 import *
 
 
 @dataclass
@@ -28,7 +29,7 @@ class Variable:
     kind: Union[str, None] = None
     upper_bound: Union[int, float, None] = None
     lower_bound: Union[int, float, None] = None
-
+    constant: bool = False
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -109,6 +110,33 @@ class VarExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return state[self.variable].value
+    
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        '''Convert the variable expression to a Z3 clause.'''
+        variable = ctx.get_variable(self.variable)
+        additional_clauses = []
+        if variable.type == 'int' or variable.type == 'real':
+            v = Real(variable.name) if variable.type == 'real' else Int(variable.name)
+            if variable.lower_bound is None and variable.upper_bound is not None:
+                expr = v <= variable.upper_bound
+            elif variable.lower_bound is not None and variable.upper_bound is None:
+                expr = v >= variable.lower_bound
+            elif variable.lower_bound is not None and variable.upper_bound is not None:
+                expr = And(v >= variable.lower_bound, v <= variable.upper_bound)
+            else:
+                if variable.constant:
+                    expr = v == variable.value
+                else:
+                    raise ValueError(f'Variable {variable.name} has no bounds defined.')
+            additional_clauses.append(expr)
+        elif variable.type == 'bool':
+            v = Bool(variable.name)
+            if variable.constant:
+                expr = v == bool(variable.value)
+            additional_clauses.append(expr)
+        else:
+            raise ValueError(f'Unsupported variable type: {variable.type}')
+        return v, additional_clauses
 
 
 class ConstantExpression(Expression):
@@ -118,6 +146,9 @@ class ConstantExpression(Expression):
     def evaluate(self, state: State) -> Union[int, float, bool]:
         return self.value
     
+    def to_clause(self, ctx: JANI) -> ExprRef:
+        return self.value, []
+
 
 class AddExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -126,7 +157,12 @@ class AddExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) + self.right.evaluate(state)
-    
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left + right, left_addt + right_addt
+
 
 class SubExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -135,7 +171,12 @@ class SubExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) - self.right.evaluate(state)
-    
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left - right, left_addt + right_addt
+
 
 class MulExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -144,7 +185,12 @@ class MulExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) * self.right.evaluate(state)
-    
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left * right, left_addt + right_addt
+
 
 class DivExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -153,7 +199,11 @@ class DivExpression(Expression):
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) / self.right.evaluate(state)
-    
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left / right, left_addt + right_addt + [right != 0]
 
 class ConjExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -162,6 +212,11 @@ class ConjExpression(Expression):
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) and self.right.evaluate(state)
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return And(left, right), left_addt + right_addt
 
 
 class DisjExpression(Expression):
@@ -172,6 +227,11 @@ class DisjExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) or self.right.evaluate(state)
 
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return Or(left, right), left_addt + right_addt
+
 
 class EqExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -180,7 +240,12 @@ class EqExpression(Expression):
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) == self.right.evaluate(state)
-    
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left == right, left_addt + right_addt
+
 
 class LeExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -190,6 +255,11 @@ class LeExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) <= self.right.evaluate(state)
 
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left <= right, left_addt + right_addt
+
 
 class LtExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -198,7 +268,12 @@ class LtExpression(Expression):
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) < self.right.evaluate(state)
-    
+
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+        left, left_addt = self.left.to_clause(ctx)
+        right, right_addt = self.right.to_clause(ctx)
+        return left < right, left_addt + right_addt
+
 
 @dataclass
 class Assignment:
@@ -314,11 +389,13 @@ class JANI:
                 value = value == 'true'
             else:
                 raise ValueError(f'Unsupported constant type: {constant_info["type"]}')
-            return Variable(name, idx, constant_type, value)
+            return Variable(name, idx, constant_type, value, constant=True)
 
         def init_state_generator(json_obj: dict) -> JANI.InitGenerator:
             if json_obj['op'] == "states-values":
                 return JANI.FixedGenerator(json_obj, self)
+            elif json_obj['op'] == "states-condition":
+                return JANI.ConstraintsGenerator(json_obj, self)
             raise ValueError(f"Unsupported init state generator operation: {json_obj['op']}")
 
         def goal_expression(json_obj: dict) -> Expression:
@@ -384,7 +461,43 @@ class JANI:
       
         def generate(self) -> State:
             return random.choice(self._pool)
-        
+
+    class ConstraintsGenerator(InitGenerator):
+        '''Generate initial states based on constraints.'''
+        def __init__(self, json_obj: dict, model: JANI):
+            self._model = model
+            constraint_expr = json_obj['exp']
+            expr = Expression.construct(constraint_expr)
+            self._main_clause, self._additional_clauses = expr.to_clause(self._model)
+
+        def generate(self) -> State:
+            # Implement constraint-based state generation
+            s = Tactic('qflra').solver()
+            s.set(random_seed=random.randint(0, 2**32 - 1))
+            s.add(self._main_clause)
+            for clause in self._additional_clauses:
+                s.add(clause)
+            if s.check() == sat:
+                model = s.model()
+                target_vars = {}
+                for v in model.decls():
+                    target_vars[v.name()] = model[v]
+                state_dict = {}
+                for constant in self._model._constants:
+                    c = copy.deepcopy(constant)
+                    if c.name in target_vars:
+                        assert c.value == target_vars[c.name], f"Constant {c.name} value mismatch in model."
+                    state_dict[constant.name] = c
+                for variable in self._model._variables:
+                    v = copy.deepcopy(variable)
+                    if v.name in target_vars:
+                        v.value = target_vars[v.name]
+                    else:
+                        raise ValueError(f"Variable {v.name} not found in model.")
+                    state_dict[v.name] = v
+                return State(state_dict)
+            raise ValueError("Failed to generate state from model.")
+
     def reset(self) -> State:
         """Reset the JANI model to a random initial state."""
         return self._init_generator.generate()
@@ -395,6 +508,13 @@ class JANI:
     def get_constants_variables(self) -> list[Variable]:
         return self._constants + self._variables
     
+    def get_variable(self, variable_name: str) -> Variable:
+        """Get a variable by its name."""
+        for variable in self._constants + self._variables:
+            if variable.name == variable_name:
+                return variable
+        raise ValueError(f"Variable '{variable_name}' not found.")
+
     def get_transition(self, state: State, action: Action) -> State:
         # Implement the logic to get the next state based on the current state and action
         next_states = self._automata[0].transit(state, action)
