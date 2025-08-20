@@ -6,9 +6,9 @@ from typing import Optional
 
 
 class JaniEnv(gym.Env):
-    def __init__(self, model_file, start_file, goal_file, safe_file):
+    def __init__(self, model_file, start_file: str = None , goal_file: str = None, safe_file: str = None, property_file: str = None):
         super().__init__()
-        self._jani = JANI(model_file, start_file, goal_file, safe_file)
+        self._jani = JANI(model_file, start_file, goal_file, safe_file, property_file)
         # Define action and observation space
         self.action_space = gym.spaces.Discrete(self._jani.get_action_count())
         lower_bounds = []
@@ -39,16 +39,23 @@ class JaniEnv(gym.Env):
         # we can use this as an argument for why we
         # would like to predicate whether a state
         # is safe or not
-        reward = 1.0
+        reward = 0.1
         done = False
         if next_state is None:
-            reward = 0.0
+            reward = -1.0
             done = True
         elif self._jani.goal_reached(next_state):
-            # reward = 1.0
+            reward = 10.0
             done = True
         elif self._jani.failure_reached(next_state):
             reward = -10.0
             done = True
         self._current_state = next_state
         return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {}
+
+    def _print_obs(self):
+        '''Print the current state, for debug only'''
+        if self._current_state is None:
+            print("Environment has not been reset.")
+        else:
+            print("Current state:", self._current_state.variable_info())

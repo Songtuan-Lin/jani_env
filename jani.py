@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from collections import defaultdict
 from typing import Any, Union
 from z3 import *
-from z3.z3 import Z3_INT_SORT, Z3_REAL_SORT, Z3_BOOL_SORT
 
 
 @dataclass
@@ -69,6 +68,14 @@ class State:
         for variable in self.variable_dict.values():
             vec[variable.idx] = variable.value
         return vec
+    
+    def variable_info(self) -> str:
+        '''Return a string representation of the non-constant variables in the state.'''
+        pairs = []
+        for variable in self.variable_dict.values():
+            if not variable.constant:
+                pairs.append(f"{variable.name} = {variable.value}")
+        return ", ".join(pairs)
 
 
 class Expression(ABC):
@@ -109,6 +116,9 @@ class VarExpression(Expression):
     def __init__(self, variable: str):
         self.variable = variable
 
+    def __repr__(self):
+        return self.variable
+
     def evaluate(self, state: State) -> float:
         return state[self.variable].value
     
@@ -144,6 +154,9 @@ class ConstantExpression(Expression):
     def __init__(self, value: Union[int, float, bool]):
         self.value = value
 
+    def __repr__(self):
+        return str(self.value)
+
     def evaluate(self, state: State) -> Union[int, float, bool]:
         return self.value
 
@@ -155,6 +168,9 @@ class AddExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
         self.left = left
         self.right = right
+
+    def __repr__(self):
+        return f"({self.left.__repr__()} + {self.right.__repr__()})"
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) + self.right.evaluate(state)
@@ -170,6 +186,9 @@ class SubExpression(Expression):
         self.left = left
         self.right = right
 
+    def __repr__(self):
+        return f"({self.left.__repr__()} - {self.right.__repr__()})"
+
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) - self.right.evaluate(state)
 
@@ -183,6 +202,9 @@ class MulExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
         self.left = left
         self.right = right
+
+    def __repr__(self):
+        return f"({self.left.__repr__()} * {self.right.__repr__()})"
 
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) * self.right.evaluate(state)
@@ -198,6 +220,9 @@ class DivExpression(Expression):
         self.left = left
         self.right = right
 
+    def __repr__(self):
+        return f"({self.left.__repr__()} / {self.right.__repr__()})"
+
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) / self.right.evaluate(state)
 
@@ -210,6 +235,9 @@ class ConjExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
         self.left = left
         self.right = right
+
+    def __repr__(self):
+        return f"({self.left.__repr__()} ∧ {self.right.__repr__()})"
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) and self.right.evaluate(state)
@@ -225,6 +253,9 @@ class DisjExpression(Expression):
         self.left = left
         self.right = right
 
+    def __repr__(self):
+        return f"(({self.left.__repr__()}) ∨ ({self.right.__repr__()}))"
+
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) or self.right.evaluate(state)
 
@@ -238,6 +269,9 @@ class EqExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
         self.left = left
         self.right = right
+
+    def __repr__(self):
+        return f"({self.left.__repr__()} = {self.right.__repr__()})"
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) == self.right.evaluate(state)
@@ -253,6 +287,9 @@ class LeExpression(Expression):
         self.left = left
         self.right = right
 
+    def __repr__(self):
+        return f"({self.left.__repr__()} ≤ {self.right.__repr__()})"
+
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) <= self.right.evaluate(state)
 
@@ -266,6 +303,9 @@ class LtExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
         self.left = left
         self.right = right
+
+    def __repr__(self):
+        return f"({self.left.__repr__()} < {self.right.__repr__()})"
 
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) < self.right.evaluate(state)
@@ -300,7 +340,7 @@ class Edge:
                 target_field = assignment.get('target') or assignment.get('ref')
                 assignments.append(Assignment(target_field, Expression.construct(assignment['value'])))
             if 'probability' in destination:
-                probability = destination['probability']
+                probability = destination['probability']['exp']
             else:
                 probability = 1.0
             self._destinations.append(Destination(assignments, probability))
@@ -312,13 +352,14 @@ class Edge:
         if self._guard.evaluate(state):
             new_states = []
             distribution = []
-            for destination in self._destinations:
+            for _, destination in enumerate(self._destinations):
                 new_state = copy.deepcopy(state)
                 for assignment in destination.assignments:
+                    # print(f"Applying assignment of {idx}th outcome: {assignment.target} = {assignment.value}")
                     new_state[assignment.target] = assignment.value.evaluate(state)
                 new_states.append(new_state)
                 distribution.append(destination.probability)
-            assert sum(distribution) == 1.0
+            assert sum(distribution) == 1.0, f"Invalid probability distribution: {distribution}"
             return (new_states, distribution)
         else:
             return ([], [])
@@ -346,6 +387,8 @@ class Automaton:
             raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
         new_states = []
         for edge in self._edges[action.label]:
+            # print guard expression, for debugging only
+            # print(f"Guard for {action.label}: {edge._guard}")
             if not edge.is_enabled(state):
                 continue
             successors, distribution = edge.apply(state)
@@ -355,7 +398,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, file_path: str, start_file: str, goal_file: str = None, failure_file: str = None):
+    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -415,23 +458,84 @@ class JANI:
             else:
                 raise ValueError(f"Unsupported safe expression operation: {json_obj['op']}")
 
-        jani_obj = json.loads(Path(file_path).read_text('utf-8'))
+        def parse_properties(json_obj: dict) -> dict:
+            """Parse the properties from the JSON object."""
+            all_properties = json_obj['properties']
+            if len(all_properties) != 1:
+                raise ValueError(f"Expected exactly one property, got {len(all_properties)}")
+            properties = all_properties[0]['expression']
+            goal_property = properties['objective']
+            failure_property = properties['reach']
+            start_property = properties['start']
+            return {
+                'goal': goal_property,
+                'failure': failure_property,
+                'start': start_property
+            }
+
+        def parse_interface(json_obj: dict) -> dict:
+            """Parse the interface from the JSON object."""
+            input_vars = json_obj['input']
+            vars_dict = {var['name']: idx for idx, var in enumerate(input_vars)}
+            output_actions = json_obj['output']
+            actions_dict = {action: idx for idx, action in enumerate(output_actions)}
+            return {
+                'input': vars_dict,
+                'output': actions_dict
+            }
+
+        jani_obj = json.loads(Path(model_file).read_text('utf-8'))
         # extract actions, constants, and variables
         self._actions: list[Action] = [add_action(action, idx) for idx, action in enumerate(jani_obj['actions'])]
         self._constants: list[Constant] = [add_constant(constant, idx) for idx, constant in enumerate(jani_obj['constants'])]
         self._variables: list[Variable] = [add_variable(variable, idx + len(self._constants)) for idx, variable in enumerate(jani_obj['variables'])]
+        if interface_file is not None:
+            interface_spec = json.loads(Path(interface_file).read_text('utf-8'))
+            interface_spec = parse_interface(interface_spec)
+            # reindex every constant and every variable to align with the interface
+            for constant in self._constants:
+                if constant.name in interface_spec['input']:
+                    constant.idx = interface_spec['input'][constant.name]
+                else:
+                    raise ValueError(f"Constant {constant.name} not found in interface input.")
+            for variable in self._variables:
+                if variable.name in interface_spec['input']:
+                    variable.idx = interface_spec['input'][variable.name]
+                else:
+                    raise ValueError(f"Variable {variable.name} not found in interface input.")
+            # also reindex actions
+            _actions = [None] * len(self._actions)
+            for action in self._actions:
+                if action.name in interface_spec['output']:
+                    action.idx = interface_spec['output'][action.name]
+                    _actions[action.idx] = action
+                else:
+                    raise ValueError(f"Action {action.name} not found in interface output.")
+            self._actions = _actions
+            for v in self._constants + self._variables:
+                assert v.idx == interface_spec['input'][v.name], f"Variable {v.name} index mismatch."
+            for a in self._actions:
+                assert a.idx == interface_spec['output'][a.name], f"Action {a.name} index mismatch."
         self._automata: list[Automaton] = [Automaton(automaton) for automaton in jani_obj['automata']]
         if len(self._automata) > 1:
             raise ValueError('Multiple automata are not supported yet.')
-        # start states
-        start_spec = json.loads(Path(start_file).read_text('utf-8'))
-        self._init_generator = init_state_generator(start_spec)
-        # goal states
-        goal_spec = json.loads(Path(goal_file).read_text('utf-8'))
-        self._goal_expr = goal_expression(goal_spec)
-        # failure condition
-        failure_spec = json.loads(Path(failure_file).read_text('utf-8'))
-        self._failure_expr = failure_expression(failure_spec)
+        if start_file is None or goal_file is None or failure_file is None:
+            assert property_file is not None, "If start, goal, or failure files are not provided, property file must be provided."
+            property_spec = json.loads(Path(property_file).read_text('utf-8'))
+            property_spec = parse_properties(property_spec)
+            self._init_generator = init_state_generator(property_spec['start'])
+            self._goal_expr = goal_expression(property_spec['goal'])
+            self._failure_expr = failure_expression(property_spec['failure'])
+        else:
+            # start states
+            start_spec = json.loads(Path(start_file).read_text('utf-8'))
+            self._init_generator = init_state_generator(start_spec)
+            # goal states
+            goal_spec = json.loads(Path(goal_file).read_text('utf-8'))
+            self._goal_expr = goal_expression(goal_spec)
+            # failure condition
+            failure_spec = json.loads(Path(failure_file).read_text('utf-8'))
+            self._failure_expr = failure_expression(failure_spec)
 
     class InitGenerator(ABC):
         '''Generate initial states.'''
@@ -488,11 +592,11 @@ class JANI:
                 for v in model.decls():
                     z3_value = model[v]
                     # Convert Z3 values to Python values
-                    if z3_value.sort().kind() == Z3_INT_SORT:
+                    if z3_value.sort().kind() == z3.Z3_INT_SORT:
                         python_value = z3_value.as_long()
-                    elif z3_value.sort().kind() == Z3_REAL_SORT:
+                    elif z3_value.sort().kind() == z3.Z3_REAL_SORT:
                         python_value = float(z3_value.as_decimal(10).replace('?', ''))
-                    elif z3_value.sort().kind() == Z3_BOOL_SORT:
+                    elif z3_value.sort().kind() == z3.Z3_BOOL_SORT:
                         python_value = is_true(z3_value)
                     else:
                         python_value = z3_value
@@ -540,7 +644,8 @@ class JANI:
         if len(next_states) == 0:
             return None
         if len(next_states) > 1:
-            print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
+            raise ValueError(f"Multiple next states found for action {action.label}. This is not supported yet.")
+            # print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
         return next_states[0]
 
     def get_action(self, action_index: int) -> Action:
