@@ -23,7 +23,8 @@ class JaniEnv(gym.Env):
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
         self._current_state = self._jani.reset()
-        return np.array(self._current_state.to_vector(), dtype=np.float32), {}
+        action_mask = self.action_mask()
+        return np.array(self._current_state.to_vector(), dtype=np.float32), {"action_mask": action_mask}
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
         if self._current_state is None:
@@ -33,25 +34,40 @@ class JaniEnv(gym.Env):
         if action < 0 or action >= len(self._jani._actions):
             raise ValueError(f"Invalid action index {action}. Must be between 0 and {len(self._jani._actions)-1}")
 
+        # Get action masks
+        action_mask = self.action_mask()
+
         action_obj = self._jani.get_action(action)
         next_state = self._jani.get_transition(self._current_state, action_obj)
-        # non-sparse reward works clearly better
+        # Non-sparse reward works clearly better
         # we can use this as an argument for why we
         # would like to predicate whether a state
         # is safe or not
-        reward = 0.1
+        reward = 0.0
         done = False
         if next_state is None:
-            reward = -1.0
-            done = True
+            # reward = -1.0
+            # done = True
+            raise ValueError(f"Action {action} is not valid in the current state {self._current_state}.")
         elif self._jani.goal_reached(next_state):
-            reward = 10.0
+            reward = 1.0
             done = True
         elif self._jani.failure_reached(next_state):
-            reward = -10.0
+            reward = -1.0
             done = True
         self._current_state = next_state
-        return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {}
+        return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": action_mask}
+
+    def action_mask(self) -> np.ndarray:
+        if self._current_state is None:
+            return np.zeros(self.action_space.n, dtype=np.float32)
+
+        mask = np.zeros(self.action_space.n, dtype=np.float32)
+        for action in range(self.action_space.n):
+            action_obj = self._jani.get_action(action)
+            if self._jani.get_transition(self._current_state, action_obj) is not None:
+                mask[action] = 1.0
+        return mask
 
     def _print_obs(self):
         '''Print the current state, for debug only'''
