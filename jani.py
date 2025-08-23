@@ -61,7 +61,16 @@ class State:
     
     def __setitem__(self, key: str, value: Any) -> None:
         self.variable_dict[key].value = value
+
+    def __repr__(self) -> str:
+        state_values = [""] * len(self.variable_dict)
+        for variable in self.variable_dict.values():
+            state_values[variable.idx] = f"{variable.name}={variable.value}"
+        return ",".join(state_values)
     
+    def __hash__(self) -> int:
+        return hash(self.__repr__())
+
     def to_vector(self) -> list[float]:
         '''Convert the state to a vector, according to the idx.'''
         vec = [0.0] * len(self.variable_dict)
@@ -381,7 +390,7 @@ class Automaton:
         self._initial_locations: list[str] = json_obj['initial-locations']
         self._locations: list[dict[str, str]] = json_obj['locations']
 
-    def transit(self, state: State, action: Action) -> list[State]:
+    def transit(self, state: State, action: Action, return_all: bool = False) -> list[State]:
         """Apply the given action to the given state."""
         if action.label not in self._edges:
             raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
@@ -392,8 +401,11 @@ class Automaton:
             if not edge.is_enabled(state):
                 continue
             successors, distribution = edge.apply(state)
-            next_state = random.choices(successors, distribution)[0]
-            new_states.append(next_state)
+            if return_all:
+                new_states.extend(successors)
+            else:
+                next_state = random.choices(successors, distribution)[0]
+                new_states.append(next_state)
         return new_states
 
 
@@ -647,6 +659,9 @@ class JANI:
             raise ValueError(f"Multiple next states found for action {action.label}. This is not supported yet.")
             # print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
         return next_states[0]
+
+    def get_successors(self, state: State, action: Action) -> list[State]:
+        return self._automata[0].transit(state, action, return_all=True)
 
     def get_action(self, action_index: int) -> Action:
         if action_index < 0 or action_index >= len(self._actions):
