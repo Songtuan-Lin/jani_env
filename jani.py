@@ -586,7 +586,7 @@ class JANI:
             constraint_expr = json_obj['exp']
             expr = Expression.construct(constraint_expr)
             self._main_clause, self._additional_clauses, self._all_vars = expr.to_clause(self._model)
-            self._pool = []  # used to cache previous solutions
+            self._cache = defaultdict(list)  # cache previous solutions
 
         def generate(self) -> State:
             # Implement constraint-based state generation
@@ -599,7 +599,7 @@ class JANI:
                     s.add(clause)
                 return s
 
-            def get_state_values(model: z3.Model) -> dict:
+            def get_state_values(model: z3.Model, cache: bool = True) -> dict:
                 target_vars = {}
                 for v in model.decls():
                     z3_value = model[v]
@@ -613,6 +613,8 @@ class JANI:
                     else:
                         python_value = z3_value
                     target_vars[v.name()] = python_value
+                    if cache:
+                        self._cache[v.name()].append(z3_value)
                 return target_vars
 
             def create_state(target_vars: dict) -> State:
@@ -639,22 +641,21 @@ class JANI:
             div_criterion = []
             for v in self._all_vars:
                 conj_criterion = []
-                for m in self._pool:
-                    conj_criterion.append(Abs(m[v] - v) >= Q(1, 1000))
+                for value in self._cache[str(v)]:
+                    conj_criterion.append(Abs(value - v) >= Q(1, 1000))
                 if len(conj_criterion) > 0:
                     div_criterion.append(And(conj_criterion))
             if len(div_criterion) > 0:
                 s.add(Or(div_criterion))
             if s.check() == sat:
                 model = s.model()
-                self._pool.append(model)
                 return create_state(get_state_values(model))
             else:
                 s = solver_with_core_constraints()
                 if s.check() == sat:
                     model = s.model()
-                    self._pool = [] # reset the pool because no new states can be found
-                    return create_state(get_state_values(model))
+                    self._cache = defaultdict(list)  # reset the cache because no new states can be found
+                    return create_state(get_state_values(model, cache=False))
             raise ValueError("Failed to generate valid initial state.")
 
     def reset(self) -> State:
