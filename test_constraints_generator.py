@@ -13,10 +13,10 @@ class TestConstraintsGenerator:
     def setup_method(self):
         """Setup test fixtures before each test method."""
         self.examples_dir = Path("examples")
-        self.bouncing_ball_file = self.examples_dir / "bouncing_ball.jani"
-        self.start_compact_file = self.examples_dir / "start_compact.jani"
-        self.objective_file = self.examples_dir / "objective.jani"
-        self.safe_file = self.examples_dir / "safe.jani"
+        self.bouncing_ball_file = self.examples_dir / "bouncing_ball" / "bouncing_ball.jani"
+        self.start_compact_file = self.examples_dir / "bouncing_ball" / "start_compact.jani"
+        self.objective_file = self.examples_dir / "bouncing_ball" / "objective.jani"
+        self.safe_file = self.examples_dir / "bouncing_ball" / "safe.jani"
         
         # Verify test files exist
         assert self.bouncing_ball_file.exists(), f"Test file {self.bouncing_ball_file} not found"
@@ -92,7 +92,7 @@ class TestConstraintsGenerator:
         )
         
         # Generate multiple states and collect their values
-        num_states = 100  # Increased sample size
+        num_states = 300  # Increased sample size
         height_values = []
         velocity_values = []
         
@@ -297,10 +297,10 @@ class TestConstraintsGeneratorEdgeCases:
     def setup_method(self):
         """Setup test fixtures."""
         self.examples_dir = Path("examples")
-        self.bouncing_ball_file = self.examples_dir / "bouncing_ball.jani"
-        self.start_compact_file = self.examples_dir / "start_compact.jani"
-        self.objective_file = self.examples_dir / "objective.jani"
-        self.safe_file = self.examples_dir / "safe.jani"
+        self.bouncing_ball_file = self.examples_dir / "bouncing_ball" / "bouncing_ball.jani"
+        self.start_compact_file = self.examples_dir / "bouncing_ball" / "start_compact.jani"
+        self.objective_file = self.examples_dir / "bouncing_ball" / "objective.jani"
+        self.safe_file = self.examples_dir / "bouncing_ball" / "safe.jani"
         
     def test_constraint_generator_error_handling(self):
         """Test error handling in constraint generation."""
@@ -347,10 +347,10 @@ class TestConstraintsGeneratorEdgeCases:
 def test_constraints_generator_integration():
     """Integration test for ConstraintsGenerator with actual JANI files."""
     examples_dir = Path("examples")
-    bouncing_ball_file = examples_dir / "bouncing_ball.jani"
-    start_compact_file = examples_dir / "start_compact.jani" 
-    objective_file = examples_dir / "objective.jani"
-    safe_file = examples_dir / "safe.jani"
+    bouncing_ball_file = examples_dir / "bouncing_ball" / "bouncing_ball.jani"
+    start_compact_file = examples_dir / "bouncing_ball" / "start_compact.jani" 
+    objective_file = examples_dir / "bouncing_ball" / "objective.jani"
+    safe_file = examples_dir / "bouncing_ball" / "safe.jani"
     
     # Skip test if files don't exist
     if not all([bouncing_ball_file.exists(), start_compact_file.exists(), objective_file.exists()]):

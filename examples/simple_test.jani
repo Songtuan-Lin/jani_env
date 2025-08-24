@@ -86,7 +86,7 @@
                             "right": "step_size"
                         }
                     }],
-                    "probability": 1.0
+                    "probability": {"exp": 1.0}
                 }]
             },
             {
@@ -99,7 +99,7 @@
                         "target": "enabled",
                         "value": "enabled"
                     }],
-                    "probability": 1.0
+                    "probability": {"exp": 1.0}
                 }]
             },
             {
@@ -138,7 +138,7 @@
                             }
                         }
                     ],
-                    "probability": 1.0
+                    "probability": {"exp": 1.0}
                 }]
             }
         ]

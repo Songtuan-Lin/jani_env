@@ -1,8 +1,4 @@
 {
-    "exp": {
-        "left": "count",
-        "op": "<",
-        "right": 0
-    },
+    "exp": {"op": "≤", "left": "count", "right": 5},
     "op": "state-condition"
 }

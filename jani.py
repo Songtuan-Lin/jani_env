@@ -131,7 +131,7 @@ class VarExpression(Expression):
     def evaluate(self, state: State) -> float:
         return state[self.variable].value
     
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
         '''Convert the variable expression to a Z3 clause.'''
         variable = ctx.get_variable(self.variable)
         additional_clauses = []
@@ -156,7 +156,7 @@ class VarExpression(Expression):
             additional_clauses.append(expr)
         else:
             raise ValueError(f'Unsupported variable type: {variable.type}')
-        return v, additional_clauses
+        return v, additional_clauses, [v]
 
 
 class ConstantExpression(Expression):
@@ -169,8 +169,8 @@ class ConstantExpression(Expression):
     def evaluate(self, state: State) -> Union[int, float, bool]:
         return self.value
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        return self.value, []
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        return self.value, [], []
 
 
 class AddExpression(Expression):
@@ -184,10 +184,10 @@ class AddExpression(Expression):
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) + self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left + right, left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left + right, left_addt + right_addt, left_vars + right_vars
 
 
 class SubExpression(Expression):
@@ -201,10 +201,10 @@ class SubExpression(Expression):
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) - self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left - right, left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left - right, left_addt + right_addt, left_vars + right_vars
 
 
 class MulExpression(Expression):
@@ -218,10 +218,10 @@ class MulExpression(Expression):
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) * self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left * right, left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left * right, left_addt + right_addt, left_vars + right_vars
 
 
 class DivExpression(Expression):
@@ -235,10 +235,10 @@ class DivExpression(Expression):
     def evaluate(self, state: State) -> float:
         return self.left.evaluate(state) / self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left / right, left_addt + right_addt + [right != 0]
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left / right, left_addt + right_addt + [right != 0], left_vars + right_vars
 
 class ConjExpression(Expression):
     def __init__(self, left: Expression, right: Expression):
@@ -251,10 +251,10 @@ class ConjExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) and self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return And(left, right), left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return And(left, right), left_addt + right_addt, left_vars + right_vars
 
 
 class DisjExpression(Expression):
@@ -268,10 +268,10 @@ class DisjExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) or self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return Or(left, right), left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return Or(left, right), left_addt + right_addt, left_vars + right_vars
 
 
 class EqExpression(Expression):
@@ -285,10 +285,10 @@ class EqExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) == self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left == right, left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left == right, left_addt + right_addt, left_vars + right_vars
 
 
 class LeExpression(Expression):
@@ -302,10 +302,10 @@ class LeExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) <= self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left <= right, left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left <= right, left_addt + right_addt, left_vars + right_vars
 
 
 class LtExpression(Expression):
@@ -319,10 +319,10 @@ class LtExpression(Expression):
     def evaluate(self, state: State) -> bool:
         return self.left.evaluate(state) < self.right.evaluate(state)
 
-    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef]]:
-        left, left_addt = self.left.to_clause(ctx)
-        right, right_addt = self.right.to_clause(ctx)
-        return left < right, left_addt + right_addt
+    def to_clause(self, ctx: JANI) -> tuple[ExprRef, list[ExprRef], list[ExprRef]]:
+        left, left_addt, left_vars = self.left.to_clause(ctx)
+        right, right_addt, right_vars = self.right.to_clause(ctx)
+        return left < right, left_addt + right_addt, left_vars + right_vars
 
 
 @dataclass
@@ -585,53 +585,69 @@ class JANI:
             self._model = model
             constraint_expr = json_obj['exp']
             expr = Expression.construct(constraint_expr)
-            self._main_clause, self._additional_clauses = expr.to_clause(self._model)
-            self._pool = []
+            self._main_clause, self._additional_clauses, _all_vars = expr.to_clause(self._model)
+            self._var_dict = {str(v): v for v in _all_vars}
+            self._pool = defaultdict(set)  # used to cache previous solutions
 
         def generate(self) -> State:
             # Implement constraint-based state generation
-            s = Tactic('qflra').solver()
-            set_option('smt.arith.random_initial_value', True)
-            set_option('smt.random_seed', random.randint(0, 2**32 - 1))
             # s.set(random_seed=random.randint(0, 2**32 - 1))
             # s.set("smt.arith.random_initial_value", True)
-            s.add(self._main_clause)
-            for clause in self._additional_clauses:
-                s.add(clause)
-            if s.check() == sat:
-                model = s.model()
-                target_vars = {}
-                for v in model.decls():
-                    z3_value = model[v]
-                    # Convert Z3 values to Python values
-                    if z3_value.sort().kind() == z3.Z3_INT_SORT:
-                        python_value = z3_value.as_long()
-                    elif z3_value.sort().kind() == z3.Z3_REAL_SORT:
-                        python_value = float(z3_value.as_decimal(10).replace('?', ''))
-                    elif z3_value.sort().kind() == z3.Z3_BOOL_SORT:
-                        python_value = is_true(z3_value)
-                    else:
-                        python_value = z3_value
-                    target_vars[v.name()] = python_value
-                state_dict = {}
-                for constant in self._model._constants:
-                    c = copy.deepcopy(constant)
-                    if c.name in target_vars:
-                        # For constants, just verify they match (don't update)
-                        expected_value = c.value
-                        actual_value = target_vars[c.name]
-                        if abs(expected_value - actual_value) > 1e-6 if isinstance(expected_value, float) else expected_value != actual_value:
-                            raise ValueError(f"Constant {c.name} value mismatch: expected {expected_value}, got {actual_value}")
-                    state_dict[constant.name] = c
-                for variable in self._model._variables:
-                    v = copy.deepcopy(variable)
-                    if v.name in target_vars:
-                        v.value = target_vars[v.name]
-                    else:
-                        raise ValueError(f"Variable {v.name} not found in model.")
-                    state_dict[v.name] = v
-                return State(state_dict)
-            raise ValueError("Failed to generate state from model.")
+            target_vars = {}
+            backup_vars = {}
+            # Try 100 times to see whether we can find a valid unseen initial state
+            for i in range(100):
+                s = Tactic('qflra').solver()
+                set_option('smt.arith.random_initial_value', True)
+                set_option('smt.random_seed', random.randint(0, 2**32 - 1))
+                s.add(self._main_clause)
+                for clause in self._additional_clauses:
+                    s.add(clause)
+                select_var = random.choice(list(self._pool.keys())) if len(self._pool) > 0 else None
+                if (select_var is not None) and (i != 0) and (len(self._pool[select_var]) > 0):
+                    for value in self._pool[select_var]:
+                        s.add(Abs(self._var_dict[select_var] - value) >= Q(1, 100))
+                if s.check() == sat:
+                    model = s.model()
+                    for v in model.decls():
+                        z3_value = model[v]
+                        # Convert Z3 values to Python values
+                        if z3_value.sort().kind() == z3.Z3_INT_SORT:
+                            python_value = z3_value.as_long()
+                        elif z3_value.sort().kind() == z3.Z3_REAL_SORT:
+                            python_value = float(z3_value.as_decimal(10).replace('?', ''))
+                        elif z3_value.sort().kind() == z3.Z3_BOOL_SORT:
+                            python_value = is_true(z3_value)
+                        else:
+                            python_value = z3_value
+                        if i == 0:
+                            backup_vars[v.name()] = python_value
+                        else:
+                            target_vars[v.name()] = python_value
+                        self._pool[v.name()].add(z3_value)
+                    if i != 0:
+                        break
+            if len(backup_vars) == 0:
+                raise ValueError("Failed to generate valid initial state.")
+            state_dict = {}
+            final_vars = target_vars if len(target_vars) > 0 else backup_vars
+            for constant in self._model._constants:
+                c = copy.deepcopy(constant)
+                if c.name in final_vars:
+                    # For constants, just verify they match (don't update)
+                    expected_value = c.value
+                    actual_value = final_vars[c.name]
+                    if abs(expected_value - actual_value) > 1e-6 if isinstance(expected_value, float) else expected_value != actual_value:
+                        raise ValueError(f"Constant {c.name} value mismatch: expected {expected_value}, got {actual_value}")
+                state_dict[constant.name] = c
+            for variable in self._model._variables:
+                v = copy.deepcopy(variable)
+                if v.name in final_vars:
+                    v.value = final_vars[v.name]
+                else:
+                    raise ValueError(f"Variable {v.name} not found in model.")
+                state_dict[v.name] = v
+            return State(state_dict)
 
     def reset(self) -> State:
         """Reset the JANI model to a random initial state."""

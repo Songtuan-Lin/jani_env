@@ -2029,8 +2029,8 @@ class TestBouncingBallIntegration:
 
     def test_bouncing_ball_file_loading(self):
         """Test loading the actual bouncing ball JANI file."""
-        jani_file = "examples/bouncing_ball.jani"
-        start_file = "examples/start.jani"
+        jani_file = "examples/bouncing_ball/bouncing_ball.jani"
+        start_file = "examples/bouncing_ball/start.jani"
         
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
@@ -2058,8 +2058,8 @@ class TestBouncingBallIntegration:
 
     def test_bouncing_ball_reset_functionality(self):
         """Test reset functionality with actual bouncing ball files."""
-        jani_file = "examples/bouncing_ball.jani"
-        start_file = "examples/start.jani"
+        jani_file = "examples/bouncing_ball/bouncing_ball.jani"
+        start_file = "examples/bouncing_ball/start.jani"
         
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
@@ -2094,8 +2094,8 @@ class TestBouncingBallIntegration:
 
     def test_bouncing_ball_state_diversity(self):
         """Test that reset returns diverse states from the bouncing ball model."""
-        jani_file = "examples/bouncing_ball.jani"
-        start_file = "examples/start.jani"
+        jani_file = "examples/bouncing_ball/bouncing_ball.jani"
+        start_file = "examples/bouncing_ball/start.jani"
         
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
@@ -2124,8 +2124,8 @@ class TestBouncingBallIntegration:
 
     def test_bouncing_ball_automaton_integration(self):
         """Test that automaton can be used with reset states."""
-        jani_file = "examples/bouncing_ball.jani"
-        start_file = "examples/start.jani"
+        jani_file = "examples/bouncing_ball/bouncing_ball.jani"
+        start_file = "examples/bouncing_ball/start.jani"
         
         if not Path(jani_file).exists() or not Path(start_file).exists():
             pytest.skip(f"Required files {jani_file} or {start_file} not found")
@@ -2691,10 +2691,10 @@ class TestGoalAndFailureConditions:
 
     def test_with_actual_example_files(self):
         """Test with actual example files objective.jani and safe.jani."""
-        jani_file = "examples/bouncing_ball.jani"
-        start_file = "examples/start.jani"
-        goal_file = "examples/objective.jani"
-        failure_file = "examples/safe.jani"
+        jani_file = "examples/bouncing_ball/bouncing_ball.jani"
+        start_file = "examples/bouncing_ball/start.jani"
+        goal_file = "examples/bouncing_ball/objective.jani"
+        failure_file = "examples/bouncing_ball/safe.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")

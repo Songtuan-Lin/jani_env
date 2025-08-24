@@ -154,10 +154,10 @@ def create_test_jani_files():
 
 def create_bouncing_ball_files():
     """Return paths to existing bouncing ball files if they exist."""
-    jani_file = "examples/bouncing_ball.jani"
-    start_file = "examples/start.jani"
-    goal_file = "examples/objective.jani"
-    failure_file = "examples/safe.jani"
+    jani_file = "examples/bouncing_ball/bouncing_ball.jani"
+    start_file = "examples/bouncing_ball/start.jani"
+    goal_file = "examples/bouncing_ball/objective.jani"
+    failure_file = "examples/bouncing_ball/safe.jani"
     
     if all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
         return jani_file, start_file, goal_file, failure_file
@@ -952,7 +952,7 @@ class TestJaniEnvWithActualFiles:
     def test_multiple_model_types(self):
         """Test that different JANI models can be loaded and work correctly."""
         test_configs = [
-            ("examples/bouncing_ball.jani", "examples/start.jani", "examples/objective.jani", "examples/safe.jani", "Physics simulation model"),
+            ("examples/bouncing_ball/bouncing_ball.jani", "examples/bouncing_ball/start.jani", "examples/bouncing_ball/objective.jani", "examples/bouncing_ball/safe.jani", "Physics simulation model"),
             ("examples/simple_test.jani", "examples/simple_start.jani", "examples/simple_goal.jani", "examples/simple_failure.jani", "Simple test model")
         ]
         
