@@ -25,10 +25,15 @@ import torch
 # Optional imports for advanced features
 try:
     import optuna
-    from optuna.integration import WeightsAndBiasesCallback
     OPTUNA_AVAILABLE = True
+    try:
+        from optuna.integration import WeightsAndBiasesCallback
+        OPTUNA_WANDB_CALLBACK_AVAILABLE = True
+    except ImportError:
+        OPTUNA_WANDB_CALLBACK_AVAILABLE = False
 except ImportError:
     OPTUNA_AVAILABLE = False
+    OPTUNA_WANDB_CALLBACK_AVAILABLE = False
     print("Warning: Optuna not available. Hyperparameter tuning will be disabled.")
 
 try:
@@ -55,18 +60,48 @@ class WandbCallback(BaseCallback):
     
     def __init__(self, verbose=0):
         super().__init__(verbose)
+        self.episode_rewards = []
+        self.episode_lengths = []
         
     def _on_step(self) -> bool:
         # Log metrics to wandb
-        if WANDB_AVAILABLE and hasattr(self.model, 'ep_info_buffer') and self.model.ep_info_buffer:
-            if len(self.model.ep_info_buffer) > 0:
-                ep_info = self.model.ep_info_buffer[-1]
+        if WANDB_AVAILABLE:
+            # Log training environment rewards
+            if hasattr(self.model, 'ep_info_buffer') and self.model.ep_info_buffer:
+                if len(self.model.ep_info_buffer) > 0:
+                    ep_info = self.model.ep_info_buffer[-1]
+                    self.episode_rewards.append(ep_info['r'])
+                    self.episode_lengths.append(ep_info['l'])
+                    
+                    # Log individual episode metrics
+                    wandb.log({
+                        'train/episode_reward': ep_info['r'],
+                        'train/episode_length': ep_info['l'],
+                        'train/episode_time': ep_info['t'],
+                        'train/timesteps': self.num_timesteps
+                    })
+            
+            # Log training statistics every 100 steps
+            if self.num_timesteps % 100 == 0 and len(self.episode_rewards) > 0:
+                recent_rewards = self.episode_rewards[-10:] if len(self.episode_rewards) >= 10 else self.episode_rewards
                 wandb.log({
-                    'episode/reward': ep_info['r'],
-                    'episode/length': ep_info['l'],
-                    'episode/time': ep_info['t'],
-                    'train/step': self.num_timesteps
+                    'train/mean_reward_last_10': np.mean(recent_rewards),
+                    'train/std_reward_last_10': np.std(recent_rewards),
+                    'train/max_reward': np.max(self.episode_rewards),
+                    'train/min_reward': np.min(self.episode_rewards),
+                    'train/total_episodes': len(self.episode_rewards),
+                    'train/timesteps': self.num_timesteps
                 })
+            
+            # Log model training metrics
+            if hasattr(self.model, 'logger') and self.model.logger.name_to_value:
+                log_dict = {}
+                for key, value in self.model.logger.name_to_value.items():
+                    if isinstance(value, (int, float)):
+                        log_dict[f'train/{key}'] = value
+                if log_dict:
+                    wandb.log(log_dict)
+        
         return True
 
 

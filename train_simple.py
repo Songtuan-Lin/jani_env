@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import VecMonitor
 
@@ -27,6 +27,32 @@ from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 
 from jani_env import JaniEnv
+
+
+class TrainingCallback(BaseCallback):
+    """Simple callback for training metrics logging."""
+    
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self.episode_rewards = []
+        self.episode_lengths = []
+        
+    def _on_step(self) -> bool:
+        # Track training environment rewards
+        if hasattr(self.model, 'ep_info_buffer') and self.model.ep_info_buffer:
+            if len(self.model.ep_info_buffer) > 0:
+                ep_info = self.model.ep_info_buffer[-1]
+                self.episode_rewards.append(ep_info['r'])
+                self.episode_lengths.append(ep_info['l'])
+                
+                # Print training progress every 100 episodes
+                if len(self.episode_rewards) % 100 == 0:
+                    recent_rewards = self.episode_rewards[-100:]
+                    print(f"Episodes: {len(self.episode_rewards)}, "
+                          f"Mean reward (last 100): {np.mean(recent_rewards):.2f}, "
+                          f"Timesteps: {self.num_timesteps}")
+        
+        return True
 
 
 def mask_fn(env) -> np.ndarray:
@@ -196,6 +222,9 @@ def train_model(args, file_args: Dict[str, str]):
         **hyperparams
     )
     
+    # Training callback for progress logging
+    training_callback = TrainingCallback(verbose=args.verbose)
+    
     # Evaluation callback
     eval_callback = EvalCallback(
         eval_env,
@@ -213,7 +242,7 @@ def train_model(args, file_args: Dict[str, str]):
     # Train the model
     model.learn(
         total_timesteps=args.total_timesteps,
-        callback=eval_callback,
+        callback=[training_callback, eval_callback],
         tb_log_name="MaskablePPO"
     )
     
