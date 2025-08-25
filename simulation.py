@@ -1,6 +1,7 @@
 import sys
 sys.setrecursionlimit(10**6)
 
+import argparse
 import numpy as np
 
 from jani_env import *
@@ -10,7 +11,7 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 
 
 class Simulator:
-    def __init__(self, env_args: dict, max_episodes: int, policy = None):
+    def __init__(self, env_args: dict, max_episodes: int, output_path: str = "simulation_results.csv", policy = None):
         def mask_fn(env) -> np.ndarray:
             return env.unwrapped.action_mask()
 
@@ -18,6 +19,7 @@ class Simulator:
         self._oracle = TarjanOracle(self._env.unwrapped.get_model())
         self._policy = policy
         self._max_episodes = max_episodes
+        self._output_path = output_path
 
     def run(self):
         cached = []
@@ -49,14 +51,37 @@ class Simulator:
         num_columns = results.shape[-1]
         fmt = ["%.3f"] * (num_columns - 1)
         fmt.append("%d")
-        np.savetxt("simulation_results.csv", results, delimiter=",", fmt=fmt)
+        np.savetxt(self._output_path, results, delimiter=",", fmt=fmt)
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Simulate policy in JANI environment and record safety results")
+    parser.add_argument("--model_file", required=True, help="Path to the JANI model file")
+    parser.add_argument("--start_file", help="Path to the start condition file")
+    parser.add_argument("--goal_file", help="Path to the goal file")
+    parser.add_argument("--safe_file", help="Path to the safe file")
+    parser.add_argument("--property_file", help="Path to the property file")
+    parser.add_argument("--random_init", action="store_true", help="Use random initial state generator")
+    parser.add_argument("--output_path", default="simulation_results.csv", help="Path to save the CSV results file")
+    parser.add_argument("--max_episodes", type=int, default=50, help="Maximum number of episodes to simulate")
+    return parser.parse_args()
 
 if __name__ == "__main__":
+    args = parse_args()
+    
+    # Validation logic: if property_file is not provided, then start_file, goal_file, and safe_file must all be provided
+    if args.property_file is None:
+        if args.start_file is None or args.goal_file is None or args.safe_file is None:
+            parser = argparse.ArgumentParser()
+            parser.error("When --property_file is not provided, --start_file, --goal_file, and --safe_file must all be specified")
+    
     env_args = {
-        "model_file": "examples/inverted_pendulum/inverted_pendulum.jani",
-        "start_file": "examples/inverted_pendulum/start.jani",
-        "goal_file": "examples/inverted_pendulum/objective.jani",
-        "safe_file": "examples/inverted_pendulum/safe.jani"
+        "model_file": args.model_file,
+        "start_file": args.start_file,
+        "goal_file": args.goal_file,
+        "safe_file": args.safe_file,
+        "property_file": args.property_file,
+        "random_init": args.random_init
     }
-    simulator = Simulator(env_args, max_episodes=50)
+    
+    simulator = Simulator(env_args, max_episodes=args.max_episodes, output_path=args.output_path)
     simulator.run()
