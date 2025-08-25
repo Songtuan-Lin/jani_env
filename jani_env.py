@@ -6,9 +6,9 @@ from typing import Optional
 
 
 class JaniEnv(gym.Env):
-    def __init__(self, model_file, start_file: str = None , goal_file: str = None, safe_file: str = None, property_file: str = None):
+    def __init__(self, model_file, start_file: str = None , goal_file: str = None, safe_file: str = None, property_file: str = None, random_init: bool = False):
         super().__init__()
-        self._jani = JANI(model_file, start_file, goal_file, safe_file, property_file)
+        self._jani = JANI(model_file, start_file, goal_file, safe_file, property_file, random_init=random_init)
         # Define action and observation space
         self.action_space = gym.spaces.Discrete(self._jani.get_action_count())
         lower_bounds = []
@@ -68,6 +68,15 @@ class JaniEnv(gym.Env):
             if self._jani.get_transition(self._current_state, action_obj) is not None:
                 mask[action] = 1.0
         return mask
+
+    def get_model(self) -> JANI:
+        return self._jani
+    
+    def get_state_repr(self) -> State:
+        '''Get the current state representation'''
+        if self._current_state is None:
+            raise RuntimeError("Environment has not been reset. Call reset() before get_state_repr().")
+        return copy.deepcopy(self._current_state)
 
     def _print_obs(self):
         '''Print the current state, for debug only'''

@@ -410,7 +410,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None):
+    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -548,12 +548,31 @@ class JANI:
             # failure condition
             failure_spec = json.loads(Path(failure_file).read_text('utf-8'))
             self._failure_expr = failure_expression(failure_spec)
+        # overwrite initial state generator to a pure random one if random_init is True
+        if random_init:
+            self._init_generator = JANI.RandomGenerator(self)
 
     class InitGenerator(ABC):
         '''Generate initial states.'''
         @abstractmethod
         def generate(self) -> State:
             pass
+
+    class RandomGenerator(InitGenerator):
+        '''Generate initial states randomly.'''
+        def __init__(self, model: JANI):
+            self._model = model
+
+        def generate(self) -> State:
+            # Implement random state generation
+            state_dict = {}
+            for constant in self._model._constants:
+                state_dict[constant.name] = copy.deepcopy(constant)
+            for _variable in self._model._variables:
+                variable = copy.deepcopy(_variable)
+                variable.random()
+                state_dict[variable.name] = variable
+            return State(state_dict)
 
     class FixedGenerator(InitGenerator):
         '''Generate a fixed set of initial states.'''
@@ -655,7 +674,7 @@ class JANI:
                 if s.check() == sat:
                     model = s.model()
                     self._cache = defaultdict(list)  # reset the cache because no new states can be found
-                    return create_state(get_state_values(model, cache=False))
+                    return create_state(get_state_values(model))
             raise ValueError("Failed to generate valid initial state.")
 
     def reset(self) -> State:

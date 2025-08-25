@@ -128,6 +128,10 @@ def parse_arguments():
                        help='Path to the safe condition file')
     parser.add_argument('--property_file', type=str,
                        help='Path to the property file (if provided, overrides start/goal/safe files)')
+
+    # overwrite initial state generator to a pure random one
+    parser.add_argument('--random_init', action='store_true',
+                       help='Use random initial state generator instead of the one defined in the model')
     
     # Training arguments
     parser.add_argument('--total_timesteps', type=int, default=1000000,
@@ -194,6 +198,8 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
             )
         
         file_args['property_file'] = args.property_file
+        if args.random_init:
+            file_args['random_init'] = args.random_init
         return file_args, True
     
     else:
@@ -215,7 +221,8 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
                 f"When property_file is not provided, all of start_file, goal_file, and safe_file must be provided. "
                 f"Missing: {', '.join(missing_files)}"
             )
-        
+        if args.random_init:
+            file_args['random_init'] = args.random_init
         return file_args, False
 
 
