@@ -4,6 +4,9 @@ import tempfile
 import os
 from pathlib import Path
 from collections import Counter
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+
 from jani import JANI, State, Variable
 
 
@@ -12,7 +15,7 @@ class TestConstraintsGenerator:
     
     def setup_method(self):
         """Setup test fixtures before each test method."""
-        self.examples_dir = Path("examples")
+        self.examples_dir = Path("../examples")
         self.bouncing_ball_file = self.examples_dir / "bouncing_ball" / "bouncing_ball.jani"
         self.start_compact_file = self.examples_dir / "bouncing_ball" / "start_compact.jani"
         self.objective_file = self.examples_dir / "bouncing_ball" / "objective.jani"
@@ -296,7 +299,7 @@ class TestConstraintsGeneratorEdgeCases:
     
     def setup_method(self):
         """Setup test fixtures."""
-        self.examples_dir = Path("examples")
+        self.examples_dir = Path("../examples")
         self.bouncing_ball_file = self.examples_dir / "bouncing_ball" / "bouncing_ball.jani"
         self.start_compact_file = self.examples_dir / "bouncing_ball" / "start_compact.jani"
         self.objective_file = self.examples_dir / "bouncing_ball" / "objective.jani"
@@ -346,7 +349,7 @@ class TestConstraintsGeneratorEdgeCases:
 
 def test_constraints_generator_integration():
     """Integration test for ConstraintsGenerator with actual JANI files."""
-    examples_dir = Path("examples")
+    examples_dir = Path("../examples")
     bouncing_ball_file = examples_dir / "bouncing_ball" / "bouncing_ball.jani"
     start_compact_file = examples_dir / "bouncing_ball" / "start_compact.jani" 
     objective_file = examples_dir / "bouncing_ball" / "objective.jani"

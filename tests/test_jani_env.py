@@ -21,6 +21,10 @@ import json
 import tempfile
 from pathlib import Path
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from jani_env import JaniEnv
 from jani import State
 
@@ -154,10 +158,10 @@ def create_test_jani_files():
 
 def create_bouncing_ball_files():
     """Return paths to existing bouncing ball files if they exist."""
-    jani_file = "examples/bouncing_ball/bouncing_ball.jani"
-    start_file = "examples/bouncing_ball/start.jani"
-    goal_file = "examples/bouncing_ball/objective.jani"
-    failure_file = "examples/bouncing_ball/safe.jani"
+    jani_file = "../examples/bouncing_ball/bouncing_ball.jani"
+    start_file = "../examples/bouncing_ball/start.jani"
+    goal_file = "../examples/bouncing_ball/objective.jani"
+    failure_file = "../examples/bouncing_ball/safe.jani"
     
     if all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
         return jani_file, start_file, goal_file, failure_file
@@ -730,10 +734,10 @@ class TestJaniEnvWithActualFiles:
     
     def test_simple_test_environment(self):
         """Test JaniEnv with simple_test.jani model."""
-        jani_file = "examples/simple_test.jani"
-        start_file = "examples/simple_start.jani"  # Use compatible start file
-        goal_file = "examples/simple_goal.jani"
-        failure_file = "examples/simple_failure.jani"
+        jani_file = "../examples/simple_test.jani"
+        start_file = "../examples/simple_start.jani"  # Use compatible start file
+        goal_file = "../examples/simple_goal.jani"
+        failure_file = "../examples/simple_failure.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")
@@ -798,10 +802,10 @@ class TestJaniEnvWithActualFiles:
     
     def test_simple_test_action_guards(self):
         """Test that action guards work correctly in simple_test model."""
-        jani_file = "examples/simple_test.jani"
-        start_file = "examples/simple_start.jani"
-        goal_file = "examples/simple_goal.jani"
-        failure_file = "examples/simple_failure.jani"
+        jani_file = "../examples/simple_test.jani"
+        start_file = "../examples/simple_start.jani"
+        goal_file = "../examples/simple_goal.jani"
+        failure_file = "../examples/simple_failure.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")
@@ -832,10 +836,10 @@ class TestJaniEnvWithActualFiles:
     
     def test_simple_test_disabled_state(self):
         """Test behavior when enabled=false in simple_test model."""
-        jani_file = "examples/simple_test.jani"
-        start_file = "examples/simple_start.jani"
-        goal_file = "examples/simple_goal.jani"
-        failure_file = "examples/simple_failure.jani"
+        jani_file = "../examples/simple_test.jani"
+        start_file = "../examples/simple_start.jani"
+        goal_file = "../examples/simple_goal.jani"
+        failure_file = "../examples/simple_failure.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")
@@ -952,8 +956,8 @@ class TestJaniEnvWithActualFiles:
     def test_multiple_model_types(self):
         """Test that different JANI models can be loaded and work correctly."""
         test_configs = [
-            ("examples/bouncing_ball/bouncing_ball.jani", "examples/bouncing_ball/start.jani", "examples/bouncing_ball/objective.jani", "examples/bouncing_ball/safe.jani", "Physics simulation model"),
-            ("examples/simple_test.jani", "examples/simple_start.jani", "examples/simple_goal.jani", "examples/simple_failure.jani", "Simple test model")
+            ("../examples/bouncing_ball/bouncing_ball.jani", "../examples/bouncing_ball/start.jani", "../examples/bouncing_ball/objective.jani", "../examples/bouncing_ball/safe.jani", "Physics simulation model"),
+            ("../examples/simple_test.jani", "../examples/simple_start.jani", "../examples/simple_goal.jani", "../examples/simple_failure.jani", "Simple test model")
         ]
         
         for jani_file, start_file, goal_file, failure_file, description in test_configs:
@@ -1144,10 +1148,10 @@ class TestJaniEnvPerformanceAndStress:
     
     def test_boundary_value_stress(self):
         """Test environment with boundary values."""
-        jani_file = "examples/simple_test.jani"
-        start_file = "examples/simple_start.jani"
-        goal_file = "examples/simple_goal.jani"
-        failure_file = "examples/simple_failure.jani"
+        jani_file = "../examples/simple_test.jani"
+        start_file = "../examples/simple_start.jani"
+        goal_file = "../examples/simple_goal.jani"
+        failure_file = "../examples/simple_failure.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")
@@ -1220,10 +1224,10 @@ class TestJaniEnvPerformanceAndStress:
     
     def test_state_space_exploration(self):
         """Test exploration of different parts of state space."""
-        jani_file = "examples/simple_test.jani"
-        start_file = "examples/simple_start.jani"
-        goal_file = "examples/simple_goal.jani"
-        failure_file = "examples/simple_failure.jani"
+        jani_file = "../examples/simple_test.jani"
+        start_file = "../examples/simple_start.jani"
+        goal_file = "../examples/simple_goal.jani"
+        failure_file = "../examples/simple_failure.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")
@@ -1335,10 +1339,10 @@ class TestJaniEnvDocumentationExamples:
     
     def test_action_space_usage(self):
         """Example of how to use action space properly."""
-        jani_file = "examples/simple_test.jani"
-        start_file = "examples/simple_start.jani"
-        goal_file = "examples/simple_goal.jani"
-        failure_file = "examples/simple_failure.jani"
+        jani_file = "../examples/simple_test.jani"
+        start_file = "../examples/simple_start.jani"
+        goal_file = "../examples/simple_goal.jani"
+        failure_file = "../examples/simple_failure.jani"
         
         if not all(Path(f).exists() for f in [jani_file, start_file, goal_file, failure_file]):
             pytest.skip("Required example files not found")

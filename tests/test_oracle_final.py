@@ -1,4 +1,8 @@
 import pytest
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from jani import JANI
 from oracle import TarjanOracle
 
@@ -9,10 +13,10 @@ class TestTarjanOracleFinal:
     def test_oracle_with_model_start_state(self):
         """Test oracle using the model's initial state generator."""
         # Load the simple model with proper goal/failure conditions
-        model = JANI('examples/simple_test.jani', 
-                    start_file='examples/simple_start.jani',
-                    goal_file='examples/simple_goal.jani', 
-                    failure_file='examples/simple_failure.jani')
+        model = JANI('../examples/simple_test.jani', 
+                    start_file='../examples/simple_start.jani',
+                    goal_file='../examples/simple_goal.jani', 
+                    failure_file='../examples/simple_failure.jani')
         oracle = TarjanOracle(model)
         
         # Generate an initial state from the model's generator
@@ -41,10 +45,10 @@ class TestTarjanOracleFinal:
 
     def test_oracle_basic_functionality(self):
         """Test basic oracle functionality without getting into complex state creation."""
-        model = JANI('examples/simple_test.jani', 
-                    start_file='examples/simple_start.jani',
-                    goal_file='examples/simple_goal.jani', 
-                    failure_file='examples/simple_failure.jani')
+        model = JANI('../examples/simple_test.jani', 
+                    start_file='../examples/simple_start.jani',
+                    goal_file='../examples/simple_goal.jani', 
+                    failure_file='../examples/simple_failure.jani')
         oracle = TarjanOracle(model)
         
         # Verify oracle was initialized correctly
@@ -58,10 +62,10 @@ class TestTarjanOracleFinal:
 
     def test_goal_failure_conditions(self):
         """Test that the model's goal and failure conditions work."""
-        model = JANI('examples/simple_test.jani', 
-                    start_file='examples/simple_start.jani',
-                    goal_file='examples/simple_goal.jani', 
-                    failure_file='examples/simple_failure.jani')
+        model = JANI('../examples/simple_test.jani', 
+                    start_file='../examples/simple_start.jani',
+                    goal_file='../examples/simple_goal.jani', 
+                    failure_file='../examples/simple_failure.jani')
         
         # Test with an initial state
         initial_state = model._init_generator.generate()
@@ -83,8 +87,8 @@ class TestTarjanOracleFinal:
     def test_bouncing_ball_oracle(self):
         """Test oracle with the bouncing ball model that has proper goal/failure files."""
         try:
-            model = JANI('examples/bouncing_ball/bouncing_ball.jani', 
-                        goal_file='examples/bouncing_ball/safe.jani')
+            model = JANI('../examples/bouncing_ball/bouncing_ball.jani', 
+                        goal_file='../examples/bouncing_ball/safe.jani')
             oracle = TarjanOracle(model)
             
             print("Bouncing ball model loaded successfully")
@@ -108,10 +112,10 @@ class TestTarjanOracleFinal:
 
     def test_model_properties(self):
         """Test that we understand the model properties correctly."""
-        model = JANI('examples/simple_test.jani', 
-                    start_file='examples/simple_start.jani',
-                    goal_file='examples/simple_goal.jani', 
-                    failure_file='examples/simple_failure.jani')
+        model = JANI('../examples/simple_test.jani', 
+                    start_file='../examples/simple_start.jani',
+                    goal_file='../examples/simple_goal.jani', 
+                    failure_file='../examples/simple_failure.jani')
         
         print(f"Model has {len(model._actions)} actions:")
         for action in model._actions:

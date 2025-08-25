@@ -1,4 +1,8 @@
 import pytest
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from jani import JANI, State, Variable
 from oracle import TarjanOracle
 
@@ -9,10 +13,10 @@ class TestTarjanOracle:
     def test_existing_model_basic(self):
         """Test using existing simple_test.jani model."""
         # Load existing model with goal/failure conditions
-        model = JANI('examples/simple_test.jani', 
-                    start_file='examples/simple_start.jani',
-                    goal_file='examples/simple_goal.jani', 
-                    failure_file='examples/simple_failure.jani')
+        model = JANI('../examples/simple_test.jani', 
+                    start_file='../examples/simple_start.jani',
+                    goal_file='../examples/simple_goal.jani', 
+                    failure_file='../examples/simple_failure.jani')
         oracle = TarjanOracle(model)
         
         # Create a state manually using the model's variables
@@ -49,8 +53,8 @@ class TestTarjanOracle:
         """Test oracle with bouncing ball example that has goal/failure files."""
         try:
             # Try to load bouncing ball model with its safety files
-            model = JANI('examples/bouncing_ball/bouncing_ball.jani', 
-                        goal_file='examples/bouncing_ball/safe.jani')
+            model = JANI('../examples/bouncing_ball/bouncing_ball.jani', 
+                        goal_file='../examples/bouncing_ball/safe.jani')
             oracle = TarjanOracle(model)
             
             # Create a basic state for testing
@@ -91,10 +95,10 @@ class TestTarjanOracle:
         
     def test_oracle_initialization(self):
         """Test that TarjanOracle can be initialized with a model."""
-        model = JANI('examples/simple_test.jani',
-                    start_file='examples/simple_start.jani',
-                    goal_file='examples/simple_goal.jani', 
-                    failure_file='examples/simple_failure.jani')
+        model = JANI('../examples/simple_test.jani',
+                    start_file='../examples/simple_start.jani',
+                    goal_file='../examples/simple_goal.jani', 
+                    failure_file='../examples/simple_failure.jani')
         oracle = TarjanOracle(model)
         
         assert oracle._model == model

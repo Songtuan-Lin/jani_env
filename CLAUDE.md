@@ -7,15 +7,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Testing
 ```bash
 # Run all tests with verbose output
-python -m pytest test_jani.py -v
+python -m pytest tests/ -v
+
+# Run specific test files
+python -m pytest tests/test_jani.py -v
+python -m pytest tests/test_jani_env.py -v
+python -m pytest tests/test_constraints_generator.py -v
+python -m pytest tests/test_oracle_simple.py -v
+python -m pytest tests/test_oracle_final.py -v
 
 # Run specific test classes
-python -m pytest test_jani.py::TestGuardEvaluation -v
-python -m pytest test_jani.py::TestStateTransitions -v
-python -m pytest test_jani.py::TestExpressionEvaluation -v
+python -m pytest tests/test_jani.py::TestGuardEvaluation -v
+python -m pytest tests/test_jani.py::TestStateTransitions -v
+python -m pytest tests/test_jani.py::TestExpressionEvaluation -v
 
 # Run specific test methods
-python -m pytest test_jani.py::TestGuardEvaluation::test_simple_boolean_guard_true -v
+python -m pytest tests/test_jani.py::TestGuardEvaluation::test_simple_boolean_guard_true -v
 ```
 
 ### Running the JANI parser
@@ -51,7 +58,12 @@ This is a JANI (JSON interchange format for probabilistic models) parser and sim
 ### File Structure
 
 - `jani.py` - Core JANI parser and state machine implementation (~350 lines)
-- `test_jani.py` - Comprehensive test suite with 28+ test cases (~1400 lines)
+- `tests/` - Test suite directory containing:
+  - `test_jani.py` - Comprehensive JANI parser test suite with 28+ test cases (~1400 lines)
+  - `test_jani_env.py` - JaniEnv OpenAI Gym environment tests
+  - `test_constraints_generator.py` - ConstraintsGenerator test suite
+  - `test_oracle_simple.py` - TarjanOracle basic tests
+  - `test_oracle_final.py` - TarjanOracle advanced tests
 - `examples/` - Sample JANI model files:
   - `simple_test.jani` - Test model with increment/toggle/multiply actions
   - `bouncing_ball.jani` - Physics simulation example
