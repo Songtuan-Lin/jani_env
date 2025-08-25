@@ -22,8 +22,14 @@ class JaniEnv(gym.Env):
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
-        self._current_state = self._jani.reset()
-        action_mask = self.action_mask()
+        action_mask = np.zeros(self.action_space.n, dtype=np.float32)
+        reach_failure = True
+        reach_goal = True
+        while sum(action_mask) == 0 or reach_failure or reach_goal:
+            self._current_state = self._jani.reset()
+            action_mask = self.action_mask()
+            reach_failure = self._jani.failure_reached(self._current_state)
+            reach_goal = self._jani.goal_reached(self._current_state)
         return np.array(self._current_state.to_vector(), dtype=np.float32), {"action_mask": action_mask}
 
     def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
@@ -39,6 +45,7 @@ class JaniEnv(gym.Env):
 
         action_obj = self._jani.get_action(action)
         next_state = self._jani.get_transition(self._current_state, action_obj)
+        self._current_state = next_state
         # Non-sparse reward works clearly better
         # we can use this as an argument for why we
         # would like to predicate whether a state
@@ -55,11 +62,15 @@ class JaniEnv(gym.Env):
         elif self._jani.failure_reached(next_state):
             reward = -1.0
             done = True
-        self._current_state = next_state
+        elif self.action_mask().sum() == 0:
+            reward = 0.0
+            done = True
+        # self._current_state = next_state
         return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": action_mask}
 
     def action_mask(self) -> np.ndarray:
         if self._current_state is None:
+            raise RuntimeError("Environment has not been reset. Call reset() before action_mask().")
             return np.zeros(self.action_space.n, dtype=np.float32)
 
         mask = np.zeros(self.action_space.n, dtype=np.float32)

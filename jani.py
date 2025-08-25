@@ -652,7 +652,7 @@ class JANI:
                     if v.name in target_vars:
                         v.value = target_vars[v.name]
                     else:
-                        raise ValueError(f"Variable {v.name} not found in model.")
+                        v.random() # if v is unconstrainted, sample a random value
                     state_dict[v.name] = v
                 return State(state_dict)
 
