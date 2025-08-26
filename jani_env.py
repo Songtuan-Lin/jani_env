@@ -40,9 +40,6 @@ class JaniEnv(gym.Env):
         if action < 0 or action >= len(self._jani._actions):
             raise ValueError(f"Invalid action index {action}. Must be between 0 and {len(self._jani._actions)-1}")
 
-        # Get action masks
-        action_mask = self.action_mask()
-
         action_obj = self._jani.get_action(action)
         next_state = self._jani.get_transition(self._current_state, action_obj)
         self._current_state = next_state
@@ -66,7 +63,7 @@ class JaniEnv(gym.Env):
             reward = 0.0
             done = True
         # self._current_state = next_state
-        return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": action_mask}
+        return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": self.action_mask()}
 
     def action_mask(self) -> np.ndarray:
         if self._current_state is None:
