@@ -33,7 +33,7 @@ def set_random_seeds(seed=config.RANDOM_SEED):
 
 def setup_directories():
     """Create necessary directories."""
-    for directory in [config.RESULTS_DIR, config.MODELS_DIR, config.PLOTS_DIR]:
+    for directory in [config.RESULTS_DIR, config.PLOTS_DIR]:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
 

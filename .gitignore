@@ -4,4 +4,5 @@ logs/
 wandb/
 data/
 models
+training_results/
 *.csv
