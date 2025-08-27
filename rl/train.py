@@ -173,6 +173,16 @@ def parse_arguments():
     parser.add_argument('--verbose', type=int, default=1,
                        help='Verbosity level')
     
+    # Safety classifier arguments
+    parser.add_argument('--use_classifier', action='store_true',
+                       help='Enable safety classifier for intermediate rewards')
+    parser.add_argument('--classifier_model', type=str, default=None,
+                       help='Path to trained safety classifier model (.pth file)')
+    parser.add_argument('--safe_reward', type=float, default=0.0,
+                       help='Reward for safe states when using classifier (default: 0.0)')
+    parser.add_argument('--unsafe_reward', type=float, default=-0.01,
+                       help='Reward for unsafe states when using classifier (default: -0.01)')
+    
     return parser.parse_args()
 
 
@@ -184,6 +194,15 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
     if not Path(args.model_file).exists():
         raise FileNotFoundError(f"Model file not found: {args.model_file}")
     file_args['model_file'] = args.model_file
+    
+    # Validate classifier arguments
+    if args.use_classifier:
+        if args.classifier_model is None:
+            raise ValueError("--classifier_model must be provided when --use_classifier is enabled")
+        if not Path(args.classifier_model).exists():
+            raise FileNotFoundError(f"Classifier model file not found: {args.classifier_model}")
+        print(f"🤖 Safety classifier enabled: {args.classifier_model}")
+        print(f"   Safe reward: {args.safe_reward}, Unsafe reward: {args.unsafe_reward}")
     
     # Handle property file vs individual files
     if args.property_file:
@@ -226,6 +245,32 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
         if args.random_init:
             file_args['random_init'] = args.random_init
         return file_args, False
+
+
+def add_classifier_args(file_args: Dict[str, str], args) -> Dict[str, str]:
+    """Add classifier arguments to file_args."""
+    file_args['use_classifier'] = args.use_classifier
+    if args.use_classifier:
+        file_args['classifier_model'] = args.classifier_model
+        file_args['safe_reward'] = args.safe_reward
+        file_args['unsafe_reward'] = args.unsafe_reward
+    return file_args
+
+
+def create_eval_file_args(file_args: Dict[str, str]) -> Dict[str, str]:
+    """Create file_args for evaluation environment with classifier disabled."""
+    eval_args = file_args.copy()
+    eval_args['use_classifier'] = False
+    # Remove classifier-specific keys to avoid passing them to JaniEnv
+    eval_args.pop('classifier_model', None)
+    eval_args.pop('safe_reward', None) 
+    eval_args.pop('unsafe_reward', None)
+    
+    # Print message if classifier was originally enabled
+    if file_args.get('use_classifier', False):
+        print("📊 Evaluation environment: Classifier disabled for true reward assessment")
+    
+    return eval_args
 
 
 def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True):
@@ -300,7 +345,7 @@ def objective(trial, args, file_args: Dict[str, str]) -> float:
     
     # Create environments
     train_env = create_env(file_args, args.n_envs, monitor=False)
-    eval_env = create_env(file_args, 1)
+    eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
     
     try:
         # Create model with suggested hyperparameters
@@ -378,7 +423,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     # Create environments
     print("Creating training environment...")
     train_env = create_env(file_args, args.n_envs, monitor=False)
-    eval_env = create_env(file_args, 1)
+    eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
     
     # Default hyperparameters if not provided
     if hyperparams is None:
@@ -469,6 +514,7 @@ def main():
     # Validate file arguments
     try:
         file_args, using_property_file = validate_file_arguments(args)
+        file_args = add_classifier_args(file_args, args)
         print(f"Using {'property file' if using_property_file else 'individual files'}: {file_args}")
     except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}")

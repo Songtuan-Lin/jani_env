@@ -59,11 +59,12 @@ class JaniEnv(gym.Env):
         reward = 0.0
         if self._use_classifier:
             assert self._classifier is not None, "Classifier model is not loaded"
-            safety_prediction = predict_safety(self._classifier, np.array(next_state.to_vector(), dtype=np.float32).reshape(1, -1))
-            if safety_prediction == 0:
-                reward = self._unsafe_reward  # Penalty for unsafe state
+            safety_prob, is_safe = predict_safety(self._classifier, np.array(next_state.to_vector(), dtype=np.float32).reshape(1, -1))
+            # Currently using binary classification; safety_prob available for future use
+            if is_safe:
+                reward = self._safe_reward  # Reward for safe state
             else:
-                reward = self._safe_reward  # Small reward for safe state
+                reward = self._unsafe_reward  # Penalty for unsafe state
         done = False
         if next_state is None:
             # reward = -1.0
@@ -76,7 +77,7 @@ class JaniEnv(gym.Env):
             reward = -1.0
             done = True
         elif self.action_mask().sum() == 0:
-            reward = 0.0
+            reward = -1.0
             done = True
         # self._current_state = next_state
         return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": self.action_mask()}

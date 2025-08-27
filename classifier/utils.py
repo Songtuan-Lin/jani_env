@@ -166,12 +166,14 @@ def load_trained_model(model_path: Union[str, Path],
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
     # Load model state and metadata
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
-    # Extract model parameters from checkpoint if available
-    if 'model_params' in checkpoint:
-        model_params = checkpoint['model_params']
+    # Extract model parameters from checkpoint
+    if 'model_architecture' in checkpoint:
+        model_params = checkpoint['model_architecture']
         input_size = model_params.get('input_size', input_size)
+    else:
+        raise ValueError("Model checkpoint missing 'model_architecture' section")
     
     if input_size is None:
         raise ValueError("input_size must be provided or stored in checkpoint")
@@ -183,9 +185,7 @@ def load_trained_model(model_path: Union[str, Path],
         model = EnhancedClassifier(input_size=input_size)
     elif model_type == 'dynamic':
         # Dynamic model requires architecture parameters
-        if 'model_params' not in checkpoint:
-            raise ValueError("Dynamic model requires architecture parameters in checkpoint")
-        model = DynamicClassifier(**checkpoint['model_params'])
+        model = DynamicClassifier(**model_params)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
     
@@ -231,9 +231,9 @@ def save_model(model: torch.nn.Module,
 
 def predict_safety(model: torch.nn.Module, 
                   state_features: Union[torch.Tensor, np.ndarray],
-                  device: Optional[torch.device] = None) -> float:
+                  device: Optional[torch.device] = None) -> tuple[float, bool]:
     """
-    Predict safety probability for a single state.
+    Predict safety probability and classification for a single state.
     
     Args:
         model: Trained classifier model
@@ -241,7 +241,9 @@ def predict_safety(model: torch.nn.Module,
         device: Device for computation
     
     Returns:
-        Safety probability (0-1, where 1 = safe)
+        Tuple of (safety_probability, is_safe) where:
+        - safety_probability: float (0-1, where 1 = safe)
+        - is_safe: bool (True if safe, False if unsafe)
     """
     if device is None:
         device = config.DEVICE
@@ -260,7 +262,9 @@ def predict_safety(model: torch.nn.Module,
     
     with torch.no_grad():
         output = model(state_features)
-        # Apply sigmoid to get probability
-        probability = torch.sigmoid(output).item()
+        # Model already applies sigmoid, so output is already a probability
+        probability = output.item()
+        # Classification: safe if probability > 0.5
+        is_safe = probability > 0.5
     
-    return probability
+    return probability, is_safe
