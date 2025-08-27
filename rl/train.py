@@ -44,13 +44,15 @@ except ImportError:
     print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
 
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import VecMonitor
+from stable_baselines3.common.vec_env import VecMonitor, DummyVecEnv
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
+from sb3_contrib.common.maskable.evaluation import evaluate_policy
+from sb3_contrib.common.maskable.utils import get_action_masks
 
 from jani.environment import JaniEnv
 
@@ -230,9 +232,9 @@ def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True)
     """Create the training environment."""
     def make_env():
         env = JaniEnv(**file_args)
+        env = ActionMasker(env, mask_fn)
         if monitor:
             env = Monitor(env)
-        env = ActionMasker(env, mask_fn)
         return env
     
     if n_envs == 1:
@@ -244,6 +246,35 @@ def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True)
             env = VecMonitor(env)
     
     return env
+
+
+class EvalCallback(BaseCallback):
+    """Custom evaluation callback."""
+    def __init__(self, eval_env, eval_freq: int, n_eval_episodes: int, best_model_save_path: Optional[str] = None):
+        super().__init__()
+        self.eval_env = eval_env
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.best_model_save_path = best_model_save_path
+        self.best_mean_reward = -float('inf')
+        self.last_mean_reward = -float('inf')
+
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            mean_reward, _ = evaluate_policy(self.model, self.eval_env, n_eval_episodes=self.n_eval_episodes)
+            self.last_mean_reward = mean_reward
+            if self.best_model_save_path is not None:
+                if mean_reward > self.best_mean_reward:
+                    self.best_mean_reward = mean_reward
+                    self.model.save(self.best_model_save_path)
+            if WANDB_AVAILABLE:
+                wandb.log({
+                    'eval/mean_reward': mean_reward,
+                    'eval/best_mean_reward': self.best_mean_reward,
+                    'eval/timesteps': self.num_timesteps
+                })
+        return True
+
 
 
 def suggest_hyperparameters(trial) -> Dict[str, Any]:
@@ -268,7 +299,7 @@ def objective(trial, args, file_args: Dict[str, str]) -> float:
     params = suggest_hyperparameters(trial)
     
     # Create environments
-    train_env = create_env(file_args, args.n_envs)
+    train_env = create_env(file_args, args.n_envs, monitor=False)
     eval_env = create_env(file_args, 1)
     
     try:
@@ -297,13 +328,9 @@ def objective(trial, args, file_args: Dict[str, str]) -> float:
         # Evaluation callback
         eval_callback = EvalCallback(
             eval_env,
-            best_model_save_path=None,  # Don't save during tuning
-            log_path=None,
             eval_freq=max(tuning_timesteps // 10, 1000),
             n_eval_episodes=args.eval_episodes,
-            deterministic=True,
-            render=False,
-            verbose=0
+            best_model_save_path=None,  # Don't save during tuning
         )
         
         # Train model
@@ -350,7 +377,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     
     # Create environments
     print("Creating training environment...")
-    train_env = create_env(file_args, args.n_envs)
+    train_env = create_env(file_args, args.n_envs, monitor=False)
     eval_env = create_env(file_args, 1)
     
     # Default hyperparameters if not provided
@@ -388,12 +415,8 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=str(model_save_dir / "best_model"),
-        log_path=str(log_dir / "eval"),
         eval_freq=args.eval_freq,
         n_eval_episodes=args.eval_episodes,
-        deterministic=True,
-        render=False,
-        verbose=args.verbose
     )
     callbacks.append(eval_callback)
     
