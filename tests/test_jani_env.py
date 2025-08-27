@@ -25,8 +25,8 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from jani_env import JaniEnv
-from jani import State
+from jani.environment import JaniEnv
+from jani.core import State
 
 
 def create_test_jani_files():

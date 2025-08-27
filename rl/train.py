@@ -52,7 +52,7 @@ from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 
-from jani_env import JaniEnv
+from jani.environment import JaniEnv
 
 
 class WandbCallback(BaseCallback):

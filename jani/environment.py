@@ -1,12 +1,13 @@
 import numpy as np
 import gymnasium as gym
 
-from jani import *
+from .core import *
 from typing import Optional
+from classifier import load_trained_model, predict_safety
 
 
 class JaniEnv(gym.Env):
-    def __init__(self, model_file, start_file: str = None , goal_file: str = None, safe_file: str = None, property_file: str = None, random_init: bool = False):
+    def __init__(self, model_file, start_file: str = None, goal_file: str = None, safe_file: str = None, property_file: str = None, random_init: bool = False, use_classifier: bool = False, classifier_model: str = None, safe_reward: float = 0.0, unsafe_reward: float = -0.01):
         super().__init__()
         self._jani = JANI(model_file, start_file, goal_file, safe_file, property_file, random_init=random_init)
         # Define action and observation space
@@ -17,6 +18,14 @@ class JaniEnv(gym.Env):
             lower_bounds.append(var.lower_bound if var.lower_bound is not None else -np.inf)
             upper_bounds.append(var.upper_bound if var.upper_bound is not None else np.inf)
         self.observation_space = gym.spaces.Box(low=np.array(lower_bounds), high=np.array(upper_bounds), dtype=np.float32)
+        # set up classifier
+        self._use_classifier = use_classifier
+        self._classifier = None
+        if self._use_classifier:
+            assert classifier_model is not None, "Classifier model path must be provided if use_classifier is True"
+            self._classifier = load_trained_model(classifier_model, model_type='dynamic')
+        self._safe_reward = safe_reward
+        self._unsafe_reward = unsafe_reward
         # Initialize current state to None
         self._current_state = None
 
@@ -51,6 +60,13 @@ class JaniEnv(gym.Env):
         # would like to predicate whether a state
         # is safe or not
         reward = 0.0
+        if self._use_classifier:
+            assert self._classifier is not None, "Classifier model is not loaded"
+            safety_prediction = predict_safety(self._classifier, np.array(next_state.to_vector(), dtype=np.float32).reshape(1, -1))
+            if safety_prediction == 0:
+                reward = self._unsafe_reward  # Penalty for unsafe state
+            else:
+                reward = self._safe_reward  # Small reward for safe state
         done = False
         if next_state is None:
             # reward = -1.0

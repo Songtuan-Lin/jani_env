@@ -1,4 +1,4 @@
-from jani import *
+from .core import *
 from dataclasses import dataclass
 
 

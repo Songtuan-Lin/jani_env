@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from jani import (
+from jani.core import (
     JANI, Edge, State, Variable, Expression, VarExpression, ConstantExpression,
     AddExpression, SubExpression, MulExpression, ConjExpression, DisjExpression,
     LeExpression, LtExpression, EqExpression, Assignment

@@ -3,8 +3,8 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from jani import JANI, State, Variable
-from oracle import TarjanOracle
+from jani.core import JANI, State, Variable
+from jani.oracle import TarjanOracle
 
 
 class TestTarjanOracle:

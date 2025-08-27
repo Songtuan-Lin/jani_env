@@ -4,8 +4,9 @@ sys.setrecursionlimit(10**6)
 import argparse
 import numpy as np
 
-from jani_env import *
-from oracle import *
+from jani.environment import JaniEnv
+from jani.oracle import TarjanOracle
+from jani.core import State
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.common.maskable.utils import get_action_masks
 
