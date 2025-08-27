@@ -7,58 +7,139 @@ from .models import BasicClassifier, EnhancedClassifier, DynamicClassifier
 from . import config
 
 
+def get_available_devices():
+    """Get list of available accelerator devices (CUDA/MPS)."""
+    devices = []
+    
+    # Check CUDA devices
+    if torch.cuda.is_available():
+        devices.extend([f'cuda:{i}' for i in range(torch.cuda.device_count())])
+    
+    # Check MPS device
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        devices.append('mps')
+    
+    # Always have CPU as fallback
+    if not devices:
+        devices.append('cpu')
+        
+    return devices
+
+
+def get_device_memory_info(device=None):
+    """Get device memory information (CUDA only, MPS memory not directly accessible)."""
+    if device is None:
+        device = config.DEVICE
+    
+    if isinstance(device, str):
+        device = torch.device(device)
+    
+    if device.type == 'cuda' and torch.cuda.is_available():
+        device_id = device.index or 0
+        if device_id >= torch.cuda.device_count():
+            return None
+            
+        try:
+            total_memory = torch.cuda.get_device_properties(device_id).total_memory
+            allocated_memory = torch.cuda.memory_allocated(device_id)
+            free_memory = total_memory - allocated_memory
+
+            return {
+                'device': str(device),
+                'type': 'cuda',
+                'total': total_memory,
+                'allocated': allocated_memory,
+                'free': free_memory,
+                'device_id': device_id
+            }
+        except Exception:
+            return None
+    elif device.type == 'mps':
+        return {
+            'device': str(device),
+            'type': 'mps',
+            'total': None,  # Not available for MPS
+            'allocated': None,
+            'free': None,
+            'device_id': 0
+        }
+    else:
+        return {
+            'device': str(device),
+            'type': 'cpu',
+            'total': None,
+            'allocated': None,
+            'free': None,
+            'device_id': None
+        }
+
+
+def validate_device(device):
+    """Validate that a device is accessible."""
+    if isinstance(device, str):
+        device = torch.device(device)
+    
+    try:
+        # Create a small tensor to test device accessibility
+        test_tensor = torch.tensor([1.0]).to(device)
+        _ = test_tensor + 1  # Simple operation to verify device works
+        return True
+    except Exception:
+        return False
+
+
+def print_device_info():
+    """Print information about available devices."""
+    print("🖥️  Device Information:")
+    print(f"   Current device: {config.DEVICE}")
+    print(f"   Device type: {config.DEVICE.type.upper()}")
+    
+    if config.DEVICE.type == 'cuda':
+        print(f"   CUDA devices: {torch.cuda.device_count()}")
+        print(f"   Current CUDA device: {config.DEVICE}")
+        print(f"   Device name: {torch.cuda.get_device_name()}")
+    elif config.DEVICE.type == 'mps':
+        print(f"   Apple Silicon GPU (MPS) available: ✅")
+        print(f"   Device name: Apple Silicon GPU")
+    else:
+        print(f"   Using CPU (no GPU acceleration)")
+    
+    print(f"   Available devices: {get_available_devices()}")
+    
+    # Memory info (CUDA only)
+    memory_info = get_device_memory_info()
+    if memory_info and memory_info['total']:
+        print(f"   GPU Memory: {memory_info['total'] // (1024**3):.1f} GB total")
+    
+    print()  # Empty line for better readability
+
+
+# Backward compatibility aliases
 def get_available_gpus():
-    """Get list of available GPU device IDs."""
+    """Legacy function - get CUDA GPU IDs only."""
     if torch.cuda.is_available():
         return list(range(torch.cuda.device_count()))
     return []
 
 
 def get_gpu_memory_info(device_id=None):
-    """Get GPU memory information."""
-    if not torch.cuda.is_available():
+    """Legacy function - CUDA memory info only."""
+    if device_id is not None:
+        device = f'cuda:{device_id}'
+    else:
+        device = 'cuda' if torch.cuda.is_available() else None
+        
+    if device is None:
         return None
-
-    if device_id is None:
-        device_id = torch.cuda.current_device()
-
-    # Validate device_id exists
-    if device_id >= torch.cuda.device_count():
-        return None
-
-    try:
-        total_memory = torch.cuda.get_device_properties(device_id).total_memory
-        allocated_memory = torch.cuda.memory_allocated(device_id)
-        free_memory = total_memory - allocated_memory
-
-        return {
-            'total': total_memory,
-            'allocated': allocated_memory,
-            'free': free_memory,
-            'device_id': device_id
-        }
-    except Exception:
-        return None
+        
+    return get_device_memory_info(device)
 
 
 def validate_gpu_device(device_id):
-    """Validate that a GPU device ID is accessible."""
-    if not torch.cuda.is_available():
+    """Legacy function - validate CUDA device only."""
+    if not torch.cuda.is_available() or device_id >= torch.cuda.device_count():
         return False
-
-    if device_id >= torch.cuda.device_count():
-        return False
-
-    try:
-        # Try to access the device
-        current_device = torch.cuda.current_device()
-        torch.cuda.set_device(device_id)
-        torch.cuda.current_device()
-        # Restore original device
-        torch.cuda.set_device(current_device)
-        return True
-    except Exception:
-        return False
+    return validate_device(f'cuda:{device_id}')
 
 
 def load_trained_model(model_path: Union[str, Path], 

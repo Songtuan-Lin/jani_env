@@ -108,21 +108,18 @@ def load_dataset(data_dir: str, benchmark: str, use_next_state: bool = True) -> 
     Load train/val/test datasets for a specific benchmark.
     
     Args:
-        data_dir: Root directory containing the datasets
+        data_dir: Root directory containing the benchmark datasets
         benchmark: Benchmark name (e.g., 'bouncing_ball_16_16')
-        use_next_state: Whether to use enhanced features (with next state)
+        use_next_state: Unused parameter (kept for compatibility)
     
     Returns:
         Dictionary with 'train', 'val', 'test' keys containing (features, targets) tuples
     """
-    if use_next_state:
-        base_path = Path(data_dir) / config.DATA_WITH_NEXT_STATE / benchmark
-    else:
-        base_path = Path(data_dir) / config.DATA_WITHOUT_NEXT_STATE / benchmark
+    base_path = Path(data_dir) / benchmark
     
     datasets = {}
     for split in ['train', 'val', 'test']:
-        csv_path = base_path / split / f"{split}.csv"
+        csv_path = base_path / f"{split}.csv"
         if csv_path.exists():
             features, targets = load_csv_data(str(csv_path))
             datasets[split] = (features, targets)
@@ -206,17 +203,17 @@ def get_input_size(benchmark: str, use_next_state: bool = True, data_dir: str = 
 
 
 def get_available_benchmarks(data_dir: str = ".") -> List[str]:
-    """Get list of available benchmark datasets."""
-    with_next_state_path = Path(data_dir) / config.DATA_WITH_NEXT_STATE
-    if not with_next_state_path.exists():
+    """Get list of available benchmark datasets in the specified directory."""
+    data_path = Path(data_dir)
+    if not data_path.exists():
         return []
     
     benchmarks = []
-    for item in with_next_state_path.iterdir():
+    for item in data_path.iterdir():
         if item.is_dir():
-            # Check if corresponding directory exists in without_next_state
-            without_path = Path(data_dir) / config.DATA_WITHOUT_NEXT_STATE / item.name
-            if without_path.exists():
+            # Look for CSV files to validate it's a dataset directory
+            csv_files = list(item.glob("*.csv"))
+            if csv_files:
                 benchmarks.append(item.name)
     
     return sorted(benchmarks)

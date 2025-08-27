@@ -37,9 +37,11 @@ from .gpu_scheduler import GPUScheduler, TrainingJob
 # Analysis and comparison
 from .comparison import (
     load_results,
-    run_full_comparison, 
-    plot_performance_comparison,
-    calculate_statistical_significance
+    run_full_comparison,
+    create_comparison_plots,
+    create_comparison_dataframe,
+    calculate_improvement_statistics,
+    generate_comparison_report
 )
 
 __all__ = [
@@ -67,6 +69,8 @@ __all__ = [
     # Analysis
     'load_results',
     'run_full_comparison',
-    'plot_performance_comparison',
-    'calculate_statistical_significance'
+    'create_comparison_plots',
+    'create_comparison_dataframe',
+    'calculate_improvement_statistics',
+    'generate_comparison_report'
 ]

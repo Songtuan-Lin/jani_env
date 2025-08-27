@@ -4,13 +4,43 @@ Configuration file for classifier training and hyperparameter tuning.
 
 import torch
 
-# Device configuration
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-NUM_GPUS = torch.cuda.device_count() if torch.cuda.is_available() else 0
+# Device configuration with Apple Silicon MPS support
+def get_device():
+    """Get the best available device (CUDA > MPS > CPU)."""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return torch.device('mps')
+    else:
+        return torch.device('cpu')
 
-# Data paths
-DATA_WITH_NEXT_STATE = "dataset_with_next_state"
-DATA_WITHOUT_NEXT_STATE = "dataset_without_next_state"
+def get_device_info():
+    """Get information about available devices."""
+    device = get_device()
+    info = {'device': device, 'type': device.type}
+    
+    if device.type == 'cuda':
+        info['count'] = torch.cuda.device_count()
+        info['name'] = torch.cuda.get_device_name()
+        info['memory'] = torch.cuda.get_device_properties(0).total_memory
+    elif device.type == 'mps':
+        info['count'] = 1  # MPS typically has one device
+        info['name'] = 'Apple Silicon GPU'
+        info['memory'] = None  # Memory info not directly available for MPS
+    else:
+        info['count'] = 0
+        info['name'] = 'CPU'
+        info['memory'] = None
+    
+    return info
+
+DEVICE = get_device()
+DEVICE_INFO = get_device_info()
+NUM_GPUS = DEVICE_INFO['count'] if DEVICE.type in ['cuda', 'mps'] else 0
+
+# Data paths (legacy - no longer used)
+# DATA_WITH_NEXT_STATE = "dataset_with_next_state"  
+# DATA_WITHOUT_NEXT_STATE = "dataset_without_next_state"
 
 # Training configuration
 RANDOM_SEED = 42
@@ -40,8 +70,8 @@ CLASSIFICATION_METRICS = ["accuracy", "precision", "recall", "f1_score", "auc_ro
 # Task types
 TASK_CLASSIFICATION = "classification"
 
-# Multi-GPU training configuration
+# Multi-device training configuration
 MAX_CONCURRENT_JOBS = NUM_GPUS if NUM_GPUS > 0 else 1
 GPU_MEMORY_FRACTION = 0.9  # Use 90% of GPU memory per job
-DISTRIBUTED_BACKEND = "nccl"  # For multi-GPU training
+DISTRIBUTED_BACKEND = "nccl" if DEVICE.type == 'cuda' else "gloo"  # NCCL for CUDA, Gloo for others
 

@@ -15,7 +15,7 @@ For training utilities: from classifier.trainer import train_model, create_data_
 from .models import BasicClassifier, EnhancedClassifier, DynamicClassifier
 
 # Integration utilities
-from .utils import load_trained_model, save_model, predict_safety
+from .utils import load_trained_model, save_model, predict_safety, print_device_info, get_available_devices
 
 # Configuration (shared across main and trainer modules)
 from . import config
@@ -33,6 +33,8 @@ __all__ = [
     'load_trained_model',
     'save_model', 
     'predict_safety',
+    'print_device_info',
+    'get_available_devices',
     
     # Configuration
     'config',

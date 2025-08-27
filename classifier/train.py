@@ -7,13 +7,13 @@ import argparse
 import sys
 from pathlib import Path
 from rich.console import Console
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 import torch
 import numpy as np
 import random
 
 from . import config
 from .trainer import get_available_benchmarks, run_hyperparameter_tuning, save_tuning_results, run_full_comparison
+from .utils import print_device_info
 
 # Create console for rich output
 console = Console()
@@ -57,15 +57,30 @@ def train_single_benchmark(benchmark: str, classifier_type: str = "both",
                           n_trials: int = config.N_TRIALS, data_dir: str = ".") -> bool:
     """Train specified classifier(s) for a single benchmark."""
     try:
-        console.print(f"\n🎯 Starting training for benchmark: {benchmark}")
+        # Determine number of classifiers to train  
+        classifiers_to_train = ['basic', 'enhanced'] if classifier_type == 'both' else [classifier_type]
         
-        # Run hyperparameter tuning for selected classifier(s)
-        results = run_hyperparameter_tuning(
-            benchmark=benchmark,
-            classifier_type=classifier_type,
-            n_trials=n_trials,
-            data_dir=data_dir
-        )
+        console.print(f"🎯 Running hyperparameter tuning for {len(classifiers_to_train)} classifier(s) with {n_trials} trials each...")
+        
+        # Show progress with spinner
+        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True
+        ) as progress:
+            task = progress.add_task(f"Optimizing {benchmark}...", total=None)
+            
+            # Run hyperparameter tuning
+            results = run_hyperparameter_tuning(
+                benchmark=benchmark,
+                classifier_type=classifier_type,
+                n_trials=n_trials,
+                data_dir=data_dir
+            )
         
         # Save results
         save_tuning_results(results, benchmark)
@@ -120,7 +135,10 @@ def main():
     # Print configuration
     print("🚀 Safety Classifier Training and Comparison")
     print("=" * 50)
-    print(f"Device: {config.DEVICE}")
+    
+    # Show device information
+    print_device_info()
+    
     print(f"Random seed: {args.seed}")
     print(f"Data directory: {args.data_dir}")
     print(f"Results directory: {config.RESULTS_DIR}")
@@ -162,43 +180,28 @@ def main():
         print(f"\n🔧 Starting hyperparameter tuning and training...")
         print(f"Trials per classifier: {args.n_trials}")
         
-        # Progress bar for benchmarks
+        # Simple benchmark counter
         successful_benchmarks = []
         failed_benchmarks = []
         
         classifier_desc = f"{args.classifier_type} classifier{'s' if args.classifier_type == 'both' else ''}"
         
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=None, style="green", complete_style="red"),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("•"),
-            TextColumn("{task.completed}/{task.total}"),
-            TextColumn("•"),
-            TimeElapsedColumn(),
-            TextColumn("•"),
-            TimeRemainingColumn(),
-            console=console,
-            transient=False
-        ) as progress:
-            task = progress.add_task(f"[cyan]Training {classifier_desc}", total=len(benchmarks))
+        for i, benchmark in enumerate(benchmarks, 1):
+            console.print(f"\n📊 Training {classifier_desc} - Benchmark {i}/{len(benchmarks)}: [cyan]{benchmark}[/cyan]")
             
-            for benchmark in benchmarks:
-                progress.update(task, description=f"Training {classifier_desc} ([cyan]{benchmark}[/cyan])")
-                
-                success = train_single_benchmark(
-                    benchmark=benchmark,
-                    classifier_type=args.classifier_type,
-                    n_trials=args.n_trials,
-                    data_dir=args.data_dir
-                )
-                
-                if success:
-                    successful_benchmarks.append(benchmark)
-                else:
-                    failed_benchmarks.append(benchmark)
-                
-                progress.advance(task, advance=1)
+            success = train_single_benchmark(
+                benchmark=benchmark,
+                classifier_type=args.classifier_type,
+                n_trials=args.n_trials,
+                data_dir=args.data_dir
+            )
+            
+            if success:
+                successful_benchmarks.append(benchmark)
+                console.print(f"✅ Completed benchmark: [green]{benchmark}[/green]")
+            else:
+                failed_benchmarks.append(benchmark)
+                console.print(f"❌ Failed benchmark: [red]{benchmark}[/red]")
         
         # Training summary
         print(f"\n📊 Training Summary:")
