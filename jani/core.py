@@ -605,10 +605,20 @@ class JANI:
             constraint_expr = json_obj['exp']
             expr = Expression.construct(constraint_expr)
             self._main_clause, self._additional_clauses, self._all_vars = expr.to_clause(self._model)
-            self._cache = defaultdict(list)  # cache previous solutions
 
         def generate(self) -> State:
             # Implement constraint-based state generation
+            def z3_value_to_python(z3_value: z3.ExprRef) -> Any:
+                if z3_value.sort().kind() == z3.Z3_INT_SORT:
+                    python_value = z3_value.as_long()
+                elif z3_value.sort().kind() == z3.Z3_REAL_SORT:
+                    python_value = float(z3_value.as_decimal(10).replace('?', ''))
+                elif z3_value.sort().kind() == z3.Z3_BOOL_SORT:
+                    python_value = is_true(z3_value)
+                else:
+                    raise ValueError(f"Unsupported Z3 value type: {z3_value.sort().kind()}")
+                return python_value
+
             def solver_with_core_constraints() -> z3.Solver:
                 s = Tactic('qflra').solver()
                 s.set('smt.random_seed', random.randint(0, 2**32 - 1))
@@ -618,22 +628,13 @@ class JANI:
                     s.add(clause)
                 return s
 
-            def get_state_values(model: z3.Model, cache: bool = True) -> dict:
+            def get_state_values(model: z3.Model) -> dict:
                 target_vars = {}
                 for v in model.decls():
                     z3_value = model[v]
                     # Convert Z3 values to Python values
-                    if z3_value.sort().kind() == z3.Z3_INT_SORT:
-                        python_value = z3_value.as_long()
-                    elif z3_value.sort().kind() == z3.Z3_REAL_SORT:
-                        python_value = float(z3_value.as_decimal(10).replace('?', ''))
-                    elif z3_value.sort().kind() == z3.Z3_BOOL_SORT:
-                        python_value = is_true(z3_value)
-                    else:
-                        python_value = z3_value
+                    python_value = z3_value_to_python(z3_value)
                     target_vars[v.name()] = python_value
-                    if cache:
-                        self._cache[v.name()].append(z3_value)
                 return target_vars
 
             def create_state(target_vars: dict) -> State:
@@ -657,25 +658,31 @@ class JANI:
                 return State(state_dict)
 
             s = solver_with_core_constraints()
+            if s.check() != sat:
+                raise ValueError("Failed to generate valid initial state.")
+            m = s.model()
+            backup = get_state_values(m) # backup state value
             div_criterion = []
             for v in self._all_vars:
-                conj_criterion = []
-                for value in self._cache[str(v)]:
-                    conj_criterion.append(Abs(value - v) >= Q(1, 1000))
-                if len(conj_criterion) > 0:
-                    div_criterion.append(And(conj_criterion))
-            if len(div_criterion) > 0:
-                s.add(Or(div_criterion))
+                jani_var = self._model.get_variable(str(v))
+                if jani_var.type == 'bool':
+                    continue
+                val = m[v]
+                mu, sigma = z3_value_to_python(val), 2
+                # gaussian sample with the current value being the mean
+                r = random.gauss(mu, sigma)
+                if jani_var.type == 'int':
+                    r = int(round(r))
+                    div_criterion.append(v == r)
+                elif jani_var.type == 'real':
+                    div_criterion.append(v == r)
+            s.add(Or(div_criterion))
             if s.check() == sat:
-                model = s.model()
-                return create_state(get_state_values(model))
+                m = s.model()
+                return create_state(get_state_values(m))
             else:
-                s = solver_with_core_constraints()
-                if s.check() == sat:
-                    model = s.model()
-                    self._cache = defaultdict(list)  # reset the cache because no new states can be found
-                    return create_state(get_state_values(model))
-            raise ValueError("Failed to generate valid initial state.")
+                # print("Warning: Failed to generate a random state")
+                return create_state(backup)
 
     def reset(self) -> State:
         """Reset the JANI model to a random initial state."""

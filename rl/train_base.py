@@ -23,7 +23,7 @@ goal_file = "examples/inverted_pendulum/objective.jani"
 safe_file = "examples/inverted_pendulum/safe.jani"
 
 # envs = make_vec_env(JaniEnv, n_envs=4, env_kwargs=dict(model_file=model_file, start_file=start_file, goal_file=goal_file, safe_file=safe_file), wrapper_class=ActionMasker, wrapper_kwargs=dict(action_mask_fn=mask_fn))
-envs = make_vec_env(lambda: make_env(dict(model_file=model_file, start_file=start_file, goal_file=goal_file, safe_file=safe_file, random_init=True)), n_envs=4)
+envs = make_vec_env(lambda: make_env(dict(model_file=model_file, start_file=start_file, goal_file=goal_file, safe_file=safe_file)), n_envs=4)
 
 
 model = MaskablePPO(MaskableActorCriticPolicy, envs, n_steps=100, verbose=1, device='cpu').learn(total_timesteps=1000000)
