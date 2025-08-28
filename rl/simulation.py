@@ -34,7 +34,7 @@ class Simulator:
             cached.append(state_vec)
 
         for _ in range(self._max_episodes):
-            obs = self._env.reset()
+            obs, _ = self._env.reset()
             cache_state(self._env.unwrapped.get_state_repr())
             done = False
             max_step = 2048
