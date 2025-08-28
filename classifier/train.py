@@ -31,9 +31,10 @@ def set_random_seeds(seed=config.RANDOM_SEED):
     torch.backends.cudnn.benchmark = False
 
 
-def setup_directories():
+def setup_directories(results_dir=None):
     """Create necessary directories."""
-    for directory in [config.RESULTS_DIR, config.PLOTS_DIR]:
+    results_dir = results_dir if results_dir is not None else config.RESULTS_DIR
+    for directory in [results_dir, config.PLOTS_DIR]:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
 
@@ -54,7 +55,8 @@ def check_existing_results(benchmarks: list, results_dir: str = config.RESULTS_D
 
 
 def train_single_benchmark(benchmark: str, classifier_type: str = "both", 
-                          n_trials: int = config.N_TRIALS, data_dir: str = ".") -> bool:
+                          n_trials: int = config.N_TRIALS, data_dir: str = ".", 
+                          output_dir: str = None) -> bool:
     """Train specified classifier(s) for a single benchmark."""
     try:
         # Determine number of classifiers to train  
@@ -83,7 +85,8 @@ def train_single_benchmark(benchmark: str, classifier_type: str = "both",
             )
         
         # Save results
-        save_tuning_results(results, benchmark)
+        results_dir = output_dir if output_dir is not None else config.RESULTS_DIR
+        save_tuning_results(results, benchmark, results_dir)
         
         console.print(f"✅ Completed training for {benchmark}")
         
@@ -117,8 +120,13 @@ def main():
                        default="both", help="Which classifier to train: basic, enhanced, or both (default: both)")
     parser.add_argument("--enable-comparison", action="store_true",
                        help="Enable comparison analysis between basic and enhanced classifiers")
+    parser.add_argument("--output-dir", type=str, default=None,
+                       help="Directory to store trained classifiers and results (default: use config.RESULTS_DIR)")
     
     args = parser.parse_args()
+    
+    # Set output directory
+    output_dir = args.output_dir if args.output_dir is not None else config.RESULTS_DIR
     
     # Validate arguments
     if args.enable_comparison and args.classifier_type in ['basic', 'enhanced']:
@@ -130,7 +138,7 @@ def main():
     set_random_seeds(args.seed)
     
     # Setup directories
-    setup_directories()
+    setup_directories(output_dir)
     
     # Print configuration
     print("🚀 Safety Classifier Training and Comparison")
@@ -141,7 +149,7 @@ def main():
     
     print(f"Random seed: {args.seed}")
     print(f"Data directory: {args.data_dir}")
-    print(f"Results directory: {config.RESULTS_DIR}")
+    print(f"Results directory: {output_dir}")
     print(f"Classifier type: {args.classifier_type}")
     
     # Get available benchmarks
@@ -160,7 +168,7 @@ def main():
     if args.enable_comparison:
         if args.classifier_type in ['basic', 'enhanced']:
             # Check if the other classifier type already has results
-            existing_results = check_existing_results(benchmarks)
+            existing_results = check_existing_results(benchmarks, output_dir)
             other_type = 'enhanced' if args.classifier_type == 'basic' else 'basic'
             
             missing_results = []
@@ -193,7 +201,8 @@ def main():
                 benchmark=benchmark,
                 classifier_type=args.classifier_type,
                 n_trials=args.n_trials,
-                data_dir=args.data_dir
+                data_dir=args.data_dir,
+                output_dir=output_dir
             )
             
             if success:
@@ -222,7 +231,7 @@ def main():
         try:
             comparison_results = run_full_comparison(
                 benchmarks=benchmarks if not args.skip_training else None,
-                results_dir=config.RESULTS_DIR
+                results_dir=output_dir
             )
             
             if comparison_results and 'improvements' in comparison_results:
@@ -256,7 +265,7 @@ def main():
                     else:
                         print("⚪ CONCLUSION: No significant difference between classifiers.")
                 
-                print(f"\n📁 Results saved to: {config.RESULTS_DIR}")
+                print(f"\n📁 Results saved to: {output_dir}")
                 print(f"📊 Plots saved to: {config.PLOTS_DIR}")
                 print("📄 Check comparison_report.md for detailed analysis")
             

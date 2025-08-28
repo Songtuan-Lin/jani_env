@@ -67,7 +67,7 @@ class WandbCallback(BaseCallback):
         
     def _on_step(self) -> bool:
         # Log metrics to wandb
-        if WANDB_AVAILABLE:
+        if WANDB_AVAILABLE and wandb.run is not None:
             # Log training environment rewards
             if hasattr(self.model, 'ep_info_buffer') and self.model.ep_info_buffer:
                 if len(self.model.ep_info_buffer) > 0:
@@ -172,6 +172,12 @@ def parse_arguments():
                        help='Device to use (cpu, cuda, auto)')
     parser.add_argument('--verbose', type=int, default=1,
                        help='Verbosity level')
+    
+    # Control flags
+    parser.add_argument('--disable-wandb', action='store_true',
+                       help='Disable Weights & Biases logging')
+    parser.add_argument('--disable-eval', action='store_true',
+                       help='Disable policy evaluation during training')
     
     # Safety classifier arguments
     parser.add_argument('--use_classifier', action='store_true',
@@ -312,7 +318,7 @@ class EvalCallback(BaseCallback):
                 if mean_reward > self.best_mean_reward:
                     self.best_mean_reward = mean_reward
                     self.model.save(self.best_model_save_path)
-            if WANDB_AVAILABLE:
+            if WANDB_AVAILABLE and wandb.run is not None:
                 wandb.log({
                     'eval/mean_reward': mean_reward,
                     'eval/best_mean_reward': self.best_mean_reward,
@@ -345,6 +351,7 @@ def objective(trial, args, file_args: Dict[str, str]) -> float:
     
     # Create environments
     train_env = create_env(file_args, args.n_envs, monitor=False)
+    # For hyperparameter tuning, we always need evaluation regardless of disable_eval flag
     eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
     
     try:
@@ -407,8 +414,8 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     log_dir.mkdir(parents=True, exist_ok=True)
     model_save_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize wandb if available
-    if WANDB_AVAILABLE:
+    # Initialize wandb if available and not disabled
+    if WANDB_AVAILABLE and not args.disable_wandb:
         wandb.init(
             project=args.wandb_project,
             entity=args.wandb_entity,
@@ -423,7 +430,11 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     # Create environments
     print("Creating training environment...")
     train_env = create_env(file_args, args.n_envs, monitor=False)
-    eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
+    
+    # Create evaluation environment only if evaluation is not disabled
+    eval_env = None
+    if not args.disable_eval:
+        eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
     
     # Default hyperparameters if not provided
     if hyperparams is None:
@@ -455,18 +466,20 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     
     # Set up callbacks
     callbacks = []
+    eval_callback = None
     
-    # Evaluation callback
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=str(model_save_dir / "best_model"),
-        eval_freq=args.eval_freq,
-        n_eval_episodes=args.eval_episodes,
-    )
-    callbacks.append(eval_callback)
+    # Evaluation callback (only if evaluation is not disabled)
+    if not args.disable_eval and eval_env is not None:
+        eval_callback = EvalCallback(
+            eval_env,
+            best_model_save_path=str(model_save_dir / "best_model"),
+            eval_freq=args.eval_freq,
+            n_eval_episodes=args.eval_episodes,
+        )
+        callbacks.append(eval_callback)
     
-    # Wandb callback (only if available)
-    if WANDB_AVAILABLE:
+    # Wandb callback (only if available and not disabled)
+    if WANDB_AVAILABLE and not args.disable_wandb:
         wandb_callback = WandbCallback(verbose=args.verbose)
         callbacks.append(wandb_callback)
     
@@ -495,11 +508,14 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     
     # Clean up
     train_env.close()
-    eval_env.close()
-    if WANDB_AVAILABLE:
+    if eval_env is not None:
+        eval_env.close()
+    if WANDB_AVAILABLE and not args.disable_wandb:
         wandb.finish()
     
-    return model, eval_callback.best_mean_reward
+    # Return best reward if evaluation was performed, otherwise return 0
+    best_reward = eval_callback.best_mean_reward if eval_callback is not None else 0.0
+    return model, best_reward
 
 
 def main():
@@ -539,8 +555,8 @@ def main():
             
             study_name = args.study_name or f"jani_study_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
-            # Initialize wandb for hyperparameter tuning
-            if WANDB_AVAILABLE:
+            # Initialize wandb for hyperparameter tuning if not disabled
+            if WANDB_AVAILABLE and not args.disable_wandb:
                 wandb.init(
                     project=f"{args.wandb_project}_tuning",
                     entity=args.wandb_entity,
@@ -570,8 +586,8 @@ def main():
                 best_hyperparams = study.best_params
                 best_reward = study.best_value
                 
-                # Log best hyperparameters to wandb
-                if WANDB_AVAILABLE:
+                # Log best hyperparameters to wandb if not disabled
+                if WANDB_AVAILABLE and not args.disable_wandb:
                     wandb.log({"best_reward": best_reward})
                     wandb.config.update(best_hyperparams)
                 
@@ -579,7 +595,7 @@ def main():
                 print(f"Hyperparameter tuning failed: {e}")
                 print("Proceeding with default hyperparameters...")
             
-            if WANDB_AVAILABLE:
+            if WANDB_AVAILABLE and not args.disable_wandb:
                 wandb.finish()
     
     # Train final model with best hyperparameters

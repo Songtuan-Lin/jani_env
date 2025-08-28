@@ -3,12 +3,14 @@ sys.setrecursionlimit(10**6)
 
 import argparse
 import numpy as np
+from pathlib import Path
 
 from jani.environment import JaniEnv
 from jani.oracle import TarjanOracle
 from jani.core import State
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.common.maskable.utils import get_action_masks
+from sb3_contrib import MaskablePPO
 
 
 class Simulator:
@@ -54,6 +56,19 @@ class Simulator:
         fmt.append("%d")
         np.savetxt(self._output_path, results, delimiter=",", fmt=fmt)
 
+def load_policy(policy_file_path: str):
+    """Load a trained MaskablePPO policy from file."""
+    if not Path(policy_file_path).exists():
+        raise FileNotFoundError(f"Policy file not found: {policy_file_path}")
+    
+    try:
+        policy = MaskablePPO.load(policy_file_path)
+        print(f"Successfully loaded policy from: {policy_file_path}")
+        return policy
+    except Exception as e:
+        raise RuntimeError(f"Failed to load policy from {policy_file_path}: {e}")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Simulate policy in JANI environment and record safety results")
     parser.add_argument("--model_file", required=True, help="Path to the JANI model file")
@@ -61,6 +76,7 @@ def parse_args():
     parser.add_argument("--goal_file", help="Path to the goal file")
     parser.add_argument("--safe_file", help="Path to the safe file")
     parser.add_argument("--property_file", help="Path to the property file")
+    parser.add_argument("--policy_file", help="Path to the policy file")
     parser.add_argument("--random_init", action="store_true", help="Use random initial state generator")
     parser.add_argument("--output_path", default="simulation_results.csv", help="Path to save the CSV results file")
     parser.add_argument("--max_episodes", type=int, default=50, help="Maximum number of episodes to simulate")
@@ -84,5 +100,16 @@ if __name__ == "__main__":
         "random_init": args.random_init
     }
     
-    simulator = Simulator(env_args, max_episodes=args.max_episodes, output_path=args.output_path)
+    # Load policy if specified
+    policy = None
+    if args.policy_file:
+        try:
+            policy = load_policy(args.policy_file)
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+    else:
+        print("No policy file specified. Using random policy.")
+    
+    simulator = Simulator(env_args, max_episodes=args.max_episodes, output_path=args.output_path, policy=policy)
     simulator.run()
