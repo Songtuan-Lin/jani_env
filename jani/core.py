@@ -395,6 +395,7 @@ class Automaton:
         if action.label not in self._edges:
             raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
         new_states = []
+        # cached_edges = []
         for edge in self._edges[action.label]:
             # print guard expression, for debugging only
             # print(f"Guard for {action.label}: {edge._guard}")
@@ -406,7 +407,19 @@ class Automaton:
             else:
                 next_state = random.choices(successors, distribution)[0]
                 new_states.append(next_state)
+                # cached_edges.append(edge)
+        # if len(new_states) > 1 and (not return_all):
+        #     print(state)
+        #     for e in cached_edges:
+        #         print(f"Guard: {e._guard}")
+        #     raise ValueError("Multiple valid transitions found")
         return new_states
+    
+    def get_edges(self, action: Action) -> list[Edge]:
+        """Get all edges for the given action."""
+        if action.label not in self._edges:
+            raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
+        return self._edges[action.label]
 
 
 class JANI:
@@ -706,9 +719,9 @@ class JANI:
         next_states = self._automata[0].transit(state, action)
         if len(next_states) == 0:
             return None
-        if len(next_states) > 1:
-            raise ValueError(f"Multiple next states found for action {action.label}. This is not supported yet.")
-            # print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
+        # if len(next_states) > 1:
+        #     raise ValueError(f"Multiple next states found for action {action.label}. This is not supported yet.")
+        #     print(f"Warning: Multiple next states found for action {action.label}. Choosing the first one.")
         return next_states[0]
 
     def get_successors(self, state: State, action: Action) -> list[State]:
@@ -718,6 +731,10 @@ class JANI:
         if action_index < 0 or action_index >= len(self._actions):
             raise ValueError(f"Invalid action index {action_index}. Must be between 0 and {len(self._actions)-1}")
         return self._actions[action_index]
+
+    def get_edges_for_action(self, action_index: int) -> list[Edge]:
+        action_obj = self._actions[action_index]
+        return self._automata[0].get_edges(action_obj)
 
     def goal_reached(self, state: State) -> bool:
         # Implement the logic to check if the goal state is reached

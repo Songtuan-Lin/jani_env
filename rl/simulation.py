@@ -28,12 +28,15 @@ class Simulator:
         cached = []
         
         def cache_state(state: State) -> None:
+            # print(f"State being processed:\n{state}\n===================")
             safe_state = self._oracle.is_safe(state)
+            # print(f"State is {'safe' if safe_state else 'unsafe'}")
             state_vec = state.to_vector()
             state_vec.append(int(safe_state))
             cached.append(state_vec)
 
         for _ in range(self._max_episodes):
+            # print(f"Starting episode {_ + 1}")
             obs, _ = self._env.reset()
             cache_state(self._env.unwrapped.get_state_repr())
             done = False
