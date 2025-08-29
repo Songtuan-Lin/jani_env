@@ -535,14 +535,23 @@ class JANI:
         self._automata: list[Automaton] = [Automaton(automaton) for automaton in jani_obj['automata']]
         if len(self._automata) > 1:
             raise ValueError('Multiple automata are not supported yet.')
-        if start_file is None or goal_file is None or failure_file is None:
-            assert property_file is not None, "If start, goal, or failure files are not provided, property file must be provided."
+        if property_file is not None:
+            if start_file is not None or goal_file is not None or failure_file is not None:
+                print("Warning: property_file is provided, so start_file, goal_file, and failure_file will be ignored/overwritten.")
             property_spec = json.loads(Path(property_file).read_text('utf-8'))
             property_spec = parse_properties(property_spec)
-            self._init_generator = init_state_generator(property_spec['start'])
-            self._goal_expr = goal_expression(property_spec['goal'])
-            self._failure_expr = failure_expression(property_spec['failure'])
-        else:
+            if 'file' in property_spec['start'] and 'file' in property_spec['goal'] and 'file' in property_spec['failure']:
+                start_file = Path(property_file).parent / property_spec['start']['file']
+                goal_file = Path(property_file).parent / property_spec['goal']['file']
+                failure_file = Path(property_file).parent / property_spec['failure']['file']
+                if not start_file.exists() or not goal_file.exists() or not failure_file.exists():
+                    raise FileNotFoundError("One or more sub-files do not exist. Please ensure all sub-files are in the same directory as the property file.")
+            else:
+                self._init_generator = init_state_generator(property_spec['start'])
+                self._goal_expr = goal_expression(property_spec['goal'])
+                self._failure_expr = failure_expression(property_spec['failure'])
+                start_file, goal_file, failure_file = None, None, None # Ensure these are not used
+        if start_file is not None and goal_file is not None and failure_file is not None:
             # start states
             start_spec = json.loads(Path(start_file).read_text('utf-8'))
             self._init_generator = init_state_generator(start_spec)
