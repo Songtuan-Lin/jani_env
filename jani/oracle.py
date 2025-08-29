@@ -21,12 +21,9 @@ class TarjanOracle:
         # Tarjan's algorithm 
         def tarjan(node: TarjanOracle.Node) -> bool:
             assert node.index == -1 and node.lowlink == -1, "Node has already been visited"
-            # print(f"Visiting state: {node.state}")
             if self._model.goal_reached(node.state) or node.state in self._safe_states:
-                # print(f"State {node.state} is safe because reaching the goal or being in the safe states")
                 return True
             if self._model.failure_reached(node.state) or node.state in self._unsafe_states:
-                # print(f"State {node.state} is unsafe because reaching the failure or being in the unsafe states")
                 return False
             node.index = len(stack)
             node.lowlink = node.index
@@ -44,15 +41,12 @@ class TarjanOracle:
                     next_node = TarjanOracle.Node(succ_state)
                     if next_node.state in on_stack:
                         # Successor is in stack and hence in the current SCC
-                        # print("Entering loop")
                         node.lowlink = min(node.lowlink, next_node.lowlink)
                     else:
                         safe_action = tarjan(next_node)
-                        # node.lowlink = min(node.lowlink, next_node.lowlink)
                     if not safe_action:
                         break
                 if safe_action:
-                    # print(f"action {action} is safe")
                     safe_state = True
                     break
             if safe_state:
@@ -67,7 +61,4 @@ class TarjanOracle:
                     if w == node:
                         break
             return safe_state
-        # is_safe = tarjan(TarjanOracle.Node(state))
-        # self._safe_states = set()
-        # self._unsafe_states = set()
         return tarjan(TarjanOracle.Node(state))

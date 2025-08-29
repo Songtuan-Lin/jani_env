@@ -395,10 +395,7 @@ class Automaton:
         if action.label not in self._edges:
             raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
         new_states = []
-        # cached_edges = []
         for edge in self._edges[action.label]:
-            # print guard expression, for debugging only
-            # print(f"Guard for {action.label}: {edge._guard}")
             if not edge.is_enabled(state):
                 continue
             successors, distribution = edge.apply(state)
@@ -407,12 +404,6 @@ class Automaton:
             else:
                 next_state = random.choices(successors, distribution)[0]
                 new_states.append(next_state)
-                # cached_edges.append(edge)
-        # if len(new_states) > 1 and (not return_all):
-        #     print(state)
-        #     for e in cached_edges:
-        #         print(f"Guard: {e._guard}")
-        #     raise ValueError("Multiple valid transitions found")
         return new_states
     
     def get_edges(self, action: Action) -> list[Edge]:
