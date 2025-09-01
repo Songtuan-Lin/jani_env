@@ -13,6 +13,7 @@ import random
 
 from . import config
 from .trainer import get_available_benchmarks, run_hyperparameter_tuning, save_tuning_results, run_full_comparison
+from .trainer.test_summary import create_test_summaries_after_training
 from .utils import print_device_info
 
 # Create console for rich output
@@ -122,11 +123,44 @@ def main():
                        help="Enable comparison analysis between basic and enhanced classifiers")
     parser.add_argument("--output-dir", type=str, default=None,
                        help="Directory to store trained classifiers and results (default: use config.RESULTS_DIR)")
+    parser.add_argument("--generate-summaries", action="store_true",
+                       help="Generate test set summaries for existing results without training")
     
     args = parser.parse_args()
     
     # Set output directory
     output_dir = args.output_dir if args.output_dir is not None else config.RESULTS_DIR
+    
+    # Handle generate-summaries option
+    if args.generate_summaries:
+        print("📊 Generating test set summaries for existing results...")
+        
+        # Get available benchmarks
+        if args.benchmarks:
+            benchmarks = args.benchmarks
+            print(f"Generating summaries for specified benchmarks: {benchmarks}")
+        else:
+            # Find benchmarks from existing results
+            results_path = Path(output_dir)
+            if results_path.exists():
+                benchmarks = [d.name for d in results_path.iterdir() if d.is_dir()]
+                print(f"Found {len(benchmarks)} benchmarks in results directory")
+            else:
+                print("❌ Results directory not found!")
+                sys.exit(1)
+        
+        if not benchmarks:
+            print("❌ No benchmarks found!")
+            sys.exit(1)
+        
+        try:
+            create_test_summaries_after_training(benchmarks, output_dir)
+            print("✅ Test summaries generated successfully!")
+        except Exception as e:
+            print(f"❌ Failed to generate summaries: {str(e)}")
+            sys.exit(1)
+        
+        return
     
     # Validate arguments
     if args.enable_comparison and args.classifier_type in ['basic', 'enhanced']:
@@ -223,6 +257,13 @@ def main():
         if not successful_benchmarks:
             print("❌ No successful training runs! Cannot proceed with comparison.")
             sys.exit(1)
+        
+        # Generate test set summaries after successful training
+        try:
+            create_test_summaries_after_training(successful_benchmarks, output_dir)
+        except Exception as e:
+            console.print(f"⚠️  Failed to generate test summaries: {str(e)}")
+            console.print("Training completed successfully, but summary generation failed.")
     
     # Comparison phase
     if args.enable_comparison:

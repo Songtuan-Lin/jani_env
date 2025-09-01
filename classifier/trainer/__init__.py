@@ -44,6 +44,14 @@ from .comparison import (
     generate_comparison_report
 )
 
+# Test summary generation
+from .test_summary import (
+    generate_test_summary,
+    generate_all_benchmarks_summary,
+    save_test_summaries,
+    create_test_summaries_after_training
+)
+
 __all__ = [
     # Training core
     'train_model',
@@ -72,5 +80,11 @@ __all__ = [
     'create_comparison_plots',
     'create_comparison_dataframe',
     'calculate_improvement_statistics',
-    'generate_comparison_report'
+    'generate_comparison_report',
+    
+    # Test summaries
+    'generate_test_summary',
+    'generate_all_benchmarks_summary',
+    'save_test_summaries',
+    'create_test_summaries_after_training'
 ]
