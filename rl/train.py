@@ -55,6 +55,7 @@ from sb3_contrib.common.maskable.evaluation import evaluate_policy
 from sb3_contrib.common.maskable.utils import get_action_masks
 
 from jani.environment import JaniEnv
+from jani.oracle import TarjanOracle
 
 
 class WandbCallback(BaseCallback):
@@ -104,6 +105,107 @@ class WandbCallback(BaseCallback):
                 if log_dict:
                     wandb.log(log_dict)
         
+        return True
+
+
+class ClassifierDebugCallback(BaseCallback):
+    """Custom callback for debugging classifier predictions against Tarjan oracle."""
+    
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self.oracle = None
+        self.step_predictions = []  # Store (predicted, actual) pairs for each step
+        self.total_correct = 0
+        self.total_predictions = 0
+        self.last_logged_timestep = 0
+        
+    def _unwrap_to_jani_env(self, env):
+        """Helper method to unwrap environment to get JaniEnv."""
+        unwrapped_env = env
+        while hasattr(unwrapped_env, 'env'):
+            unwrapped_env = unwrapped_env.env
+        if hasattr(unwrapped_env, 'unwrapped'):
+            unwrapped_env = unwrapped_env.unwrapped
+        return unwrapped_env
+        
+    def _on_training_start(self) -> None:
+        """Initialize the oracle when training starts."""
+        # Get the JANI model from the first environment
+        if hasattr(self.training_env, 'envs'):
+            first_env = self.training_env.envs[0]
+        else:
+            first_env = self.training_env
+            
+        first_env = self._unwrap_to_jani_env(first_env)
+        jani_model = first_env.get_model()
+        self.oracle = TarjanOracle(jani_model)
+        
+        # Get classifier from environment to check predictions
+        self.classifier = first_env._classifier if hasattr(first_env, '_classifier') else None
+        
+        if self.verbose >= 1:
+            print("🔍 Classifier debug callback initialized with Tarjan oracle")
+        
+    def _on_step(self) -> bool:
+        """Check classifier predictions against oracle at each step."""
+        if self.oracle is None or self.classifier is None:
+            return True
+            
+        # Get the current environment states from all vectorized environments
+        if hasattr(self.training_env, 'envs'):
+            environments = self.training_env.envs
+        else:
+            environments = [self.training_env]
+            
+        for env in environments:
+            unwrapped_env = self._unwrap_to_jani_env(env)
+                
+            if hasattr(unwrapped_env, '_current_state') and unwrapped_env._current_state is not None:
+                current_state = unwrapped_env._current_state
+                
+                # Get classifier prediction
+                try:
+                    from classifier import predict_safety
+                    state_vector = np.array(current_state.to_vector(), dtype=np.float32).reshape(1, -1)
+                    _, classifier_is_safe = predict_safety(self.classifier, state_vector)
+                    
+                    # Get oracle prediction (ground truth)
+                    oracle_is_safe = self.oracle.is_safe(current_state)
+                    
+                    # Record prediction
+                    self.step_predictions.append((classifier_is_safe, oracle_is_safe))
+                    if classifier_is_safe == oracle_is_safe:
+                        self.total_correct += 1
+                    self.total_predictions += 1
+                    
+                except Exception as e:
+                    if self.verbose >= 1:
+                        print(f"⚠️ Error in classifier debug: {e}")
+                    continue
+        
+        # Log to wandb every 100 steps
+        if (self.num_timesteps - self.last_logged_timestep) >= 100:
+            if self.total_predictions > 0:
+                step_accuracy = self.total_correct / self.total_predictions
+                
+                # Calculate recent accuracy (last 100 steps)
+                recent_predictions = self.step_predictions[-100:] if len(self.step_predictions) >= 100 else self.step_predictions
+                recent_correct = sum(1 for pred, actual in recent_predictions if pred == actual)
+                recent_accuracy = recent_correct / len(recent_predictions) if recent_predictions else 0.0
+                
+                if WANDB_AVAILABLE and wandb.run is not None:
+                    wandb.log({
+                        'debug/classifier_accuracy_overall': step_accuracy,
+                        'debug/classifier_accuracy_recent': recent_accuracy,
+                        'debug/total_predictions': self.total_predictions,
+                        'debug/timesteps': self.num_timesteps
+                    })
+                
+                if self.verbose >= 1:
+                    print(f"🎯 Classifier accuracy: {step_accuracy:.3f} (overall), {recent_accuracy:.3f} (recent 100 steps)")
+                    
+            self.last_logged_timestep = self.num_timesteps
+            
         return True
 
 
@@ -194,6 +296,8 @@ def parse_arguments():
                        help='Reward for safe states when using classifier (default: 0.0)')
     parser.add_argument('--unsafe_reward', type=float, default=-0.01,
                        help='Reward for unsafe states when using classifier (default: -0.01)')
+    parser.add_argument('--debug_classifier', action='store_true',
+                       help='Enable classifier debugging mode: check classifier predictions against Tarjan oracle and log accuracy to wandb')
     
     return parser.parse_args()
 
@@ -505,6 +609,15 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     if WANDB_AVAILABLE and not args.disable_wandb:
         wandb_callback = WandbCallback(verbose=args.verbose)
         callbacks.append(wandb_callback)
+    
+    # Classifier debug callback (only if debug_classifier is enabled and classifier is used)
+    if args.debug_classifier and args.use_classifier:
+        debug_callback = ClassifierDebugCallback(verbose=args.verbose)
+        callbacks.append(debug_callback)
+        if args.verbose >= 1:
+            print("🔍 Classifier debugging enabled - will compare predictions with Tarjan oracle")
+    elif args.debug_classifier and not args.use_classifier:
+        print("⚠️ Warning: --debug_classifier enabled but --use_classifier is not. Debug callback will not be added.")
     
     # Early stopping on reward threshold (optional)
     # stop_callback = StopTrainingOnRewardThreshold(reward_threshold=200, verbose=1)
