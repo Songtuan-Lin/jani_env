@@ -5,4 +5,5 @@ wandb/
 data/
 models
 training_results/
+benchmarks/
 *.csv

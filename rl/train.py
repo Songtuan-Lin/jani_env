@@ -179,6 +179,12 @@ def parse_arguments():
     parser.add_argument('--disable-eval', action='store_true',
                        help='Disable policy evaluation during training')
     
+    # Model loading options
+    parser.add_argument('--load_model', type=str, default=None,
+                       help='Path to a trained model to load and continue training from')
+    parser.add_argument('--no_reset_timesteps', action='store_true',
+                       help='Continue from saved timesteps when loading a model (default: reset timesteps)')
+    
     # Safety classifier arguments
     parser.add_argument('--use_classifier', action='store_true',
                        help='Enable safety classifier for intermediate rewards')
@@ -453,16 +459,33 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     
     print(f"Training with hyperparameters: {hyperparams}")
     
-    # Create model
-    model = MaskablePPO(
-        MaskableActorCriticPolicy,
-        train_env,
-        tensorboard_log=str(log_dir),
-        verbose=args.verbose,
-        device=args.device,
-        seed=args.seed,
-        **hyperparams
-    )
+    # Create or load model
+    if args.load_model:
+        if not Path(args.load_model).exists():
+            raise FileNotFoundError(f"Model file not found: {args.load_model}")
+        print(f"Loading existing model from: {args.load_model}")
+        model = MaskablePPO.load(
+            args.load_model,
+            env=train_env,
+            device=args.device,
+            **hyperparams
+        )
+        # Reset environment after loading model
+        model.set_env(train_env)
+        reset_timesteps = not args.no_reset_timesteps
+        print(f"Model loaded. Reset timesteps: {reset_timesteps}")
+    else:
+        print("Creating new model from scratch")
+        model = MaskablePPO(
+            MaskableActorCriticPolicy,
+            train_env,
+            tensorboard_log=str(log_dir),
+            verbose=args.verbose,
+            device=args.device,
+            seed=args.seed,
+            **hyperparams
+        )
+        reset_timesteps = True
     
     # Set up callbacks
     callbacks = []
@@ -493,7 +516,8 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     model.learn(
         total_timesteps=args.total_timesteps,
         callback=callbacks,
-        tb_log_name="PPO"
+        tb_log_name="PPO",
+        reset_num_timesteps=reset_timesteps
     )
     
     # Save final model
