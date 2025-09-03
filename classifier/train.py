@@ -1,325 +1,201 @@
 """
-Main training script for comparing basic and enhanced classifiers.
-Runs hyperparameter tuning, training, and comparison analysis.
+Training script with Optuna hyperparameter tuning for state safety classifier.
 """
 
-import argparse
-import sys
-from pathlib import Path
-from rich.console import Console
 import torch
-import numpy as np
-import random
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import optuna
+import argparse
+from pathlib import Path
+import json
 
-from . import config
-from .trainer import get_available_benchmarks, run_hyperparameter_tuning, save_tuning_results, run_full_comparison
-from .trainer.test_summary import create_test_summaries_after_training
-from .utils import print_device_info
-
-# Create console for rich output
-console = Console()
-
-def set_random_seeds(seed=config.RANDOM_SEED):
-    """Set random seeds for reproducibility."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-    # Make CuDNN deterministic
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+from .models import Classifier
+from .data_loader import load_datasets, create_dataloaders, get_input_size
 
 
-def setup_directories(results_dir=None):
-    """Create necessary directories."""
-    results_dir = results_dir if results_dir is not None else config.RESULTS_DIR
-    for directory in [results_dir, config.PLOTS_DIR]:
-        Path(directory).mkdir(parents=True, exist_ok=True)
-
-
-def check_existing_results(benchmarks: list, results_dir: str = config.RESULTS_DIR) -> dict:
-    """Check which classifier types have existing results for given benchmarks."""
-    existing_results = {}
-    results_path = Path(results_dir)
+def train_epoch(model, dataloader, criterion, optimizer, device):
+    """Train model for one epoch."""
+    model.train()
+    total_loss = 0
     
-    for benchmark in benchmarks:
-        benchmark_path = results_path / benchmark
-        existing_results[benchmark] = {}
+    for features, targets in dataloader:
+        features, targets = features.to(device), targets.to(device)
         
-        for classifier_type in ['basic', 'enhanced']:
-            results_file = benchmark_path / f"{classifier_type}_tuning_results.json"
-            existing_results[benchmark][classifier_type] = results_file.exists()
+        optimizer.zero_grad()
+        outputs = model(features)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item()
     
-    return existing_results
+    return total_loss / len(dataloader)
 
 
-def train_single_benchmark(benchmark: str, classifier_type: str = "both", 
-                          n_trials: int = config.N_TRIALS, data_dir: str = ".", 
-                          output_dir: str = None) -> bool:
-    """Train specified classifier(s) for a single benchmark."""
-    try:
-        # Determine number of classifiers to train  
-        classifiers_to_train = ['basic', 'enhanced'] if classifier_type == 'both' else [classifier_type]
-        
-        console.print(f"🎯 Running hyperparameter tuning for {len(classifiers_to_train)} classifier(s) with {n_trials} trials each...")
-        
-        # Show progress with spinner
-        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-        
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            console=console,
-            transient=True
-        ) as progress:
-            task = progress.add_task(f"Optimizing {benchmark}...", total=None)
+def evaluate_model(model, dataloader, device):
+    """Evaluate model and return metrics."""
+    model.eval()
+    all_preds = []
+    all_targets = []
+    
+    with torch.no_grad():
+        for features, targets in dataloader:
+            features = features.to(device)
+            outputs = model(features)
+            predictions = (outputs > 0.5).float()
             
-            # Run hyperparameter tuning
-            results = run_hyperparameter_tuning(
-                benchmark=benchmark,
-                classifier_type=classifier_type,
-                n_trials=n_trials,
-                data_dir=data_dir
-            )
+            all_preds.extend(predictions.cpu().numpy())
+            all_targets.extend(targets.numpy())
+    
+    # Calculate metrics
+    accuracy = accuracy_score(all_targets, all_preds)
+    precision = precision_score(all_targets, all_preds)
+    recall = recall_score(all_targets, all_preds)
+    f1 = f1_score(all_targets, all_preds)
+    
+    return {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1
+    }
+
+
+def train_model(model, dataloaders, device, epochs=50, lr=0.001):
+    """Train model with given hyperparameters."""
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    best_val_acc = 0
+    best_model_state = None
+    
+    for epoch in range(epochs):
+        # Train
+        train_loss = train_epoch(model, dataloaders['train'], criterion, optimizer, device)
         
-        # Save results
-        results_dir = output_dir if output_dir is not None else config.RESULTS_DIR
-        save_tuning_results(results, benchmark, results_dir)
+        # Validate
+        val_metrics = evaluate_model(model, dataloaders['val'], device)
         
-        console.print(f"✅ Completed training for {benchmark}")
-        
-        # Print summary
-        for classifier_type in ['basic', 'enhanced']:
-            if classifier_type in results:
-                test_acc = results[classifier_type]['results'].get('test_metrics', {}).get('accuracy', 'N/A')
-                console.print(f"  {classifier_type.capitalize()} classifier test accuracy: {test_acc}")
-        
-        return True
-        
-    except Exception as e:
-        console.print(f"❌ Failed to train {benchmark}: {str(e)}")
-        return False
+        # Save best model
+        if val_metrics['accuracy'] > best_val_acc:
+            best_val_acc = val_metrics['accuracy']
+            best_model_state = model.state_dict().copy()
+    
+    # Load best model
+    model.load_state_dict(best_model_state)
+    return model
+
+
+def objective(trial, input_size, dataloaders, device):
+    """Optuna objective function for hyperparameter tuning."""
+    # Suggest hyperparameters
+    n_layers = trial.suggest_int('n_layers', 1, 3)
+    hidden_sizes = []
+    for i in range(n_layers):
+        size = trial.suggest_int(f'hidden_size_{i}', 32, 256)
+        hidden_sizes.append(size)
+    
+    dropout = trial.suggest_float('dropout', 0.1, 0.5)
+    lr = trial.suggest_float('lr', 1e-4, 1e-2, log=True)
+    epochs = trial.suggest_int('epochs', 20, 100)
+    
+    # Create and train model
+    model = Classifier(input_size, hidden_sizes, dropout).to(device)
+    model = train_model(model, dataloaders, device, epochs, lr)
+    
+    # Return validation accuracy
+    val_metrics = evaluate_model(model, dataloaders['val'], device)
+    return val_metrics['accuracy']
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train and compare safety classifiers")
-    parser.add_argument("--benchmarks", nargs="+", help="Specific benchmarks to train (default: all)")
-    parser.add_argument("--n-trials", type=int, default=config.N_TRIALS, 
-                       help=f"Number of hyperparameter tuning trials (default: {config.N_TRIALS})")
-    parser.add_argument("--data-dir", type=str, default=".", 
-                       help="Directory containing the datasets (default: current directory)")
-    parser.add_argument("--skip-training", action="store_true", 
-                       help="Skip training and only run comparison")
-    parser.add_argument("--comparison-only", action="store_true",
-                       help="Only run comparison analysis on existing results")
-    parser.add_argument("--seed", type=int, default=config.RANDOM_SEED,
-                       help=f"Random seed for reproducibility (default: {config.RANDOM_SEED})")
-    parser.add_argument("--classifier-type", type=str, choices=["basic", "enhanced", "both"],
-                       default="both", help="Which classifier to train: basic, enhanced, or both (default: both)")
-    parser.add_argument("--enable-comparison", action="store_true",
-                       help="Enable comparison analysis between basic and enhanced classifiers")
-    parser.add_argument("--output-dir", type=str, default=None,
-                       help="Directory to store trained classifiers and results (default: use config.RESULTS_DIR)")
-    parser.add_argument("--generate-summaries", action="store_true",
-                       help="Generate test set summaries for existing results without training")
+    parser = argparse.ArgumentParser(description="Train state safety classifier with hyperparameter tuning")
+    parser.add_argument('--data-dir', type=str, required=True, help='Directory containing train.csv, val.csv, test.csv')
+    parser.add_argument('--n-trials', type=int, default=100, help='Number of Optuna trials')
+    parser.add_argument('--output-dir', type=str, default='results', help='Output directory for results')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
     
     args = parser.parse_args()
     
-    # Set output directory
-    output_dir = args.output_dir if args.output_dir is not None else config.RESULTS_DIR
+    # Setup
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
     
-    # Handle generate-summaries option
-    if args.generate_summaries:
-        print("📊 Generating test set summaries for existing results...")
-        
-        # Get available benchmarks
-        if args.benchmarks:
-            benchmarks = args.benchmarks
-            print(f"Generating summaries for specified benchmarks: {benchmarks}")
-        else:
-            # Find benchmarks from existing results
-            results_path = Path(output_dir)
-            if results_path.exists():
-                benchmarks = [d.name for d in results_path.iterdir() if d.is_dir()]
-                print(f"Found {len(benchmarks)} benchmarks in results directory")
-            else:
-                print("❌ Results directory not found!")
-                sys.exit(1)
-        
-        if not benchmarks:
-            print("❌ No benchmarks found!")
-            sys.exit(1)
-        
-        try:
-            create_test_summaries_after_training(benchmarks, output_dir)
-            print("✅ Test summaries generated successfully!")
-        except Exception as e:
-            print(f"❌ Failed to generate summaries: {str(e)}")
-            sys.exit(1)
-        
-        return
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Validate arguments
-    if args.enable_comparison and args.classifier_type in ['basic', 'enhanced']:
-        # Check if we need both classifier types for comparison
-        print(f"⚠️  Warning: Comparison requested but only training {args.classifier_type} classifier.")
-        print("   Comparison requires both basic and enhanced classifier results.")
+    # Load data
+    print("Loading datasets...")
+    datasets = load_datasets(args.data_dir)
+    dataloaders, scaler = create_dataloaders(datasets, batch_size=args.batch_size)
+    input_size = get_input_size(args.data_dir)
     
-    # Set random seeds
-    set_random_seeds(args.seed)
+    print(f"Dataset loaded:")
+    for split, (features, targets) in datasets.items():
+        print(f"  {split}: {len(features)} samples, {features.shape[1]} features")
     
-    # Setup directories
-    setup_directories(output_dir)
+    # Hyperparameter tuning
+    print(f"\nStarting hyperparameter tuning with {args.n_trials} trials...")
+    study = optuna.create_study(direction='maximize')
+    study.optimize(
+        lambda trial: objective(trial, input_size, dataloaders, device),
+        n_trials=args.n_trials
+    )
     
-    # Print configuration
-    print("🚀 Safety Classifier Training and Comparison")
-    print("=" * 50)
+    print("Hyperparameter tuning completed!")
+    print(f"Best validation accuracy: {study.best_value:.4f}")
+    print("Best hyperparameters:")
+    for key, value in study.best_params.items():
+        print(f"  {key}: {value}")
     
-    # Show device information
-    print_device_info()
+    # Train final model with best hyperparameters
+    print("\nTraining final model...")
+    best_params = study.best_params
     
-    print(f"Random seed: {args.seed}")
-    print(f"Data directory: {args.data_dir}")
-    print(f"Results directory: {output_dir}")
-    print(f"Classifier type: {args.classifier_type}")
+    # Extract best hyperparameters
+    n_layers = best_params['n_layers']
+    hidden_sizes = [best_params[f'hidden_size_{i}'] for i in range(n_layers)]
+    dropout = best_params['dropout']
+    lr = best_params['lr']
+    epochs = best_params['epochs']
     
-    # Get available benchmarks
-    if args.benchmarks:
-        benchmarks = args.benchmarks
-        print(f"Selected benchmarks: {benchmarks}")
-    else:
-        benchmarks = get_available_benchmarks(args.data_dir)
-        print(f"Found {len(benchmarks)} available benchmarks")
+    # Create and train final model
+    final_model = Classifier(input_size, hidden_sizes, dropout).to(device)
+    final_model = train_model(final_model, dataloaders, device, epochs, lr)
     
-    if not benchmarks:
-        print("❌ No benchmarks found! Please check your data directory.")
-        sys.exit(1)
+    # Evaluate on test set
+    print("Evaluating on test set...")
+    test_metrics = evaluate_model(final_model, dataloaders['test'], device)
     
-    # Additional validation for comparison
-    if args.enable_comparison:
-        if args.classifier_type in ['basic', 'enhanced']:
-            # Check if the other classifier type already has results
-            existing_results = check_existing_results(benchmarks, output_dir)
-            other_type = 'enhanced' if args.classifier_type == 'basic' else 'basic'
-            
-            missing_results = []
-            for benchmark in benchmarks:
-                if benchmark in existing_results and not existing_results[benchmark].get(other_type, False):
-                    missing_results.append(benchmark)
-            
-            if missing_results:
-                print(f"❌ Comparison requested but {other_type} classifier results are missing for: {missing_results}")
-                print(f"   Either train both classifiers (--classifier-type both) or ensure {other_type} results exist.")
-                sys.exit(1)
-            else:
-                print(f"✅ Found existing {other_type} classifier results for comparison.")
+    print("Final test results:")
+    for metric, value in test_metrics.items():
+        print(f"  {metric}: {value:.4f}")
     
-    # Training phase
-    if not args.comparison_only and not args.skip_training:
-        print(f"\n🔧 Starting hyperparameter tuning and training...")
-        print(f"Trials per classifier: {args.n_trials}")
-        
-        # Simple benchmark counter
-        successful_benchmarks = []
-        failed_benchmarks = []
-        
-        classifier_desc = f"{args.classifier_type} classifier{'s' if args.classifier_type == 'both' else ''}"
-        
-        for i, benchmark in enumerate(benchmarks, 1):
-            console.print(f"\n📊 Training {classifier_desc} - Benchmark {i}/{len(benchmarks)}: [cyan]{benchmark}[/cyan]")
-            
-            success = train_single_benchmark(
-                benchmark=benchmark,
-                classifier_type=args.classifier_type,
-                n_trials=args.n_trials,
-                data_dir=args.data_dir,
-                output_dir=output_dir
-            )
-            
-            if success:
-                successful_benchmarks.append(benchmark)
-                console.print(f"✅ Completed benchmark: [green]{benchmark}[/green]")
-            else:
-                failed_benchmarks.append(benchmark)
-                console.print(f"❌ Failed benchmark: [red]{benchmark}[/red]")
-        
-        # Training summary
-        print(f"\n📊 Training Summary:")
-        print(f"✅ Successful: {len(successful_benchmarks)}")
-        print(f"❌ Failed: {len(failed_benchmarks)}")
-        
-        if failed_benchmarks:
-            print(f"Failed benchmarks: {failed_benchmarks}")
-        
-        if not successful_benchmarks:
-            print("❌ No successful training runs! Cannot proceed with comparison.")
-            sys.exit(1)
-        
-        # Generate test set summaries after successful training
-        try:
-            create_test_summaries_after_training(successful_benchmarks, output_dir)
-        except Exception as e:
-            console.print(f"⚠️  Failed to generate test summaries: {str(e)}")
-            console.print("Training completed successfully, but summary generation failed.")
+    # Save results
+    results = {
+        'best_params': study.best_params,
+        'best_val_accuracy': study.best_value,
+        'test_metrics': test_metrics,
+        'input_size': input_size
+    }
     
-    # Comparison phase
-    if args.enable_comparison:
-        print(f"\n📈 Starting comparison analysis...")
-        
-        try:
-            comparison_results = run_full_comparison(
-                benchmarks=benchmarks if not args.skip_training else None,
-                results_dir=output_dir
-            )
-            
-            if comparison_results and 'improvements' in comparison_results:
-                improvements = comparison_results['improvements']
-                
-                print(f"\n🎉 Comparison Results:")
-                print("=" * 30)
-                
-                if 'n_comparisons' in improvements:
-                    print(f"Benchmarks compared: {improvements['n_comparisons']}")
-                
-                # Print key results
-                for metric in ['accuracy', 'f1_score', 'precision', 'recall']:
-                    if metric in improvements:
-                        imp = improvements[metric]
-                        significance = "✓" if imp.get('statistically_significant', False) else "✗"
-                        print(f"{metric.capitalize()}:")
-                        print(f"  Mean improvement: {imp['mean_relative_improvement_percent']:.2f}%")
-                        print(f"  Win rate: {imp['win_rate']:.1%}")
-                        print(f"  Statistically significant: {significance}")
-                        print()
-                
-                # Overall conclusion
-                if 'accuracy' in improvements:
-                    acc_improvement = improvements['accuracy']
-                    if acc_improvement.get('statistically_significant', False):
-                        if acc_improvement['mean_relative_improvement_percent'] > 0:
-                            print("🎯 CONCLUSION: Enhanced classifier shows significant improvement!")
-                        else:
-                            print("⚠️  CONCLUSION: Enhanced classifier shows significant degradation.")
-                    else:
-                        print("⚪ CONCLUSION: No significant difference between classifiers.")
-                
-                print(f"\n📁 Results saved to: {output_dir}")
-                print(f"📊 Plots saved to: {config.PLOTS_DIR}")
-                print("📄 Check comparison_report.md for detailed analysis")
-            
-            else:
-                print("❌ Comparison failed - no results found")
-        
-        except Exception as e:
-            print(f"❌ Comparison failed: {str(e)}")
-            sys.exit(1)
-    else:
-        print("\n📈 Comparison skipped (use --enable-comparison to enable)")
+    with open(output_dir / 'results.json', 'w') as f:
+        json.dump(results, f, indent=2)
     
-    print("\n🏁 Training and comparison completed successfully!")
+    # Save model with scaler
+    torch.save({
+        'model_state_dict': final_model.state_dict(),
+        'input_size': input_size,
+        'hidden_sizes': hidden_sizes,
+        'dropout': dropout,
+        'scaler': scaler  # Save the fitted scaler
+    }, output_dir / 'best_model.pth')
+    
+    print(f"\nResults saved to {output_dir}")
+    print("Training completed successfully!")
 
 
 if __name__ == "__main__":

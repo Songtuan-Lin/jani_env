@@ -1,270 +1,99 @@
-import pandas as pd
-import numpy as np
+"""
+Simple utilities for loading trained models.
+"""
+
 import torch
+import numpy as np
 from pathlib import Path
-from typing import Optional, Union
-from .models import BasicClassifier, EnhancedClassifier, DynamicClassifier
-from . import config
+from .models import Classifier
 
 
-def get_available_devices():
-    """Get list of available accelerator devices (CUDA/MPS)."""
-    devices = []
-    
-    # Check CUDA devices
-    if torch.cuda.is_available():
-        devices.extend([f'cuda:{i}' for i in range(torch.cuda.device_count())])
-    
-    # Check MPS device
-    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-        devices.append('mps')
-    
-    # Always have CPU as fallback
-    if not devices:
-        devices.append('cpu')
-        
-    return devices
-
-
-def get_device_memory_info(device=None):
-    """Get device memory information (CUDA only, MPS memory not directly accessible)."""
-    if device is None:
-        device = config.DEVICE
-    
-    if isinstance(device, str):
-        device = torch.device(device)
-    
-    if device.type == 'cuda' and torch.cuda.is_available():
-        device_id = device.index or 0
-        if device_id >= torch.cuda.device_count():
-            return None
-            
-        try:
-            total_memory = torch.cuda.get_device_properties(device_id).total_memory
-            allocated_memory = torch.cuda.memory_allocated(device_id)
-            free_memory = total_memory - allocated_memory
-
-            return {
-                'device': str(device),
-                'type': 'cuda',
-                'total': total_memory,
-                'allocated': allocated_memory,
-                'free': free_memory,
-                'device_id': device_id
-            }
-        except Exception:
-            return None
-    elif device.type == 'mps':
-        return {
-            'device': str(device),
-            'type': 'mps',
-            'total': None,  # Not available for MPS
-            'allocated': None,
-            'free': None,
-            'device_id': 0
-        }
-    else:
-        return {
-            'device': str(device),
-            'type': 'cpu',
-            'total': None,
-            'allocated': None,
-            'free': None,
-            'device_id': None
-        }
-
-
-def validate_device(device):
-    """Validate that a device is accessible."""
-    if isinstance(device, str):
-        device = torch.device(device)
-    
-    try:
-        # Create a small tensor to test device accessibility
-        test_tensor = torch.tensor([1.0]).to(device)
-        _ = test_tensor + 1  # Simple operation to verify device works
-        return True
-    except Exception:
-        return False
-
-
-def print_device_info():
-    """Print information about available devices."""
-    print("🖥️  Device Information:")
-    print(f"   Current device: {config.DEVICE}")
-    print(f"   Device type: {config.DEVICE.type.upper()}")
-    
-    if config.DEVICE.type == 'cuda':
-        print(f"   CUDA devices: {torch.cuda.device_count()}")
-        print(f"   Current CUDA device: {config.DEVICE}")
-        print(f"   Device name: {torch.cuda.get_device_name()}")
-    elif config.DEVICE.type == 'mps':
-        print(f"   Apple Silicon GPU (MPS) available: ✅")
-        print(f"   Device name: Apple Silicon GPU")
-    else:
-        print(f"   Using CPU (no GPU acceleration)")
-    
-    print(f"   Available devices: {get_available_devices()}")
-    
-    # Memory info (CUDA only)
-    memory_info = get_device_memory_info()
-    if memory_info and memory_info['total']:
-        print(f"   GPU Memory: {memory_info['total'] // (1024**3):.1f} GB total")
-    
-    print()  # Empty line for better readability
-
-
-# Backward compatibility aliases
-def get_available_gpus():
-    """Legacy function - get CUDA GPU IDs only."""
-    if torch.cuda.is_available():
-        return list(range(torch.cuda.device_count()))
-    return []
-
-
-def get_gpu_memory_info(device_id=None):
-    """Legacy function - CUDA memory info only."""
-    if device_id is not None:
-        device = f'cuda:{device_id}'
-    else:
-        device = 'cuda' if torch.cuda.is_available() else None
-        
-    if device is None:
-        return None
-        
-    return get_device_memory_info(device)
-
-
-def validate_gpu_device(device_id):
-    """Legacy function - validate CUDA device only."""
-    if not torch.cuda.is_available() or device_id >= torch.cuda.device_count():
-        return False
-    return validate_device(f'cuda:{device_id}')
-
-
-def load_trained_model(model_path: Union[str, Path], 
-                      model_type: str = 'basic',
-                      input_size: Optional[int] = None,
-                      device: Optional[torch.device] = None) -> torch.nn.Module:
+def load_trained_model(model_path, device=None):
     """
     Load a trained classifier model.
     
     Args:
-        model_path: Path to the saved model file
-        model_type: Type of model ('basic', 'enhanced', 'dynamic')
-        input_size: Input size for the model (required for basic/enhanced models)
-        device: Device to load the model on
+        model_path: Path to the saved model file (.pth)
+        device: Device to load the model on (auto-detected if None)
     
     Returns:
-        Loaded model ready for inference
+        tuple: (model, scaler) where model is ready for inference and scaler is the fitted StandardScaler
     """
     if device is None:
-        device = config.DEVICE
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
-    # Load model state and metadata
+    # Load checkpoint
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
-    # Extract model parameters from checkpoint
-    if 'model_architecture' in checkpoint:
-        model_params = checkpoint['model_architecture']
-        input_size = model_params.get('input_size', input_size)
-    else:
-        raise ValueError("Model checkpoint missing 'model_architecture' section")
+    # Extract model parameters
+    input_size = checkpoint['input_size']
+    hidden_sizes = checkpoint['hidden_sizes']
+    dropout = checkpoint['dropout']
+    scaler = checkpoint.get('scaler', None)  # Get scaler if available
     
-    if input_size is None:
-        raise ValueError("input_size must be provided or stored in checkpoint")
-    
-    # Initialize model based on type
-    if model_type == 'basic':
-        model = BasicClassifier(input_size=input_size)
-    elif model_type == 'enhanced':
-        model = EnhancedClassifier(input_size=input_size)
-    elif model_type == 'dynamic':
-        # Dynamic model requires architecture parameters
-        model = DynamicClassifier(**model_params)
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
-    
-    # Load model state
-    if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        model.load_state_dict(checkpoint)
-    
+    # Create model
+    model = Classifier(input_size, hidden_sizes, dropout)
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     model.eval()
-    return model
+    
+    return model, scaler
 
 
-def save_model(model: torch.nn.Module, 
-               model_path: Union[str, Path],
-               model_params: Optional[dict] = None,
-               training_info: Optional[dict] = None):
+def predict(model, features, scaler=None, device=None):
     """
-    Save a trained model with metadata.
-    
-    Args:
-        model: The trained model to save
-        model_path: Path to save the model
-        model_params: Model architecture parameters
-        training_info: Training metadata (loss, metrics, etc.)
-    """
-    model_path = Path(model_path)
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    checkpoint = {
-        'model_state_dict': model.state_dict(),
-    }
-    
-    if model_params:
-        checkpoint['model_params'] = model_params
-    
-    if training_info:
-        checkpoint['training_info'] = training_info
-    
-    torch.save(checkpoint, model_path)
-
-
-def predict_safety(model: torch.nn.Module, 
-                  state_features: Union[torch.Tensor, np.ndarray],
-                  device: Optional[torch.device] = None) -> tuple[float, bool]:
-    """
-    Predict safety probability and classification for a single state.
+    Predict safety for given features.
     
     Args:
         model: Trained classifier model
-        state_features: State feature vector
+        features: Feature vector(s) - can be:
+                 - Single sample: 1D array/tensor of shape (n_features,)
+                 - Multiple samples: 2D array/tensor of shape (n_samples, n_features)
+        scaler: StandardScaler used during training (None if no normalization)
         device: Device for computation
     
     Returns:
-        Tuple of (safety_probability, is_safe) where:
-        - safety_probability: float (0-1, where 1 = safe)
-        - is_safe: bool (True if safe, False if unsafe)
+        If single sample: tuple (probability, is_safe)
+        If multiple samples: tuple (probabilities_array, is_safe_array)
     """
     if device is None:
-        device = config.DEVICE
+        device = next(model.parameters()).device
     
+    # Convert to numpy for scaler if needed
+    if isinstance(features, torch.Tensor):
+        features_np = features.cpu().numpy()
+    else:
+        features_np = features.copy()
+    
+    # Remember original shape to determine return format
+    single_sample = features_np.ndim == 1
+    
+    # Ensure 2D for processing
+    if single_sample:
+        features_np = features_np.reshape(1, -1)
+    
+    # Apply normalization if scaler is provided
+    if scaler is not None:
+        features_np = scaler.transform(features_np)
+    
+    # Convert to tensor
+    features_tensor = torch.from_numpy(features_np).float().to(device)
+    
+    # Make predictions
     model.eval()
-    
-    # Convert to tensor if needed
-    if isinstance(state_features, np.ndarray):
-        state_features = torch.from_numpy(state_features).float()
-    
-    # Ensure proper shape (add batch dimension if needed)
-    if state_features.dim() == 1:
-        state_features = state_features.unsqueeze(0)
-    
-    state_features = state_features.to(device)
-    
     with torch.no_grad():
-        output = model(state_features)
-        # Model already applies sigmoid, so output is already a probability
-        probability = output.item()
-        # Classification: safe if probability > 0.5
-        is_safe = probability > 0.5
+        outputs = model(features_tensor)
+        probabilities = outputs.cpu().numpy()
+        is_safe = probabilities > 0.5
     
-    return probability, is_safe
+    # Return format based on input
+    if single_sample:
+        return probabilities[0], is_safe[0]
+    else:
+        return probabilities, is_safe
+
+

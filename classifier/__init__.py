@@ -1,44 +1,28 @@
 """
-Classifier module for JANI state safety prediction.
+Simplified classifier module for state safety prediction.
 
 This module provides:
-- Neural network models for binary safety classification  
-- Model loading and inference utilities for integration
-- Training pipeline in classifier.trainer submodule
+- Simple neural network model for binary safety classification  
+- Data loading utilities for CSV datasets
+- Training script with Optuna hyperparameter tuning
 
-For standalone training: python -m classifier.train
-For integration: from classifier import BasicClassifier, load_trained_model, predict_safety
-For training utilities: from classifier.trainer import train_model, create_data_loaders
+Usage: python -m classifier.train --data-dir /path/to/data
 """
 
-# Core models for inference and integration
-from .models import BasicClassifier, EnhancedClassifier, DynamicClassifier
+# Core model
+from .models import Classifier
 
-# Integration utilities
-from .utils import load_trained_model, save_model, predict_safety, print_device_info, get_available_devices
+# Data loading utilities  
+from .data_loader import load_datasets, create_dataloaders, get_input_size
 
-# Configuration (shared across main and trainer modules)
-from . import config
-
-# Training submodule (available as classifier.trainer)
-from . import trainer
+# Model loading utilities
+from .utils import load_trained_model, predict
 
 __all__ = [
-    # Models (primary interface for integration)
-    'BasicClassifier', 
-    'EnhancedClassifier', 
-    'DynamicClassifier',
-    
-    # Integration utilities
+    'Classifier',
+    'load_datasets', 
+    'create_dataloaders',
+    'get_input_size',
     'load_trained_model',
-    'save_model', 
-    'predict_safety',
-    'print_device_info',
-    'get_available_devices',
-    
-    # Configuration
-    'config',
-    
-    # Training submodule
-    'trainer'
+    'predict'
 ]
