@@ -3,7 +3,7 @@ import gymnasium as gym
 
 from .core import *
 from typing import Optional
-from classifier import load_trained_model, predict_safety
+from classifier import load_trained_model, predict
 
 
 class JaniEnv(gym.Env):
@@ -21,9 +21,10 @@ class JaniEnv(gym.Env):
         # set up classifier
         self._use_classifier = use_classifier
         self._classifier = None
+        self._scaler = None
         if self._use_classifier:
             assert classifier_model is not None, "Classifier model path must be provided if use_classifier is True"
-            self._classifier = load_trained_model(classifier_model, model_type='dynamic')
+            self._classifier, self._scaler = load_trained_model(classifier_model, model_type='dynamic')
         self._safe_reward = safe_reward
         self._unsafe_reward = unsafe_reward
         # Initialize current state to None
@@ -59,7 +60,7 @@ class JaniEnv(gym.Env):
         reward = 0.0
         if self._use_classifier:
             assert self._classifier is not None, "Classifier model is not loaded"
-            safety_prob, is_safe = predict_safety(self._classifier, np.array(next_state.to_vector(), dtype=np.float32).reshape(1, -1))
+            safety_prob, is_safe = predict(self._classifier, np.array(next_state.to_vector(), dtype=np.float32).reshape(1, -1), self._scaler)
             # Currently using binary classification; safety_prob available for future use
             if is_safe:
                 reward = self._safe_reward  # Reward for safe state
