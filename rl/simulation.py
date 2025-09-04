@@ -14,7 +14,7 @@ from sb3_contrib import MaskablePPO
 
 
 class Simulator:
-    def __init__(self, env_args: dict, max_episodes: int, output_path: str = "simulation_results.csv", policy = None):
+    def __init__(self, env_args: dict, max_episodes: int, output_path: str = None, policy = None, n_steps: int = 2048, run_oracle: bool = True, cache_states: bool = True):
         def mask_fn(env) -> np.ndarray:
             return env.unwrapped.action_mask()
 
@@ -23,22 +23,34 @@ class Simulator:
         self._policy = policy
         self._max_episodes = max_episodes
         self._output_path = output_path
+        self._n_steps = n_steps
+        self._run_oracle = run_oracle
+        self._cache_states = cache_states
 
-    def run(self):
-        cached = []
-        
+    def run(self) -> dict:
+        cached_states = []
+        num_unsafe = 0 if self._run_oracle else None
+
         def cache_state(state: State) -> None:
-            safe_state = self._oracle.is_safe(state)
+            if not self._cache_states:
+                return
+            nonlocal cached_states, num_unsafe
             state_vec = state.to_vector()
-            state_vec.append(int(safe_state))
-            cached.append(state_vec)
+            if self._run_oracle:
+                state_safe = self._oracle.is_safe(state)
+                if not state_safe:
+                    num_unsafe += 1
+                state_vec.append(int(state_safe))
+            cached_states.append(state_vec)
 
+        rewards = []
         for _ in range(self._max_episodes):
             obs, _ = self._env.reset()
             cache_state(self._env.unwrapped.get_state_repr())
+            episode_reward = 0.0
             done = False
-            max_step = 2048
-            while not done and max_step > 0:
+            remaining_steps = self._n_steps
+            while not done and remaining_steps > 0:
                 action_masks = get_action_masks(self._env)
                 if self._policy is not None:
                     action, _state = self._policy.predict(obs, action_masks=action_masks)
@@ -47,14 +59,23 @@ class Simulator:
                     # sample one
                     action = np.random.choice(valid_actions)
                 obs, reward, done, truncated, info = self._env.step(action)
+                episode_reward += reward
                 cache_state(self._env.unwrapped.get_state_repr())
-                max_step -= 1
+                remaining_steps -= 1
+            rewards.append(episode_reward)
 
-        results = np.array(cached, dtype=np.float32)
-        num_columns = results.shape[-1]
-        fmt = ["%.3f"] * (num_columns - 1)
-        fmt.append("%d")
-        np.savetxt(self._output_path, results, delimiter=",", fmt=fmt)
+        if self._output_path:
+            cached_states = np.array(cached_states, dtype=np.float32)
+            num_columns = cached_states.shape[-1]
+            fmt = ["%.3f"] * (num_columns - 1)
+            fmt.append("%d")
+            np.savetxt(self._output_path, cached_states, delimiter=",", fmt=fmt)
+        
+        mean_reward = np.mean(rewards)
+        results = {"mean_reward": mean_reward, "num_episodes": self._max_episodes}
+        if self._run_oracle:
+            results["num_unsafe"] = num_unsafe
+        return results
 
 def load_policy(policy_file_path: str):
     """Load a trained MaskablePPO policy from file."""
