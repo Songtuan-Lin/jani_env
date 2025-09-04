@@ -142,6 +142,7 @@ class ClassifierDebugCallback(BaseCallback):
         
         # Get classifier from environment to check predictions
         self.classifier = first_env._classifier if hasattr(first_env, '_classifier') else None
+        self.scaler = first_env._scaler if hasattr(first_env, '_scaler') else None
         
         if self.verbose >= 1:
             print("🔍 Classifier debug callback initialized with Tarjan oracle")
@@ -165,9 +166,9 @@ class ClassifierDebugCallback(BaseCallback):
                 
                 # Get classifier prediction
                 try:
-                    from classifier import predict_safety
+                    from classifier import predict
                     state_vector = np.array(current_state.to_vector(), dtype=np.float32).reshape(1, -1)
-                    _, classifier_is_safe = predict_safety(self.classifier, state_vector)
+                    _, classifier_is_safe = predict(self.classifier, state_vector, self.scaler)
                     
                     # Get oracle prediction (ground truth)
                     oracle_is_safe = self.oracle.is_safe(current_state)

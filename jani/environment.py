@@ -24,7 +24,7 @@ class JaniEnv(gym.Env):
         self._scaler = None
         if self._use_classifier:
             assert classifier_model is not None, "Classifier model path must be provided if use_classifier is True"
-            self._classifier, self._scaler = load_trained_model(classifier_model, model_type='dynamic')
+            self._classifier, self._scaler = load_trained_model(classifier_model)
         self._safe_reward = safe_reward
         self._unsafe_reward = unsafe_reward
         # Initialize current state to None
