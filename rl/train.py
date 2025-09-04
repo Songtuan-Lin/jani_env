@@ -57,6 +57,8 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 from jani.environment import JaniEnv
 from jani.oracle import TarjanOracle
 
+from gymnasium.wrappers import TimeLimit
+
 
 class WandbCallback(BaseCallback):
     """Custom callback for Weights & Biases logging."""
@@ -390,10 +392,12 @@ def create_eval_file_args(file_args: Dict[str, str]) -> Dict[str, str]:
     return eval_args
 
 
-def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True):
+def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True, timelimit: bool = False):
     """Create the training environment."""
     def make_env():
         env = JaniEnv(**file_args)
+        if timelimit:
+            env = TimeLimit(env, max_episode_steps=2048)
         env = ActionMasker(env, mask_fn)
         if monitor:
             env = Monitor(env)
@@ -463,7 +467,7 @@ def objective(trial, args, file_args: Dict[str, str]) -> float:
     # Create environments
     train_env = create_env(file_args, args.n_envs, monitor=False)
     # For hyperparameter tuning, we always need evaluation regardless of disable_eval flag
-    eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
+    eval_env = create_env(create_eval_file_args(file_args), 1, timelimit=True)  # Disable classifier for evaluation
     
     try:
         # Create model with suggested hyperparameters
@@ -545,7 +549,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     # Create evaluation environment only if evaluation is not disabled
     eval_env = None
     if not args.disable_eval:
-        eval_env = create_env(create_eval_file_args(file_args), 1)  # Disable classifier for evaluation
+        eval_env = create_env(create_eval_file_args(file_args), 1, timelimit=True)  # Disable classifier for evaluation
     
     # Default hyperparameters if not provided
     if hyperparams is None:
