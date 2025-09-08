@@ -78,7 +78,8 @@ class JaniEnv(gym.Env):
             reward = -1.0
             done = True
         elif self.action_mask().sum() == 0:
-            reward = -1.0
+            # raise ValueError(f"No valid actions available from state {next_state}.")
+            reward = 0.0
             done = True
         # self._current_state = next_state
         return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": self.action_mask()}
