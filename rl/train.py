@@ -418,6 +418,54 @@ class ClassifierMonitorCallback(BaseCallback):
             'classifier_predictions': classifier_predictions.tolist()
         }
     
+    def _update_env_classifier(self, fine_tuned_model, new_scaler):
+        """Update the classifier in the environment with the fine-tuned model."""
+        try:
+            # Update classifier in the monitoring environment
+            if hasattr(self.env, 'envs'):
+                # Vectorized environment - update all environments
+                for env in self.env.envs:
+                    unwrapped_env = self._unwrap_to_jani_env(env)
+                    if hasattr(unwrapped_env, '_classifier'):
+                        unwrapped_env._classifier = fine_tuned_model
+                    if hasattr(unwrapped_env, '_scaler'):
+                        unwrapped_env._scaler = new_scaler
+            else:
+                # Single environment
+                unwrapped_env = self._unwrap_to_jani_env(self.env)
+                if hasattr(unwrapped_env, '_classifier'):
+                    unwrapped_env._classifier = fine_tuned_model
+                if hasattr(unwrapped_env, '_scaler'):
+                    unwrapped_env._scaler = new_scaler
+            
+            # Also update the training environment (should be available via BaseCallback)
+            if not hasattr(self, 'training_env') or self.training_env is None:
+                raise ValueError("training_env not available in callback - this should be set by BaseCallback")
+            
+            # Update the actual training environment that the agent uses
+            if hasattr(self.training_env, 'envs'):
+                # Vectorized training environment
+                for env in self.training_env.envs:
+                    unwrapped_env = self._unwrap_to_jani_env(env)
+                    if hasattr(unwrapped_env, '_classifier'):
+                        unwrapped_env._classifier = fine_tuned_model
+                    if hasattr(unwrapped_env, '_scaler'):
+                        unwrapped_env._scaler = new_scaler
+            else:
+                # Single training environment
+                unwrapped_env = self._unwrap_to_jani_env(self.training_env)
+                if hasattr(unwrapped_env, '_classifier'):
+                    unwrapped_env._classifier = fine_tuned_model
+                if hasattr(unwrapped_env, '_scaler'):
+                    unwrapped_env._scaler = new_scaler
+            
+            if self.verbose >= 2:
+                print("🔄 Environment classifier updated with fine-tuned model")
+                
+        except Exception as e:
+            if self.verbose >= 1:
+                print(f"⚠️ Error updating environment classifier: {e}")
+    
     def _fine_tune_classifier(self, state_vectors, oracle_predictions):
         """Fine-tune the classifier using existing training data plus new data."""
         if not self.tune_classifier or not self.data_dir:
@@ -470,7 +518,7 @@ class ClassifierMonitorCallback(BaseCallback):
                 hidden_sizes = [128, 64]  # Default architecture
                 
             if hasattr(self.classifier, 'dropout'):
-                dropout = self.classifier.dropout
+                dropout = self.classifier.dropout.p
             else:
                 dropout = 0.2
             
@@ -487,6 +535,9 @@ class ClassifierMonitorCallback(BaseCallback):
             # Update the classifier and scaler
             self.classifier = fine_tuned_model
             self.scaler = new_scaler
+            
+            # Update the classifier in the environment as well
+            self._update_env_classifier(fine_tuned_model, new_scaler)
             
             if self.verbose >= 1:
                 print(f"✅ Classifier fine-tuned with {len(new_features)} new samples")

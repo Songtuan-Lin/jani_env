@@ -20,6 +20,7 @@ class Classifier(nn.Module):
     def __init__(self, input_size, hidden_sizes=[128, 64], dropout=0.2):
         super(Classifier, self).__init__()
         
+        self.hidden_sizes = hidden_sizes
         self.layers = nn.ModuleList()
         self.dropout = nn.Dropout(dropout)
         
