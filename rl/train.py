@@ -214,7 +214,7 @@ class ClassifierDebugCallback(BaseCallback):
 
 class ClassifierMonitorCallback(BaseCallback):
     '''Custom callback to monitor classifier's information during training.'''
-    def __init__(self, env, monitor_freq: int = 10000, num_episodes: int = 30, tune_classifier: bool = False, data_dir: str = None, csv_output_path: str = None, verbose: int = 0):
+    def __init__(self, env, monitor_freq: int = 10000, num_episodes: int = 30, tune_classifier: bool = False, data_dir: str = None, csv_output_path: str = None, model_save_dir: str = None, verbose: int = 0):
         super().__init__()
         self.env = env
         self.monitor_freq = monitor_freq
@@ -222,6 +222,7 @@ class ClassifierMonitorCallback(BaseCallback):
         self.tune_classifier = tune_classifier
         self.data_dir = data_dir
         self.csv_output_path = csv_output_path
+        self.model_save_dir = model_save_dir
         self.verbose = verbose
         if self.tune_classifier and self.data_dir is None:
             raise ValueError("data_dir must be provided if tune_classifier is True")
@@ -628,11 +629,37 @@ class ClassifierMonitorCallback(BaseCallback):
             if self.verbose >= 1:
                 print(f"⚠️ Error writing to CSV: {e}")
     
+    def _save_policy_model(self):
+        """Save the current policy model with timestep information."""
+        if self.model_save_dir is None:
+            return
+        
+        try:
+            from pathlib import Path
+            
+            # Create save directory if it doesn't exist
+            save_dir = Path(self.model_save_dir)
+            save_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save model with timestep in filename
+            model_path = save_dir / f"policy_model_timestep_{self.num_timesteps}"
+            self.model.save(str(model_path))
+            
+            if self.verbose >= 1:
+                print(f"💾 Policy model saved: {model_path}")
+                
+        except Exception as e:
+            if self.verbose >= 1:
+                print(f"⚠️ Error saving policy model: {e}")
+    
     def _on_step(self) -> bool:
         """Monitor classifier performance at specified frequency."""
         if self.num_timesteps % self.monitor_freq == 0 and self.num_timesteps > 0:
             if self.verbose >= 1:
                 print(f"🔍 Monitoring classifier at timestep {self.num_timesteps}")
+            
+            # Save the current policy model
+            self._save_policy_model()
             
             # Run episodes and collect state vectors, objects, actions, and failure states count
             state_vectors, state_objects, actions, failure_states_count = self._run_episodes_and_collect_states()
@@ -807,6 +834,8 @@ def parse_arguments():
                        help='Enable online fine-tuning of classifier using new oracle-labeled data')
     parser.add_argument('--classifier_data_dir', type=str, default=None,
                        help='Directory containing classifier training data (required for online fine-tuning)')
+    parser.add_argument('--disable_monitor_model_saving', action='store_true',
+                       help='Disable saving policy models during classifier monitoring')
     
     return parser.parse_args()
 
@@ -1164,6 +1193,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
             tune_classifier=args.tune_classifier_online,
             data_dir=args.classifier_data_dir,
             csv_output_path=args.monitor_csv_output,
+            model_save_dir=None if args.disable_monitor_model_saving else str(model_save_dir / "monitor_checkpoints"),
             verbose=args.verbose
         )
         callbacks.append(monitor_callback)
@@ -1174,6 +1204,11 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
                     print("🔧 Online classifier fine-tuning enabled")
             else:
                 print("📊 State monitoring enabled - will track unsafe and failure states using Tarjan oracle only")
+            
+            if not args.disable_monitor_model_saving:
+                print(f"💾 Policy model saving enabled - models will be saved to: {model_save_dir / 'monitor_checkpoints'}")
+            else:
+                print("💾 Policy model saving during monitoring is disabled")
     
     # Early stopping on reward threshold (optional)
     # stop_callback = StopTrainingOnRewardThreshold(reward_threshold=200, verbose=1)
