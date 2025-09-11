@@ -14,7 +14,7 @@ from sb3_contrib import MaskablePPO
 
 
 class Simulator:
-    def __init__(self, env_args: dict, max_episodes: int, output_path: str = None, policy = None, n_steps: int = 2048, run_oracle: bool = True, cache_states: bool = True):
+    def __init__(self, env_args: dict, max_episodes: int, output_path: str = None, policy = None, n_steps: int = 2048, run_oracle: bool = True, cache_states: bool = True, seed: int = None):
         def mask_fn(env) -> np.ndarray:
             return env.unwrapped.action_mask()
 
@@ -26,6 +26,7 @@ class Simulator:
         self._n_steps = n_steps
         self._run_oracle = run_oracle
         self._cache_states = cache_states
+        self._seed = seed
 
     def run(self) -> dict:
         cached_states = []
@@ -57,7 +58,8 @@ class Simulator:
                 else:
                     valid_actions = np.flatnonzero(action_masks)
                     # sample one
-                    action = np.random.choice(valid_actions)
+                    rng = np.random.default_rng(self._seed) if self._seed is not None else np.random.default_rng()
+                    action = rng.choice(valid_actions)
                 obs, reward, done, truncated, info = self._env.step(action)
                 episode_reward += reward
                 cache_state(self._env.unwrapped.get_state_repr())
@@ -101,6 +103,7 @@ def parse_args():
     parser.add_argument("--random_init", action="store_true", help="Use random initial state generator")
     parser.add_argument("--output_path", default="simulation_results.csv", help="Path to save the CSV results file")
     parser.add_argument("--max_episodes", type=int, default=50, help="Maximum number of episodes to simulate")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -132,5 +135,8 @@ if __name__ == "__main__":
     else:
         print("No policy file specified. Using random policy.")
     
-    simulator = Simulator(env_args, max_episodes=args.max_episodes, output_path=args.output_path, policy=policy)
+    simulator = Simulator(env_args, max_episodes=args.max_episodes, output_path=args.output_path, policy=policy, seed=args.seed)
+    # Set numpy random seed for reproducibility
+    if args.seed is not None:
+        np.random.seed(args.seed)
     simulator.run()

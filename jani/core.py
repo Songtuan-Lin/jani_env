@@ -1,13 +1,13 @@
 from __future__ import annotations
 import json
 import copy
-import random
+import numpy as np
 
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import dataclass
 from collections import defaultdict
-from typing import Any, Union
+from typing import Any, Union, Optional
 from z3 import *
 
 
@@ -34,17 +34,20 @@ class Variable:
     def __hash__(self) -> int:
         return hash(self.name)
 
-    def random(self) -> None:
+    def random(self, rng: Optional[np.random.Generator] = None) -> None:
+        if rng is None:
+            rng = np.random.default_rng()
+        
         if self.type == 'int':
             assert self.lower_bound is not None and self.upper_bound is not None
             assert isinstance(self.lower_bound, int) and isinstance(self.upper_bound, int)
-            self.value = random.randint(self.lower_bound, self.upper_bound)
+            self.value = rng.integers(self.lower_bound, self.upper_bound + 1)
         elif self.type == 'real':
             assert self.lower_bound is not None and self.upper_bound is not None
             assert isinstance(self.lower_bound, float) and isinstance(self.upper_bound, float)
-            self.value = random.uniform(self.lower_bound, self.upper_bound)
+            self.value = rng.uniform(self.lower_bound, self.upper_bound)
         elif self.type == 'bool':
-            self.value = random.choice([True, False])
+            self.value = rng.choice([True, False])
         else:
             raise ValueError(f'Unsupported variable type: {self.type}')
 
@@ -390,8 +393,11 @@ class Automaton:
         self._initial_locations: list[str] = json_obj['initial-locations']
         self._locations: list[dict[str, str]] = json_obj['locations']
 
-    def transit(self, state: State, action: Action, return_all: bool = False) -> list[State]:
+    def transit(self, state: State, action: Action, return_all: bool = False, rng: np.random.Generator = None) -> list[State]:
         """Apply the given action to the given state."""
+        if rng is None:
+            rng = np.random.default_rng()
+            
         if action.label not in self._edges:
             raise ValueError(f'Action {action.label} is not supported in automaton {self._name}.')
         new_states = []
@@ -402,7 +408,7 @@ class Automaton:
             if return_all:
                 new_states.extend(successors)
             else:
-                next_state = random.choices(successors, distribution)[0]
+                next_state = rng.choice(successors, p=distribution)
                 new_states.append(next_state)
         return new_states
     
@@ -414,7 +420,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False):
+    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False, seed: Optional[int] = None):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -564,11 +570,14 @@ class JANI:
         # overwrite initial state generator to a pure random one if random_init is True
         if random_init:
             self._init_generator = JANI.RandomGenerator(self)
+        
+        # Initialize RNG for consistent seeding throughout the JANI instance
+        self._rng = np.random.default_rng(seed)
 
     class InitGenerator(ABC):
         '''Generate initial states.'''
         @abstractmethod
-        def generate(self) -> State:
+        def generate(self, rng: np.random.Generator) -> State:
             pass
 
     class RandomGenerator(InitGenerator):
@@ -576,14 +585,14 @@ class JANI:
         def __init__(self, model: JANI):
             self._model = model
 
-        def generate(self) -> State:
+        def generate(self, rng: np.random.Generator) -> State:
             # Implement random state generation
             state_dict = {}
             for constant in self._model._constants:
                 state_dict[constant.name] = copy.deepcopy(constant)
             for _variable in self._model._variables:
                 variable = copy.deepcopy(_variable)
-                variable.random()
+                variable.random(rng)
                 state_dict[variable.name] = variable
             return State(state_dict)
 
@@ -608,8 +617,8 @@ class JANI:
                 state = create_state(state_value)
                 self._pool.append(state)
       
-        def generate(self) -> State:
-            return random.choice(self._pool)
+        def generate(self, rng: np.random.Generator) -> State:
+            return rng.choice(self._pool)
 
     class ConstraintsGenerator(InitGenerator):
         '''Generate initial states based on constraints.'''
@@ -621,7 +630,7 @@ class JANI:
             self._main_clause, self._additional_clauses, self._all_vars = expr.to_clause(self._model)
             self._cached_values = defaultdict(set) # cache previously generated values for each variable
 
-        def generate(self) -> State:
+        def generate(self, rng: np.random.Generator) -> State:
             # Implement constraint-based state generation
             def z3_value_to_python(z3_value: z3.ExprRef) -> Any:
                 if z3_value.sort().kind() == z3.Z3_INT_SORT:
@@ -636,7 +645,7 @@ class JANI:
 
             def solver_with_core_constraints() -> z3.Solver:
                 s = Tactic('qflra').solver()
-                s.set('smt.random_seed', random.randint(0, 2**32 - 1))
+                s.set('smt.random_seed', int(rng.integers(0, 2**31)))
                 s.set('smt.arith.random_initial_value', True)
                 s.add(self._main_clause)
                 for clause in self._additional_clauses:
@@ -644,7 +653,7 @@ class JANI:
                 return s
             
             def block_random_variable() -> list:
-                v = random.choice(self._all_vars)
+                v = rng.choice(self._all_vars)
                 return [v != value for value in self._cached_values[str(v)]]
             
             def cache_current_values(model: z3.Model) -> None:
@@ -681,7 +690,7 @@ class JANI:
                     if v.name in target_vars:
                         v.value = target_vars[v.name]
                     else:
-                        v.random() # if v is unconstrainted, sample a random value
+                        v.random(rng) # if v is unconstrainted, sample a random value
                     state_dict[v.name] = v
                 return State(state_dict)
 
@@ -703,7 +712,7 @@ class JANI:
                     val = m[v]
                     mu, sigma = z3_value_to_python(val), 2
                     # gaussian sample with the current value being the mean
-                    r = random.gauss(mu, sigma)
+                    r = rng.normal(mu, sigma)
                     if jani_var.type == 'int':
                         r = int(round(r))
                         div_criterion.append(v == r)
@@ -721,7 +730,7 @@ class JANI:
 
     def reset(self) -> State:
         """Reset the JANI model to a random initial state."""
-        return self._init_generator.generate()
+        return self._init_generator.generate(self._rng)
     
     def get_action_count(self) -> int:
         return len(self._actions)
@@ -738,7 +747,7 @@ class JANI:
 
     def get_transition(self, state: State, action: Action) -> State:
         # Implement the logic to get the next state based on the current state and action
-        next_states = self._automata[0].transit(state, action)
+        next_states = self._automata[0].transit(state, action, rng=self._rng)
         if len(next_states) == 0:
             return None
         # if len(next_states) > 1:
@@ -747,7 +756,7 @@ class JANI:
         return next_states[0]
 
     def get_successors(self, state: State, action: Action) -> list[State]:
-        return self._automata[0].transit(state, action, return_all=True)
+        return self._automata[0].transit(state, action, return_all=True, rng=self._rng)
 
     def get_action(self, action_index: int) -> Action:
         if action_index < 0 or action_index >= len(self._actions):

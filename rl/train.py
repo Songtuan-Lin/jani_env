@@ -929,12 +929,25 @@ def add_classifier_args(file_args: Dict[str, str], args) -> Dict[str, str]:
         file_args['classifier_model'] = args.classifier_model
         file_args['safe_reward'] = args.safe_reward
         file_args['unsafe_reward'] = args.unsafe_reward
+    # Add seed for reproducible environments
+    if hasattr(args, 'seed') and args.seed is not None:
+        file_args['seed'] = args.seed
     return file_args
 
 
+def create_seeded_file_args(file_args: Dict[str, str], seed_offset: int, env_name: str = "environment") -> Dict[str, str]:
+    """Create file_args with a different seed by adding an offset."""
+    seeded_args = file_args.copy()
+    if 'seed' in seeded_args and seeded_args['seed'] is not None:
+        new_seed = seeded_args['seed'] + seed_offset
+        seeded_args['seed'] = new_seed
+        print(f"🎯 {env_name}: Using seed {new_seed} (training seed + {seed_offset})")
+    return seeded_args
+
 def create_eval_file_args(file_args: Dict[str, str]) -> Dict[str, str]:
     """Create file_args for evaluation environment with classifier disabled."""
-    eval_args = file_args.copy()
+    eval_args = create_seeded_file_args(file_args, 10000, "Evaluation environment")
+    
     eval_args['use_classifier'] = False
     # Remove classifier-specific keys to avoid passing them to JaniEnv
     eval_args.pop('classifier_model', None)
@@ -962,7 +975,8 @@ def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True,
     if n_envs == 1:
         env = make_env()
     else:
-        # Create vectorized environment with ActionMasker wrapper
+        # Create vectorized environment - make_vec_env will handle seeding internally
+        # when the model is created with a seed parameter
         env = make_vec_env(make_env, n_envs=n_envs)
         if monitor:
             env = VecMonitor(env)
@@ -1184,7 +1198,8 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     if args.monitor_classifier:
         # Create an independent monitoring environment identical to training environment
         print("Creating independent monitoring environment...")
-        monitor_env = create_env(file_args, n_envs=1, monitor=False, timelimit=True)
+        monitor_file_args = create_seeded_file_args(file_args, 20000, "Monitor environment")
+        monitor_env = create_env(monitor_file_args, n_envs=1, monitor=False, timelimit=True)
         
         monitor_callback = ClassifierMonitorCallback(
             env=monitor_env,
@@ -1254,6 +1269,15 @@ def main():
     # Set seeds for reproducibility
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    
+    # Additional PyTorch seeding for full reproducibility
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+    
+    # Make PyTorch deterministic (may impact performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
     # Validate file arguments
     try:
