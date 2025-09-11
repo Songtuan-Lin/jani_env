@@ -613,11 +613,13 @@ class JANI:
 
     class ConstraintsGenerator(InitGenerator):
         '''Generate initial states based on constraints.'''
-        def __init__(self, json_obj: dict, model: JANI):
+        def __init__(self, json_obj: dict, model: JANI, block_previous: bool = True):
             self._model = model
             constraint_expr = json_obj['exp']
             expr = Expression.construct(constraint_expr)
+            self._block_previous = block_previous
             self._main_clause, self._additional_clauses, self._all_vars = expr.to_clause(self._model)
+            self._cached_values = defaultdict(set) # cache previously generated values for each variable
 
         def generate(self) -> State:
             # Implement constraint-based state generation
@@ -640,6 +642,19 @@ class JANI:
                 for clause in self._additional_clauses:
                     s.add(clause)
                 return s
+            
+            def block_random_variable() -> list:
+                v = random.choice(self._all_vars)
+                return [v != value for value in self._cached_values[str(v)]]
+            
+            def cache_current_values(model: z3.Model) -> None:
+                for v in model.decls():
+                    z3_value = model[v]
+                    python_value = z3_value_to_python(z3_value)
+                    self._cached_values[v.name()].add(python_value)
+                    # Limit the cache size to avoid memory issues
+                    if len(self._cached_values[v.name()]) > 1000:
+                        self._cached_values[v.name()].pop()
 
             def get_state_values(model: z3.Model) -> dict:
                 target_vars = {}
@@ -676,22 +691,29 @@ class JANI:
             m = s.model()
             backup = get_state_values(m) # backup state value
             div_criterion = []
-            for v in self._all_vars:
-                jani_var = self._model.get_variable(str(v))
-                if jani_var.type == 'bool':
-                    continue
-                val = m[v]
-                mu, sigma = z3_value_to_python(val), 2
-                # gaussian sample with the current value being the mean
-                r = random.gauss(mu, sigma)
-                if jani_var.type == 'int':
-                    r = int(round(r))
-                    div_criterion.append(v == r)
-                elif jani_var.type == 'real':
-                    div_criterion.append(v == r)
-            s.add(Or(div_criterion))
+            if self._block_previous:
+                div_criterion = block_random_variable()
+                for criterion in div_criterion:
+                    s.add(criterion)
+            else:
+                for v in self._all_vars:
+                    jani_var = self._model.get_variable(str(v))
+                    if jani_var.type == 'bool':
+                        continue
+                    val = m[v]
+                    mu, sigma = z3_value_to_python(val), 2
+                    # gaussian sample with the current value being the mean
+                    r = random.gauss(mu, sigma)
+                    if jani_var.type == 'int':
+                        r = int(round(r))
+                        div_criterion.append(v == r)
+                    elif jani_var.type == 'real':
+                        div_criterion.append(v == r)
+                s.add(Or(div_criterion))
             if s.check() == sat:
                 m = s.model()
+                if self._block_previous:
+                    cache_current_values(m)
                 return create_state(get_state_values(m))
             else:
                 # print("Warning: Failed to generate a random state")
