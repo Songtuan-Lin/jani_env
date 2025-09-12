@@ -837,6 +837,12 @@ def parse_arguments():
     parser.add_argument('--disable_monitor_model_saving', action='store_true',
                        help='Disable saving policy models during classifier monitoring')
     
+    # JANI constraints generator options
+    parser.add_argument('--no_block_previous', action='store_true',
+                       help='Disable blocking previously generated values in ConstraintsGenerator (default: block_previous=True)')
+    parser.add_argument('--block_all', action='store_true',
+                       help='Enable blocking all previously generated models in ConstraintsGenerator (default: False)')
+    
     return parser.parse_args()
 
 
@@ -932,6 +938,9 @@ def add_classifier_args(file_args: Dict[str, str], args) -> Dict[str, str]:
     # Add seed for reproducible environments
     if hasattr(args, 'seed') and args.seed is not None:
         file_args['seed'] = args.seed
+    # Add JANI constraints generator parameters
+    file_args['block_previous'] = not args.no_block_previous  # Convert no_block_previous to block_previous
+    file_args['block_all'] = args.block_all
     return file_args
 
 

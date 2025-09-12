@@ -420,7 +420,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False, seed: Optional[int] = None):
+    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False, seed: Optional[int] = None, block_previous: bool = True, block_all: bool = False):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -461,7 +461,7 @@ class JANI:
             if json_obj['op'] == "states-values":
                 return JANI.FixedGenerator(json_obj, self)
             elif json_obj['op'] == "states-condition" or json_obj['op'] == "state-condition":
-                return JANI.ConstraintsGenerator(json_obj, self)
+                return JANI.ConstraintsGenerator(json_obj, self, block_previous, block_all)
             raise ValueError(f"Unsupported init state generator operation: {json_obj['op']}")
 
         def goal_expression(json_obj: dict) -> Expression:
@@ -622,7 +622,7 @@ class JANI:
 
     class ConstraintsGenerator(InitGenerator):
         '''Generate initial states based on constraints.'''
-        def __init__(self, json_obj: dict, model: JANI, block_previous: bool = True, block_all: bool = True):
+        def __init__(self, json_obj: dict, model: JANI, block_previous: bool = True, block_all: bool = False):
             self._model = model
             constraint_expr = json_obj['exp']
             expr = Expression.construct(constraint_expr)
