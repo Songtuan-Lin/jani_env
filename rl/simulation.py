@@ -12,46 +12,48 @@ from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.common.maskable.utils import get_action_masks
 from sb3_contrib import MaskablePPO
 
+from gymnasium.wrappers import TimeLimit
+
 
 class Simulator:
     def __init__(self, env_args: dict, max_episodes: int, output_path: str = None, policy = None, n_steps: int = 2048, run_oracle: bool = True, cache_states: bool = True, seed: int = None):
         def mask_fn(env) -> np.ndarray:
             return env.unwrapped.action_mask()
 
-        self._env = ActionMasker(JaniEnv(**env_args), mask_fn)
+        self._env = ActionMasker(TimeLimit(JaniEnv(**env_args), max_episode_steps=n_steps), mask_fn)
         self._oracle = TarjanOracle(self._env.unwrapped.get_model())
         self._policy = policy
         self._max_episodes = max_episodes
         self._output_path = output_path
-        self._n_steps = n_steps
         self._run_oracle = run_oracle
         self._cache_states = cache_states
         self._seed = seed
 
     def run(self) -> dict:
-        cached_states = []
+        buffer = []
         num_unsafe = 0 if self._run_oracle else None
 
-        def cache_state(state: State) -> None:
+        def cache_state(state: State, action: int, reward: float, terminal: bool, truncated: bool) -> None:
             if not self._cache_states:
                 return
-            nonlocal cached_states, num_unsafe
+            nonlocal buffer, num_unsafe
             state_vec = state.to_vector()
+            state_vec.extend([action, reward, int(terminal), int(truncated)])
             if self._run_oracle:
                 state_safe = self._oracle.is_safe(state)
                 if not state_safe:
                     num_unsafe += 1
                 state_vec.append(int(state_safe))
-            cached_states.append(state_vec)
+            buffer.append(state_vec)
 
         rewards = []
         for _ in range(self._max_episodes):
             obs, _ = self._env.reset()
-            cache_state(self._env.unwrapped.get_state_repr())
             episode_reward = 0.0
             done = False
-            remaining_steps = self._n_steps
-            while not done and remaining_steps > 0:
+            truncated = False
+            cache_state(self._env.unwrapped.get_state_repr(), action=-1, reward=0.0, terminal=done, truncated=truncated)
+            while not done and not truncated:
                 action_masks = get_action_masks(self._env)
                 if self._policy is not None:
                     action, _state = self._policy.predict(obs, action_masks=action_masks)
@@ -62,17 +64,16 @@ class Simulator:
                     action = rng.choice(valid_actions)
                 obs, reward, done, truncated, info = self._env.step(action)
                 episode_reward += reward
-                cache_state(self._env.unwrapped.get_state_repr())
-                remaining_steps -= 1
+                cache_state(self._env.unwrapped.get_state_repr(), action=action, reward=reward, terminal=done, truncated=truncated)
             rewards.append(episode_reward)
 
         if self._output_path:
-            cached_states = np.array(cached_states, dtype=np.float32)
-            num_columns = cached_states.shape[-1]
+            buffer = np.array(buffer, dtype=np.float32)
+            num_columns = buffer.shape[-1]
             fmt = ["%.3f"] * (num_columns - 1)
             fmt.append("%d")
-            np.savetxt(self._output_path, cached_states, delimiter=",", fmt=fmt)
-        
+            np.savetxt(self._output_path, buffer, delimiter=",", fmt=fmt)
+
         mean_reward = np.mean(rewards)
         results = {"mean_reward": mean_reward, "num_episodes": self._max_episodes}
         if self._run_oracle:
@@ -102,6 +103,7 @@ def parse_args():
     parser.add_argument("--policy_file", help="Path to the policy file")
     parser.add_argument("--random_init", action="store_true", help="Use random initial state generator")
     parser.add_argument("--output_path", default="simulation_results.csv", help="Path to save the CSV results file")
+    parser.add_argument("--n_steps", type=int, default=2048, help="Maximum number of steps per episode")
     parser.add_argument("--max_episodes", type=int, default=50, help="Maximum number of episodes to simulate")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     return parser.parse_args()
@@ -135,7 +137,7 @@ if __name__ == "__main__":
     else:
         print("No policy file specified. Using random policy.")
     
-    simulator = Simulator(env_args, max_episodes=args.max_episodes, output_path=args.output_path, policy=policy, seed=args.seed)
+    simulator = Simulator(env_args, n_steps=args.n_steps, max_episodes=args.max_episodes, output_path=args.output_path, policy=policy, seed=args.seed)
     # Set numpy random seed for reproducibility
     if args.seed is not None:
         np.random.seed(args.seed)
