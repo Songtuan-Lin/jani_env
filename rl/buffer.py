@@ -29,7 +29,7 @@ class RolloutBufferWithLB(MaskableRolloutBuffer):
             obs_tensor = torch.tensor(self.observations, dtype=torch.float32)
             obs_tensor = obs_tensor.view(-1, self.observations.shape[-1])
             _, preds = predict(self.classifier, obs_tensor, self.scaler)
-            preds = preds.reshape(-1, 1).astype(np.float32)
+            preds = preds.reshape(-1, self.n_envs).astype(np.float32)
             lower_bounds = self.alpha * (preds - 1)  # Scale to [-alpha, 0]
 
         last_values = last_values.clone().cpu().numpy().flatten()
@@ -55,3 +55,4 @@ class RolloutBufferWithLB(MaskableRolloutBuffer):
 
         # self.advantages = advantages
         self.returns = advantages + self.values
+        # self.advantages = self.returns - np.maximum(lower_bounds, self.values)
