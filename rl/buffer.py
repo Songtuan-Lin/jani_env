@@ -2,10 +2,11 @@ import torch
 import numpy as np
 
 from classifier import predict
+from sb3_contrib.common.maskable.buffers import MaskableRolloutBuffer
 from stable_baselines3.common.buffers import RolloutBuffer
 
 
-class RolloutBufferWithLB(RolloutBuffer):
+class RolloutBufferWithLB(MaskableRolloutBuffer):
     """
     RolloutBuffer with a floored baseline for GAE advantages.
     """
@@ -29,7 +30,7 @@ class RolloutBufferWithLB(RolloutBuffer):
             obs_tensor = obs_tensor.view(-1, self.observations.shape[-1])
             _, preds = predict(self.classifier, obs_tensor, self.scaler)
             preds = preds.reshape(-1, 1).astype(np.float32)
-            lower_bounds = self.alpha * (1 - preds)  # Scale to [0, alpha]
+            lower_bounds = self.alpha * (preds - 1)  # Scale to [-alpha, 0]
 
         last_values = last_values.clone().cpu().numpy().flatten()
 
@@ -44,7 +45,7 @@ class RolloutBufferWithLB(RolloutBuffer):
                 next_non_terminal = 1.0 - self.episode_starts[step + 1]
                 next_values = self.values[step + 1]
             delta = self.rewards[step] + self.gamma * next_values * next_non_terminal - self.values[step]
-            delta_floored = self.rewards[step] + self.gamma * next_values * next_non_terminal - max(lower_bounds[step], self.values[step])
+            delta_floored = self.rewards[step] + self.gamma * next_values * next_non_terminal - np.maximum(lower_bounds[step], self.values[step])
             last_gae_lam = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam
             last_gae_lam_floored = delta_floored + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam_floored
             # using original advantage for computing returns
@@ -52,4 +53,5 @@ class RolloutBufferWithLB(RolloutBuffer):
             # use floored advantage for updating the policy
             self.advantages[step] = last_gae_lam_floored
 
+        # self.advantages = advantages
         self.returns = advantages + self.values

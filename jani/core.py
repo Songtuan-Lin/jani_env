@@ -670,8 +670,8 @@ class JANI:
                     python_value = z3_value_to_python(z3_value)
                     self._cached_values[v.name()].add(python_value)
                     # Limit the cache size to avoid memory issues
-                    # if len(self._cached_values[v.name()]) > 1000:
-                    #     self._cached_values[v.name()].pop()
+                    if len(self._cached_values[v.name()]) > 1000:
+                        self._cached_values[v.name()].pop()
 
             def get_state_values(model: z3.Model) -> dict:
                 target_vars = {}

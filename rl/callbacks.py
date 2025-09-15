@@ -54,7 +54,7 @@ class WandbCallback(BaseCallback):
                     })
             
             # Log training statistics every 100 steps
-            if self.num_timesteps % 100 == 0 and len(self.episode_rewards) > 0:
+            if self.n_calls % 100 == 0 and len(self.episode_rewards) > 0:
                 recent_rewards = self.episode_rewards[-10:] if len(self.episode_rewards) >= 10 else self.episode_rewards
                 wandb.log({
                     'train/mean_reward_last_10': np.mean(recent_rewards),
@@ -154,7 +154,7 @@ class ClassifierDebugCallback(BaseCallback):
                     continue
         
         # Log to wandb every 100 steps
-        if (self.num_timesteps - self.last_logged_timestep) >= 100:
+        if (self.n_calls - self.last_logged_timestep) >= 100:
             if self.total_predictions > 0:
                 step_accuracy = self.total_correct / self.total_predictions
                 
@@ -168,7 +168,7 @@ class ClassifierDebugCallback(BaseCallback):
                         'debug/classifier_accuracy_overall': step_accuracy,
                         'debug/classifier_accuracy_recent': recent_accuracy,
                         'debug/total_predictions': self.total_predictions,
-                        'debug/timesteps': self.num_timesteps
+                        'debug/timesteps': self.n_calls
                     })
                 
                 if self.verbose >= 1:
@@ -522,7 +522,7 @@ class ClassifierMonitorCallback(BaseCallback):
                 if key not in ['oracle_predictions', 'classifier_predictions']:  # Skip raw predictions
                     log_dict[f'classifier_monitor/{key}'] = value
             
-            log_dict['classifier_monitor/timesteps'] = self.num_timesteps
+            log_dict['classifier_monitor/timesteps'] = self.n_calls
             wandb.log(log_dict)
     
     def _update_global_storage(self, state_vectors, state_objects, actions):
@@ -621,10 +621,10 @@ class ClassifierMonitorCallback(BaseCallback):
     
     def _on_step(self) -> bool:
         """Monitor classifier performance at specified frequency."""
-        if self.num_timesteps % self.monitor_freq == 0 and self.num_timesteps > 0:
+        if self.n_calls % self.monitor_freq == 0 and self.n_calls > 0:
             if self.verbose >= 1:
-                print(f"🔍 Monitoring classifier at timestep {self.num_timesteps}")
-            
+                print(f"🔍 Monitoring classifier at timestep {self.n_calls}")
+
             # Save the current policy model
             self._save_policy_model()
             
@@ -710,7 +710,7 @@ class EvalCallback(BaseCallback):
         self.last_mean_reward = -float('inf')
 
     def _on_step(self) -> bool:
-        if self.eval_freq > 0 and self.num_timesteps % self.eval_freq == 0:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             mean_reward, _ = evaluate_policy(self.model, self.eval_env, n_eval_episodes=self.n_eval_episodes)
             self.last_mean_reward = mean_reward
             if self.best_model_save_path is not None:
@@ -721,6 +721,6 @@ class EvalCallback(BaseCallback):
                 wandb.log({
                     'eval/mean_reward': mean_reward,
                     'eval/best_mean_reward': self.best_mean_reward,
-                    'eval/timesteps': self.num_timesteps
+                    'eval/timesteps': self.n_calls
                 })
         return True

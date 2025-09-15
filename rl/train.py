@@ -56,6 +56,8 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 
 from jani.environment import JaniEnv
 from .callbacks import ClassifierDebugCallback, ClassifierMonitorCallback, WandbCallback, EvalCallback
+from .buffer import RolloutBufferWithLB
+from classifier import load_trained_model
 
 from gymnasium.wrappers import TimeLimit
 
@@ -166,6 +168,12 @@ def parse_arguments():
     parser.add_argument('--disable_monitor_model_saving', action='store_true',
                        help='Disable saving policy models during classifier monitoring')
     
+    # Floored advantage estimation arguments
+    parser.add_argument('--use_floored_advantages', action='store_true',
+                       help='Enable floored advantage estimation using classifier lower bounds')
+    parser.add_argument('--floored_alpha', type=float, default=1.0,
+                       help='Scaling factor for lower bounds (default: 1.0). Safe states get 0, unsafe get -alpha')
+    
     # JANI constraints generator options
     parser.add_argument('--no_block_previous', action='store_true',
                        help='Disable blocking previously generated values in ConstraintsGenerator (default: block_previous=True)')
@@ -213,6 +221,15 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
             print(f"   Will evaluate classifier performance against oracle")
         else:
             print(f"   Will track unsafe and failure states using oracle only")
+    
+    # Validate floored advantages arguments
+    if args.use_floored_advantages:
+        if args.classifier_model is None:
+            raise ValueError("--classifier_model must be provided when --use_floored_advantages is enabled")
+        if not Path(args.classifier_model).exists():
+            raise FileNotFoundError(f"Classifier model file not found: {args.classifier_model}")
+        print(f"🔄 Floored advantage estimation enabled with alpha={args.floored_alpha}")
+        print(f"   Lower bounds: Safe states=0, Unsafe states=-{args.floored_alpha}")
     
     # Handle property file vs individual files
     if args.property_file:
@@ -322,6 +339,34 @@ def create_env(file_args: Dict[str, str], n_envs: int = 1, monitor: bool = True,
     return env
 
 
+def create_model_with_buffer(env, args, hyperparams: Dict[str, Any], **model_kwargs) -> MaskablePPO:
+    """Create MaskablePPO model with optional custom buffer for floored advantages."""
+    model_params = {
+        'policy': MaskableActorCriticPolicy,
+        'env': env,
+        'device': args.device,
+        'seed': args.seed,
+        **hyperparams,
+        **model_kwargs
+    }
+    
+    # Use custom buffer if floored advantages are enabled
+    if args.use_floored_advantages:
+        # Load classifier and scaler
+        classifier, scaler = load_trained_model(args.classifier_model)
+        
+        # Create custom buffer
+        buffer_kwargs = {
+            'classifier': classifier,
+            'scaler': scaler,
+            'alpha': args.floored_alpha
+        }
+        model_params['rollout_buffer_class'] = RolloutBufferWithLB
+        model_params['rollout_buffer_kwargs'] = buffer_kwargs
+    
+    return MaskablePPO(**model_params)
+
+
 def suggest_hyperparameters(trial) -> Dict[str, Any]:
     """Suggest hyperparameters for Optuna optimization."""
     return {
@@ -350,22 +395,11 @@ def objective(trial, args, file_args: Dict[str, str]) -> float:
     
     try:
         # Create model with suggested hyperparameters
-        model = MaskablePPO(
-            MaskableActorCriticPolicy,
-            train_env,
-            learning_rate=params['learning_rate'],
-            n_steps=params['n_steps'],
-            batch_size=params['batch_size'],
-            n_epochs=params['n_epochs'],
-            gamma=params['gamma'],
-            gae_lambda=params['gae_lambda'],
-            clip_range=params['clip_range'],
-            ent_coef=params['ent_coef'],
-            vf_coef=params['vf_coef'],
-            max_grad_norm=params['max_grad_norm'],
-            verbose=0,
-            device=args.device,
-            seed=args.seed
+        model = create_model_with_buffer(
+            train_env, 
+            args, 
+            params, 
+            verbose=0
         )
         
         # Train for a subset of timesteps for hyperparameter tuning
@@ -438,7 +472,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
             'batch_size': 64,
             'n_epochs': 10,
             'gamma': 0.99,
-            'gae_lambda': 0.95,
+            'gae_lambda': 0.0,
             'clip_range': 0.2,
             'ent_coef': 0.0,
             'vf_coef': 0.5,
@@ -464,14 +498,12 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         print(f"Model loaded. Reset timesteps: {reset_timesteps}")
     else:
         print("Creating new model from scratch")
-        model = MaskablePPO(
-            MaskableActorCriticPolicy,
+        model = create_model_with_buffer(
             train_env,
+            args,
+            hyperparams,
             tensorboard_log=str(log_dir),
-            verbose=args.verbose,
-            device=args.device,
-            seed=args.seed,
-            **hyperparams
+            verbose=args.verbose
         )
         reset_timesteps = True
     
