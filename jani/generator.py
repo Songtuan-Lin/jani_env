@@ -64,7 +64,7 @@ def main():
     parser.add_argument("output", type=str, help="Output file to save the generated states.")
     args = parser.parse_args()
 
-    model = JANI(args.model_file, property_file=args.property_file)
+    model = JANI(args.model_file, property_file=args.property_file, block_previous=True, block_all=True)
     generator = StateGenerator(model, args.num_states)
     generator.generate_states(args.output)
 
