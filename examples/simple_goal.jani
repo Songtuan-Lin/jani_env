@@ -1,7 +1,0 @@
-{
-    "goal": {
-        "exp": {"op": "≤", "left": 40, "right": "count"},
-        "op": "state-condition"
-    },
-    "op": "objective"
-}
