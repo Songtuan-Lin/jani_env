@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 
-from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSamplerWithoutReplacement
+from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
 from tensordict import TensorDict
 
 
@@ -52,7 +52,7 @@ def read_trajectories(file_path: str) -> TensorDict:
     # Create a TensorDict from the collected lists
     return TensorDict({
         "observation": torch.tensor(observations, dtype=torch.float32),
-        "action": torch.tensor(actions, dtype=torch.int64).view(-1, 1),
+        "action": torch.tensor(actions, dtype=torch.int64),
         "done": torch.tensor(root_dones, dtype=torch.int64).view(-1, 1),
         "terminated": torch.tensor(root_term_signs, dtype=torch.int64).view(-1, 1),
         "truncated": torch.tensor(root_trunc_signs, dtype=torch.int64).view(-1, 1),
@@ -71,7 +71,7 @@ def read_trajectories(file_path: str) -> TensorDict:
 
 def create_replay_buffer(tensordict: TensorDict, num_slices: int = 10, batch_size: int = 32) -> TensorDictReplayBuffer:
     storage = TensorStorage(tensordict, device='cpu')
-    sampler = SliceSamplerWithoutReplacement(num_slices=num_slices, end_key=("next", "done"), traj_key="episode")
+    sampler = SliceSampler(num_slices=num_slices, end_key=("next", "done"), traj_key="episode")
     replay_buffer = TensorDictReplayBuffer(storage=storage, sampler=sampler, batch_size=batch_size)
     return replay_buffer
 
