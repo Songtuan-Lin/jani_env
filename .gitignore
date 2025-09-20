@@ -6,5 +6,4 @@ data/
 models
 training_results/
 benchmarks/
-*.csv
 state_generated.json
