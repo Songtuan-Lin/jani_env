@@ -6,7 +6,7 @@ from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
 from tensordict import TensorDict
 
 
-def read_trajectories(file_path: str) -> TensorDict:
+def read_trajectories(file_path: str, penalize_unsafe: bool = False) -> TensorDict:
     df = pd.read_csv(file_path, header=None)
     # next component in the tensordict
     next_observations, rewards, dones, term_signs, trunc_signs, safeties = [], [], [], [], [], []
@@ -19,6 +19,9 @@ def read_trajectories(file_path: str) -> TensorDict:
         next_obs = df.iloc[r + 1, :-5]
         action = df.iloc[r, -5]
         reward = df.iloc[r, -4]
+        if penalize_unsafe and df.iloc[r + 1, -1] == 0 and reward != -1.0:
+            assert reward == 0.0, "Expected reward to be 0 for unsafe transitions"
+            reward = -0.01  # Penalize unsafe transitions
         term_sign = df.iloc[r, -3]
         trunc_sign = df.iloc[r, -2]
         safety = df.iloc[r, -1]

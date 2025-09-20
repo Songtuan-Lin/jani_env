@@ -99,6 +99,7 @@ class DiscreteIQLLossLB(DiscreteIQLLoss):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        print("Using lower bound on value function")
     
     
     def value_loss(self, tensordict) -> tuple[torch.Tensor, dict]:
@@ -159,7 +160,9 @@ if __name__ == "__main__":
 
     test_trajectories_file = "examples/iql/trajectories_test.csv"
     td = read_trajectories(test_trajectories_file)
+    td_penalized = read_trajectories(test_trajectories_file, penalize_unsafe=True)
     rb = create_replay_buffer(td, num_slices=2, batch_size=2)
+    rb_penalized = create_replay_buffer(td_penalized, num_slices=2, batch_size=2)
 
     state_dim = td["observation"].shape[-1]
     action_dim = 6  # Assuming
@@ -177,8 +180,9 @@ if __name__ == "__main__":
     updater = SoftUpdate(loss, eps=0.95)
     optim = torch.optim.Adam(loss.parameters(), lr=3e-4)
 
-    for iter in range(1000):
-        data = rb.sample()
+    print("Training with lower bound on value function...")
+    for iter in range(1001):
+        data = rb_penalized.sample()
         loss_td = loss(data)
         optim.zero_grad()
         total_loss = loss_td.get("loss_actor") + loss_td.get("loss_qvalue") + loss_td.get("loss_value")
@@ -187,4 +191,49 @@ if __name__ == "__main__":
         updater.step()
         if iter % 100 == 0:
             print(f"Iter {iter}: loss {total_loss.item():.3f}")
+
+    
+    q_module_no_lb = create_q_module(state_dim, action_dim)
+    v_module_no_lb = create_v_module(state_dim)
+    actor_module_no_lb = create_actor(state_dim, action_dim)
+
+    loss_no_lb = DiscreteIQLLoss(
+        actor_network=actor_module_no_lb,
+        qvalue_network=q_module_no_lb,
+        value_network=v_module_no_lb,
+        action_space="categorical"
+    )
+
+    updater_no_lb = SoftUpdate(loss_no_lb, eps=0.95)
+    optim_no_lb = torch.optim.Adam(loss_no_lb.parameters(), lr=3e-4)
+
+    print("Training without lower bound on value function...")
+    for iter in range(1000):
+        data = rb.sample()
+        loss_td_no_lb = loss_no_lb(data)
+        optim_no_lb.zero_grad()
+        total_loss_no_lb = loss_td_no_lb.get("loss_actor") + loss_td_no_lb.get("loss_qvalue") + loss_td_no_lb.get("loss_value")
+        total_loss_no_lb.backward()
+        optim_no_lb.step()
+        updater_no_lb.step()
+        if iter % 100 == 0:
+            print(f"[No LB] Iter {iter}: loss {total_loss_no_lb.item():.3f}")
     print("Done")
+
+    print("Comparing value functions...")
+    with torch.no_grad():
+        test_states = torch.tensor([
+            [3.0, 2.5],
+            [2.7, 2.1],
+            [8.7, 3.7],
+            [8.3, 4.6],
+            [7.6, 5.3],
+            [6.8, 5.5],
+            [6.3, 6.8],
+            [4.7, 5.3],
+        ])
+        test_td = TensorDict({"observation": test_states}, batch_size=[test_states.shape[0]])
+        value = loss.value_network(test_td.clone())
+        value_no_lb = loss_no_lb.value_network(test_td.clone())
+        print("With LB:", value.get("state_value").squeeze(-1))
+        print("Without LB:", value_no_lb.get("state_value").squeeze(-1))
