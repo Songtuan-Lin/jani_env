@@ -89,6 +89,19 @@ class State:
                 pairs.append(f"{variable.name} = {variable.value}")
         return ", ".join(pairs)
 
+    @staticmethod
+    def from_vector(vec: list[float], variable_list: list[Variable]) -> State:
+        '''Create a state from a vector and a list of variables.'''
+        if len(vec) != len(variable_list):
+            raise ValueError(f"Vector length {len(vec)} does not match number of variables {len(variable_list)}")
+        variable_dict = {}
+        for idx, variable in enumerate(variable_list):
+            assert idx == variable.idx, f"Variable index {variable.idx} does not match position {idx} in the list"
+            variable_copy = copy.deepcopy(variable)
+            variable_copy.value = vec[idx]
+            variable_dict[variable.name] = variable_copy
+        return State(variable_dict)
+
 
 class Expression(ABC):
     @abstractmethod

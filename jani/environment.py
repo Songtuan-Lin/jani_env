@@ -84,17 +84,21 @@ class JaniEnv(gym.Env):
         # self._current_state = next_state
         return np.array(self._current_state.to_vector(), dtype=np.float32) if self._current_state is not None else None, reward, done, False, {"action_mask": self.action_mask()}
 
-    def action_mask(self) -> np.ndarray:
-        if self._current_state is None:
-            raise RuntimeError("Environment has not been reset. Call reset() before action_mask().")
-            return np.zeros(self.action_space.n, dtype=np.float32)
-
+    def action_mask_under_state(self, state: State) -> np.ndarray:
+        '''Get the action mask for a given state'''
+        if state is None:
+            raise ValueError("State is None. Cannot compute action mask.")
         mask = np.zeros(self.action_space.n, dtype=np.float32)
         for action in range(self.action_space.n):
             action_obj = self._jani.get_action(action)
-            if self._jani.get_transition(self._current_state, action_obj) is not None:
+            if self._jani.get_transition(state, action_obj) is not None:
                 mask[action] = 1.0
         return mask
+
+    def action_mask(self) -> np.ndarray:
+        if self._current_state is None:
+            raise RuntimeError("Environment has not been reset. Call reset() before action_mask().")
+        return self.action_mask_under_state(self._current_state)
 
     def get_model(self) -> JANI:
         return self._jani
