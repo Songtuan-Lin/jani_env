@@ -102,47 +102,105 @@ class DiscreteIQLLossLB(DiscreteIQLLoss):
         print("Using lower bound on value function")
     
     
-    def value_loss(self, tensordict) -> tuple[torch.Tensor, dict]:
-        # Min Q value
+    # def value_loss(self, tensordict) -> tuple[torch.Tensor, dict]:
+    #     # Min Q value
+    #     with torch.no_grad():
+    #         # Min Q value
+    #         td_q = tensordict.select(*self.qvalue_network.in_keys, strict=False)
+    #         td_q = self._vmap_qvalue_networkN0(td_q, self.target_qvalue_network_params)
+    #         state_action_value = td_q.get(self.tensor_keys.state_action_value)
+    #         action = tensordict.get(self.tensor_keys.action)
+    #         if self.action_space == "categorical":
+    #             if action.ndim < (
+    #                 state_action_value.ndim - (td_q.ndim - tensordict.ndim)
+    #             ):
+    #                 # unsqueeze the action if it lacks on trailing singleton dim
+    #                 action = action.unsqueeze(-1)
+    #             if self.deactivate_vmap:
+    #                 vmap = _pseudo_vmap
+    #             else:
+    #                 vmap = torch.vmap
+    #             chosen_state_action_value = vmap(
+    #                 lambda state_action_value, action: torch.gather(
+    #                     state_action_value, -1, index=action
+    #                 ).squeeze(-1),
+    #                 (0, None),
+    #             )(state_action_value, action)
+    #         elif self.action_space == "one_hot":
+    #             action = action.to(torch.float)
+    #             chosen_state_action_value = (state_action_value * action).sum(-1)
+    #         else:
+    #             raise RuntimeError(f"Unknown action space {self.action_space}.")
+    #         min_Q, _ = torch.min(chosen_state_action_value, dim=0)
+    #     # state value
+    #     td_copy = tensordict.select(*self.value_network.in_keys, strict=False)
+    #     with self.value_network_params.to_module(self.value_network):
+    #         assert td_copy['observation'].equal(tensordict['observation']), "Observation mismatch"
+    #         self.value_network(td_copy)
+    #     value = td_copy.get(self.tensor_keys.value).squeeze(-1)
+    #     lower_bound = tensordict.get("safety").squeeze(-1)
+    #     assert lower_bound.shape == value.shape, f"Shape mismatch: {lower_bound.shape} vs {value.shape}"
+    #     lower_bound = lower_bound - 1.0
+    #     value_loss = self.loss_value_diff(torch.maximum(min_Q, lower_bound) - value, self.expectile)
+    #     value_loss = _reduce(value_loss, reduction=self.reduction)
+    #     self._clear_weakrefs(
+    #         tensordict,
+    #         "actor_network_params",
+    #         "qvalue_network_params",
+    #         "value_network_params",
+    #         "target_actor_network_params",
+    #         "target_qvalue_network_params",
+    #         "target_value_network_params",
+    #     )
+    #     return value_loss, {}
+    
+    def qvalue_loss(self, tensordict: TensorDictBase) -> tuple[Tensor, dict]:
+        obs_keys = self.actor_network.in_keys
+        next_td = tensordict.select(
+            "next", *obs_keys, self.tensor_keys.action, strict=False
+        )
         with torch.no_grad():
-            # Min Q value
-            td_q = tensordict.select(*self.qvalue_network.in_keys, strict=False)
-            td_q = self._vmap_qvalue_networkN0(td_q, self.target_qvalue_network_params)
-            state_action_value = td_q.get(self.tensor_keys.state_action_value)
-            action = tensordict.get(self.tensor_keys.action)
-            if self.action_space == "categorical":
-                if action.ndim < (
-                    state_action_value.ndim - (td_q.ndim - tensordict.ndim)
-                ):
-                    # unsqueeze the action if it lacks on trailing singleton dim
-                    action = action.unsqueeze(-1)
-                if self.deactivate_vmap:
-                    vmap = _pseudo_vmap
-                else:
-                    vmap = torch.vmap
-                chosen_state_action_value = vmap(
-                    lambda state_action_value, action: torch.gather(
-                        state_action_value, -1, index=action
-                    ).squeeze(-1),
-                    (0, None),
-                )(state_action_value, action)
-            elif self.action_space == "one_hot":
-                action = action.to(torch.float)
-                chosen_state_action_value = (state_action_value * action).sum(-1)
+            target_value = self.value_estimator.value_estimate(
+                next_td, target_params=self.target_value_network_params
+            ).squeeze(-1)
+            lower_bound = tensordict.get("safety").squeeze(-1)
+            assert lower_bound.shape == target_value.shape, f"Shape mismatch: {lower_bound.shape} vs {target_value.shape}"
+            lower_bound = lower_bound - 1.0
+            target_value = torch.maximum(target_value, lower_bound)
+
+        # predict current Q value
+        td_q = tensordict.select(*self.qvalue_network.in_keys, strict=False)
+        td_q = self._vmap_qvalue_networkN0(td_q, self.qvalue_network_params)
+        state_action_value = td_q.get(self.tensor_keys.state_action_value)
+        action = tensordict.get(self.tensor_keys.action)
+        if self.action_space == "categorical":
+            if action.ndim < (state_action_value.ndim - (td_q.ndim - tensordict.ndim)):
+                # unsqueeze the action if it lacks on trailing singleton dim
+                action = action.unsqueeze(-1)
+            if self.deactivate_vmap:
+                vmap = _pseudo_vmap
             else:
-                raise RuntimeError(f"Unknown action space {self.action_space}.")
-            min_Q, _ = torch.min(chosen_state_action_value, dim=0)
-        # state value
-        td_copy = tensordict.select(*self.value_network.in_keys, strict=False)
-        with self.value_network_params.to_module(self.value_network):
-            assert td_copy['observation'].equal(tensordict['observation']), "Observation mismatch"
-            self.value_network(td_copy)
-        value = td_copy.get(self.tensor_keys.value).squeeze(-1)
-        lower_bound = tensordict.get("safety").squeeze(-1)
-        assert lower_bound.shape == value.shape, f"Shape mismatch: {lower_bound.shape} vs {value.shape}"
-        lower_bound = lower_bound - 1.0
-        value_loss = self.loss_value_diff(torch.maximum(min_Q, lower_bound) - value, self.expectile)
-        value_loss = _reduce(value_loss, reduction=self.reduction)
+                vmap = torch.vmap
+            pred_val = vmap(
+                lambda state_action_value, action: torch.gather(
+                    state_action_value, -1, index=action
+                ).squeeze(-1),
+                (0, None),
+            )(state_action_value, action)
+        elif self.action_space == "one_hot":
+            action = action.to(torch.float)
+            pred_val = (state_action_value * action).sum(-1)
+        else:
+            raise RuntimeError(f"Unknown action space {self.action_space}.")
+
+        td_error = (pred_val - target_value.expand_as(pred_val)).pow(2)
+        loss_qval = distance_loss(
+            pred_val,
+            target_value.expand_as(pred_val),
+            loss_function=self.loss_function,
+        ).sum(0)
+        loss_qval = _reduce(loss_qval, reduction=self.reduction)
+        metadata = {"td_error": td_error.detach()}
         self._clear_weakrefs(
             tensordict,
             "actor_network_params",
@@ -152,7 +210,7 @@ class DiscreteIQLLossLB(DiscreteIQLLoss):
             "target_qvalue_network_params",
             "target_value_network_params",
         )
-        return value_loss, {}
+        return loss_qval, metadata
     
 
 if __name__ == "__main__":
@@ -160,7 +218,7 @@ if __name__ == "__main__":
 
     test_trajectories_file = "examples/iql/trajectories_test.csv"
     td = read_trajectories(test_trajectories_file)
-    td_penalized = read_trajectories(test_trajectories_file, penalize_unsafe=True)
+    td_penalized = read_trajectories(test_trajectories_file, penalize_unsafe=True, unsafe_reward=-0.01)
     rb = create_replay_buffer(td, num_slices=2, batch_size=2)
     rb_penalized = create_replay_buffer(td_penalized, num_slices=2, batch_size=2)
 
@@ -181,7 +239,7 @@ if __name__ == "__main__":
     optim = torch.optim.Adam(loss.parameters(), lr=3e-4)
 
     print("Training with lower bound on value function...")
-    for iter in range(1001):
+    for iter in range(1000):
         data = rb_penalized.sample()
         loss_td = loss(data)
         optim.zero_grad()
@@ -237,3 +295,13 @@ if __name__ == "__main__":
         value_no_lb = loss_no_lb.value_network(test_td.clone())
         print("With LB:", value.get("state_value").squeeze(-1))
         print("Without LB:", value_no_lb.get("state_value").squeeze(-1))
+
+        qvalue = loss.qvalue_network(test_td.clone())
+        qvalue_no_lb = loss_no_lb.qvalue_network(test_td.clone())
+        print("With LB, Q-values:", qvalue.get("state_action_value"))
+        print("Without LB, Q-values:", qvalue_no_lb.get("state_action_value"))
+
+        actor_lb = loss.actor_network(test_td.clone())
+        actor_no_lb = loss_no_lb.actor_network(test_td.clone())
+        print("With LB, actions:", actor_lb.get("action"))
+        print("Without LB, actions:", actor_no_lb.get("action"))
