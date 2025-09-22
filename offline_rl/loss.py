@@ -61,9 +61,7 @@ class DiscreteIQLLossValueLB(DiscreteIQLLoss):
     target_value_network_params: TensorDictParams | None
     
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        print("Using lower bound on value function")
-    
+        super().__init__(**kwargs)    
     
     def value_loss(self, tensordict) -> tuple[torch.Tensor, dict]:
         # Min Q value
@@ -156,7 +154,6 @@ class DiscreteIQLLossQValueLB(DiscreteIQLLoss):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("Using lower bound on value function")
 
     def qvalue_loss(self, tensordict: TensorDictBase) -> tuple[Tensor, dict]:
         obs_keys = self.actor_network.in_keys

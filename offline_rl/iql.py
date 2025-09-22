@@ -1,9 +1,9 @@
 import argparse
-
+import numpy as np
 import torch
 
 from torchrl.objectives import DiscreteIQLLoss, SoftUpdate
-from torchrl.data import TensorDict
+from tensordict import TensorDict
 
 from jani import JaniEnv
 
@@ -29,8 +29,11 @@ def evaluate_on_env(env, actor, num_episodes=10, max_steps=2048):
             episode_reward += reward
             max_steps -= 1
         total_rewards.append(episode_reward)
-    avg_reward = sum(total_rewards) / num_episodes
-    return avg_reward
+    total_rewards = np.array(total_rewards)
+    avg_reward = np.mean(total_rewards)
+    success_rate = np.mean(total_rewards == 1.0)
+    failure_rate = np.mean(total_rewards == -1.0)
+    return {"avg_reward": avg_reward, "success_rate": success_rate, "failure_rate": failure_rate}
 
 
 def create_loss(args, actor_module, q_module, v_module):
@@ -53,9 +56,9 @@ def create_loss(args, actor_module, q_module, v_module):
     return iql_loss
 
 
-def train(total_timesteps, steps_per_epoch, batch_size, rb, iql_loss):
+def train(total_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss, print_info=False):
     """Train the IQL agent."""
-    optimizer = torch.optim.Adam(iql_loss.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(iql_loss.parameters(), lr=lr)
     updater = SoftUpdate(iql_loss, eps=0.95)
     num_epochs = total_timesteps // steps_per_epoch
 
@@ -68,6 +71,12 @@ def train(total_timesteps, steps_per_epoch, batch_size, rb, iql_loss):
             optimizer.step()
             optimizer.zero_grad()
         updater.step()
+
+        if print_info:
+            if (epoch + 1) % 100 == 0:
+                print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss.item():.4f}")
+
+    return iql_loss.actor_network, iql_loss.qvalue_network, iql_loss.value_network
 
 
 def objective(trial, rb, env, args):
@@ -93,7 +102,7 @@ def objective(trial, rb, env, args):
         size = trial.suggest_int(f"hidden_size_actor_{i}", 32, 256)
         hidden_dims_actor.append(size)
 
-    batch_size = trial.suggest_int("batch_size", 32, 1024)
+    batch_size = trial.suggest_categorical("batch_size", [args.num_slices * i for i in range(1, 3)])
     steps_per_epoch = trial.suggest_int("steps_per_epoch", 50, 2000)
 
     tuning_timesteps = min(args.total_timesteps // 4, 10000)
@@ -109,11 +118,29 @@ def objective(trial, rb, env, args):
     iql_loss = create_loss(args, actor_module, q_module, v_module)
     
     # Training loop
-    train(tuning_timesteps, steps_per_epoch, batch_size, rb, iql_loss)
+    actor, _, _ = train(tuning_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss)
 
-    avg_reward = evaluate_on_env(env, iql_loss.actor_network, num_episodes=10)
+    results = evaluate_on_env(env, actor, num_episodes=10)
 
-    return avg_reward
+    return results['avg_reward']
+
+
+def hyperparameter_tuning(rb, env, args, n_trials=20):
+    """Perform hyperparameter tuning using Optuna."""
+    import optuna
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(lambda trial: objective(trial, rb, env, args), n_trials=n_trials)
+
+    print("Best trial:")
+    trial = study.best_trial
+    print(f"  Value: {trial.value}")
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
+
+    return trial.params
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -131,6 +158,9 @@ def main():
     parser.add_argument(
         "--batch_size", 
         type=int, default=64, help="Batch size for training.")
+    parser.add_argument(
+        "--num_slices",
+        type=int, default=32, help="Number of slices for replay buffer.")
     parser.add_argument(
         "--penalize_unsafe", 
         action="store_true", help="Whether to penalize unsafe states.")
@@ -150,6 +180,12 @@ def main():
         "--lower_bound_type", 
         type=str, choices=["value", "qvalue"], 
         default="value", help="Type of lower bound to use in IQL loss.")
+    parser.add_argument(
+        "--tune_hyperparameters",
+        action="store_true", help="Whether to perform hyperparameter tuning.")
+    parser.add_argument(
+        "--n_trials",
+        type=int, default=20, help="Number of trials for hyperparameter tuning.")
     args = parser.parse_args()
 
     # Initialize environment
@@ -161,16 +197,36 @@ def main():
         td = read_trajectories(args.trajectory_path, action_dim=action_dim, penalize_unsafe=True, unsafe_reward=args.penalization)
     else:
         td = read_trajectories(args.trajectory_path, action_dim=action_dim)
-    replay_buffer = create_replay_buffer(td, batch_size=args.batch_size)
+    replay_buffer = create_replay_buffer(td, num_slices=args.num_slices, batch_size=args.batch_size)
 
     # Extract state and action dimensions
     state_dim = td["observation"].shape[-1]
     assert state_dim == env.observation_space.shape[0], "State dimension mismatch between dataset and environment."
 
+    best_params = {
+        "lr": 1e-3,
+        "batch_size": args.batch_size,
+        "steps_per_epoch": args.steps_per_epoch,
+        "n_layers_q_module": 2,
+        "hidden_size_q_module_0": 32,
+        "hidden_size_q_module_1": 64,
+        "n_layers_v_module": 2,
+        "hidden_size_v_module_0": 32,
+        "hidden_size_v_module_1": 64,
+        "n_layers_actor": 2,
+        "hidden_size_actor_0": 32,
+        "hidden_size_actor_1": 64
+    }
+    if args.tune_hyperparameters:
+        best_params = hyperparameter_tuning(replay_buffer, env, args, n_trials=args.n_trials)
+
     # Create models
-    q_module = create_q_module(state_dim, action_dim)
-    v_module = create_v_module(state_dim)
-    actor_module = create_actor(state_dim, action_dim)
+    hidden_dims_q_module = [best_params[f"hidden_size_q_module_{i}"] for i in range(best_params["n_layers_q_module"])]
+    q_module = create_q_module(state_dim, action_dim, hidden_dims=hidden_dims_q_module)
+    hidden_dims_v_module = [best_params[f"hidden_size_v_module_{i}"] for i in range(best_params["n_layers_v_module"])]
+    v_module = create_v_module(state_dim, hidden_dims=hidden_dims_v_module)
+    hidden_dims_actor_module = [best_params[f"hidden_size_actor_{i}"] for i in range(best_params["n_layers_actor"])]
+    actor_module = create_actor(state_dim, action_dim, hidden_dims=hidden_dims_actor_module)
 
     # Create IQL loss
     kwargs = {
@@ -189,21 +245,17 @@ def main():
     else:
         iql_loss = DiscreteIQLLoss(**kwargs)
 
-    # Optimizers
-    optimizer = torch.optim.Adam(iql_loss.parameters(), lr=args.lr)
-    updater = SoftUpdate(iql_loss, eps=0.95)
+    actor, _, _ = train(
+        args.total_timesteps, 
+        best_params["steps_per_epoch"], 
+        best_params["batch_size"], 
+        best_params["lr"], 
+        replay_buffer, 
+        iql_loss,
+        print_info=True
+    )
+    results = evaluate_on_env(env, actor, num_episodes=100)
+    print(f"Final success rate over 100 episodes: {results['success_rate']:.2f}, avg reward: {results['avg_reward']:.2f}, failure rate: {results['failure_rate']:.2f}")
 
-    # Training loop
-    num_epochs = args.total_timesteps // args.steps_per_epoch
-    for epoch in range(num_epochs):
-        for iter in range(args.steps_per_epoch):
-            batch = replay_buffer.sample()
-            loss_td = iql_loss(batch)
-            total_loss = loss_td.get("loss_actor") + loss_td.get("loss_qvalue") + loss_td.get("loss_value")
-            total_loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch + 1}, Loss: {total_loss.item():.4f}")
-        updater.step()
+if __name__ == "__main__":
+    main()

@@ -5,6 +5,8 @@ import pandas as pd
 from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
 from tensordict import TensorDict
 
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn, TimeElapsedColumn
+
 
 def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: bool = False, unsafe_reward: float = -0.01) -> TensorDict:
     df = pd.read_csv(file_path, header=None)
@@ -16,47 +18,62 @@ def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: b
     # root component in the tensordict
     observations, actions, root_dones, root_term_signs, root_trunc_signs, root_safeties, episodes, action_masks = [], [], [], [], [], [], [], []
     episode_counter = 0
-    for r in range(df.shape[0] - 1):
-        # Get the current and next observations, actions, rewards, and termination signals
-        obs = df.iloc[r, :-5]
-        next_obs = df.iloc[r + 1, :-5]
-        action = df.iloc[r, -5]
-        reward = df.iloc[r, -4]
-        if penalize_unsafe and df.iloc[r + 1, -1] == 0 and reward != -1.0:
-            assert reward == 0.0, "Expected reward to be 0 for unsafe transitions"
-            reward = unsafe_reward  # Penalize unsafe transitions
-        term_sign = df.iloc[r, -3]
-        trunc_sign = df.iloc[r, -2]
-        safety = df.iloc[r, -1]
-        next_safety = df.iloc[r + 1, -1]
-        action_mask = [True] * action_dim # In the offline setting, all actions are valid
-        # Skip transitions where action is -1 (terminal state)
-        if action == -1:
-            continue
-        episodes.append(episode_counter)
-        if term_sign == 1 or trunc_sign == 1:
-            episode_counter += 1
-        observations.append(obs)
-        next_observations.append(next_obs)
-        if len(term_signs) > 0 and term_signs[-1] == 1:
-            # If the previous state was terminal, mark this transition as starting a new episode
-            root_term_signs.append(1)
-        else:
-            root_term_signs.append(0)
-        if len(trunc_signs) > 0 and trunc_signs[-1] == 1:
-            # If the previous state was truncated, mark this transition as starting a new episode
-            root_trunc_signs.append(1)
-        else:
-            root_trunc_signs.append(0)
-        root_dones.append(1 if term_sign == 1 or trunc_sign == 1 else 0)
-        actions.append(action)
-        rewards.append(reward)
-        term_signs.append(term_sign)
-        trunc_signs.append(trunc_sign)
-        dones.append(1 if term_sign == 1 or trunc_sign == 1 else 0)
-        root_safeties.append(safety)
-        safeties.append(next_safety)
-        action_masks.append(action_mask)
+    with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            transient=False,
+        ) as progress:
+        task = progress.add_task("Reading Trajectories", total=df.shape[0])
+
+        for r in range(df.shape[0] - 1):
+            # Get the current and next observations, actions, rewards, and termination signals
+            obs = df.iloc[r, :-5]
+            next_obs = df.iloc[r + 1, :-5]
+            action = df.iloc[r, -5]
+            reward = df.iloc[r, -4]
+            if penalize_unsafe and df.iloc[r + 1, -1] == 0 and reward != -1.0:
+                assert reward == 0.0, "Expected reward to be 0 for unsafe transitions"
+                reward = unsafe_reward  # Penalize unsafe transitions
+            term_sign = df.iloc[r, -3]
+            trunc_sign = df.iloc[r, -2]
+            safety = df.iloc[r, -1]
+            next_safety = df.iloc[r + 1, -1]
+            action_mask = [True] * action_dim # In the offline setting, all actions are valid
+            # Skip transitions where action is -1 (terminal state)
+            if action == -1:
+                continue
+            episodes.append(episode_counter)
+            if term_sign == 1 or trunc_sign == 1:
+                episode_counter += 1
+            observations.append(obs)
+            next_observations.append(next_obs)
+            if len(term_signs) > 0 and term_signs[-1] == 1:
+                # If the previous state was terminal, mark this transition as starting a new episode
+                root_term_signs.append(1)
+            else:
+                root_term_signs.append(0)
+            if len(trunc_signs) > 0 and trunc_signs[-1] == 1:
+                # If the previous state was truncated, mark this transition as starting a new episode
+                root_trunc_signs.append(1)
+            else:
+                root_trunc_signs.append(0)
+            root_dones.append(1 if term_sign == 1 or trunc_sign == 1 else 0)
+            actions.append(action)
+            rewards.append(reward)
+            term_signs.append(term_sign)
+            trunc_signs.append(trunc_sign)
+            dones.append(1 if term_sign == 1 or trunc_sign == 1 else 0)
+            root_safeties.append(safety)
+            safeties.append(next_safety)
+            action_masks.append(action_mask)
+
+            progress.advance(task)
     # Create a TensorDict from the collected lists
     return TensorDict({
         "observation": torch.tensor(observations, dtype=torch.float32),
@@ -78,7 +95,7 @@ def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: b
     }, batch_size=len(observations))
 
 
-def create_replay_buffer(tensordict: TensorDict, num_slices: int = 10, batch_size: int = 32) -> TensorDictReplayBuffer:
+def create_replay_buffer(tensordict: TensorDict, num_slices: int = 32, batch_size: int = 32) -> TensorDictReplayBuffer:
     storage = TensorStorage(tensordict, device='cpu')
     sampler = SliceSampler(num_slices=num_slices, end_key=("next", "done"), traj_key="episode")
     replay_buffer = TensorDictReplayBuffer(storage=storage, sampler=sampler, batch_size=batch_size)
