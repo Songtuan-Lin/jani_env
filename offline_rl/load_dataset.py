@@ -6,12 +6,15 @@ from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
 from tensordict import TensorDict
 
 
-def read_trajectories(file_path: str, penalize_unsafe: bool = False, unsafe_reward: float = -0.01) -> TensorDict:
+def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: bool = False, unsafe_reward: float = -0.01) -> TensorDict:
     df = pd.read_csv(file_path, header=None)
+    if action_dim is None:
+        print("Warning: action_dim not provided, inferring from data. This may lead to incorrect results if the dataset does not contain all possible actions.")
+        action_dim = int(df.iloc[:, -5].max()) + 1  # Actions are 0-indexed integers
     # next component in the tensordict
     next_observations, rewards, dones, term_signs, trunc_signs, safeties = [], [], [], [], [], []
     # root component in the tensordict
-    observations, actions, root_dones, root_term_signs, root_trunc_signs, root_safeties, episodes = [], [], [], [], [], [], []
+    observations, actions, root_dones, root_term_signs, root_trunc_signs, root_safeties, episodes, action_masks = [], [], [], [], [], [], [], []
     episode_counter = 0
     for r in range(df.shape[0] - 1):
         # Get the current and next observations, actions, rewards, and termination signals
@@ -26,6 +29,7 @@ def read_trajectories(file_path: str, penalize_unsafe: bool = False, unsafe_rewa
         trunc_sign = df.iloc[r, -2]
         safety = df.iloc[r, -1]
         next_safety = df.iloc[r + 1, -1]
+        action_mask = [True] * action_dim # In the offline setting, all actions are valid
         # Skip transitions where action is -1 (terminal state)
         if action == -1:
             continue
@@ -52,6 +56,7 @@ def read_trajectories(file_path: str, penalize_unsafe: bool = False, unsafe_rewa
         dones.append(1 if term_sign == 1 or trunc_sign == 1 else 0)
         root_safeties.append(safety)
         safeties.append(next_safety)
+        action_masks.append(action_mask)
     # Create a TensorDict from the collected lists
     return TensorDict({
         "observation": torch.tensor(observations, dtype=torch.float32),
@@ -61,6 +66,7 @@ def read_trajectories(file_path: str, penalize_unsafe: bool = False, unsafe_rewa
         "truncated": torch.tensor(root_trunc_signs, dtype=torch.int64).view(-1, 1),
         "safety": torch.tensor(root_safeties, dtype=torch.int64).view(-1, 1),
         "episode": torch.tensor(episodes, dtype=torch.int64),
+        "action_mask": torch.tensor(action_masks, dtype=torch.bool),
         "next": TensorDict({
             "observation": torch.tensor(next_observations, dtype=torch.float32),
             "reward": torch.tensor(rewards, dtype=torch.float32).view(-1, 1),

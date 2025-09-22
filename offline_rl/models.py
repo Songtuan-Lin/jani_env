@@ -1,8 +1,7 @@
 import torchrl
 
 from tensordict.nn import TensorDictModule
-from torchrl.modules import MLP, ProbabilisticActor
-from torch.distributions import Categorical
+from torchrl.modules import MLP, ProbabilisticActor, MaskedCategorical
 
 
 def create_q_module(state_dim, action_dim, hidden_dims=[32, 64]):
@@ -64,10 +63,10 @@ def create_actor(state_dim, action_dim, hidden_dims=[32, 64]):
     )
     actor = ProbabilisticActor(
         module=policy_module,
-        in_keys=["logits"],
+        in_keys={"logits": "logits", "mask": "action_mask"},
         out_keys=["action"],
         spec=torchrl.data.Categorical(action_dim),
-        distribution_class=Categorical,
+        distribution_class=MaskedCategorical,
         return_log_prob=True
     )
     return actor

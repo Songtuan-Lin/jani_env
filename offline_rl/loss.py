@@ -221,8 +221,8 @@ if __name__ == "__main__":
     from torchrl.objectives import SoftUpdate
 
     test_trajectories_file = "examples/iql/trajectories_test.csv"
-    td = read_trajectories(test_trajectories_file)
-    td_penalized = read_trajectories(test_trajectories_file, penalize_unsafe=True, unsafe_reward=-0.01)
+    td = read_trajectories(test_trajectories_file, action_dim=6)
+    td_penalized = read_trajectories(test_trajectories_file, action_dim=6, penalize_unsafe=True, unsafe_reward=-0.01)
     rb = create_replay_buffer(td, num_slices=2, batch_size=2)
     rb_penalized = create_replay_buffer(td_penalized, num_slices=2, batch_size=2)
 
