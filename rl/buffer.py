@@ -41,11 +41,12 @@ class RolloutBufferWithLB(MaskableRolloutBuffer):
             if step == self.buffer_size - 1:
                 next_non_terminal = 1.0 - dones.astype(np.float32)
                 next_values = last_values
+                delta_floored = self.rewards[step] + self.gamma * next_values * next_non_terminal - self.values[step]
             else:
                 next_non_terminal = 1.0 - self.episode_starts[step + 1]
                 next_values = self.values[step + 1]
+                delta_floored = np.maximum(lower_bounds[step + 1], self.rewards[step] + self.gamma * next_values * next_non_terminal) - self.values[step]
             delta = self.rewards[step] + self.gamma * next_values * next_non_terminal - self.values[step]
-            delta_floored = self.rewards[step] + self.gamma * next_values * next_non_terminal - np.maximum(lower_bounds[step], self.values[step])
             last_gae_lam = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam
             last_gae_lam_floored = delta_floored + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam_floored
             # using original advantage for computing returns
