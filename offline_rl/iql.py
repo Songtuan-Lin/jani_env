@@ -4,6 +4,7 @@ import torch
 
 from torchrl.objectives import DiscreteIQLLoss, SoftUpdate
 from tensordict import TensorDict
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 from jani import JaniEnv
 
@@ -62,19 +63,35 @@ def train(total_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss, print_
     updater = SoftUpdate(iql_loss, eps=0.95)
     num_epochs = total_timesteps // steps_per_epoch
 
-    for epoch in range(num_epochs):
-        for iter in range(steps_per_epoch):
-            batch = rb.sample(batch_size)
-            loss_td = iql_loss(batch)
-            total_loss = loss_td.get("loss_actor") + loss_td.get("loss_qvalue") + loss_td.get("loss_value")
-            total_loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-        updater.step()
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bar.back", complete_style="bar.complete", finished_style="bar.finished"),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        expand=True,
+    ) as progress:
+        epoch_task = progress.add_task("Training epochs", total=num_epochs)
+        step_task = progress.add_task("", total=steps_per_epoch, visible=False)
 
-        if print_info:
-            if (epoch + 1) % 100 == 0:
-                print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss.item():.4f}")
+        for epoch in range(num_epochs):
+            progress.update(step_task, completed=0, visible=True, description=f"Epoch {epoch+1}/{num_epochs} steps")
+
+            for _ in range(steps_per_epoch):
+                batch = rb.sample(batch_size)
+                loss_td = iql_loss(batch)
+                total_loss = loss_td.get("loss_actor") + loss_td.get("loss_qvalue") + loss_td.get("loss_value")
+                total_loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                progress.update(step_task, advance=1)
+
+            updater.step()
+            progress.update(epoch_task, advance=1)
+            progress.update(step_task, visible=False)
+
+            if print_info:
+                if (epoch + 1) % 100 == 0:
+                    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss.item():.4f}")
 
     return iql_loss.actor_network, iql_loss.qvalue_network, iql_loss.value_network
 

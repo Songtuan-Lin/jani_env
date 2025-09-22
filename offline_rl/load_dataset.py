@@ -29,7 +29,7 @@ def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: b
             TimeRemainingColumn(),
             transient=False,
         ) as progress:
-        task = progress.add_task("Reading Trajectories", total=df.shape[0])
+        task = progress.add_task("Reading Trajectories", total=df.shape[0] - 1)
 
         for r in range(df.shape[0] - 1):
             # Get the current and next observations, actions, rewards, and termination signals
@@ -73,7 +73,7 @@ def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: b
             safeties.append(next_safety)
             action_masks.append(action_mask)
 
-            progress.advance(task)
+            progress.advance(task, advance=1)
     # Create a TensorDict from the collected lists
     return TensorDict({
         "observation": torch.tensor(observations, dtype=torch.float32),
