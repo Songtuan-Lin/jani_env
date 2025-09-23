@@ -621,7 +621,7 @@ class ClassifierMonitorCallback(BaseCallback):
     
     def _on_step(self) -> bool:
         """Monitor classifier performance at specified frequency."""
-        if self.n_calls % self.monitor_freq == 0 and self.n_calls > 0:
+        if self.n_calls % self.monitor_freq == 0 or self.n_calls == 1:
             if self.verbose >= 1:
                 print(f"🔍 Monitoring classifier at timestep {self.n_calls}")
 
