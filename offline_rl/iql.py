@@ -203,10 +203,23 @@ def main():
     parser.add_argument(
         "--n_trials",
         type=int, default=20, help="Number of trials for hyperparameter tuning.")
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility.")
     args = parser.parse_args()
 
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+    
+    # Make PyTorch deterministic (may impact performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     # Initialize environment
-    env = JaniEnv(model_file=args.model_path, property_file=args.property_path)
+    env = JaniEnv(model_file=args.model_path, property_file=args.property_path, seed=args.seed)
     action_dim = env.action_space.n
 
     # Load dataset and create replay buffer

@@ -47,6 +47,7 @@ def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: b
             action_mask = [True] * action_dim # In the offline setting, all actions are valid
             # Skip transitions where action is -1 (terminal state)
             if action == -1:
+                progress.advance(task, advance=1)
                 continue
             episodes.append(episode_counter)
             if term_sign == 1 or trunc_sign == 1:
