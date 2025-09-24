@@ -49,16 +49,25 @@ class TarjanOracle:
                 if safe_action:
                     safe_state = True
                     break
+            # if not safe_state:
+            #     self._unsafe_states.add(node.state)
             if safe_state:
-                self._safe_states.add(node.state)
+                if node.lowlink == node.index:
+                    self._safe_states.add(node.state)
+                    while True:
+                        w = stack.pop()
+                        on_stack.remove(w.state)
+                        if w == node:
+                            break
             else:
-                self._unsafe_states.add(node.state)
-            if node.lowlink == node.index:
-                while True:
-                    w = stack.pop()
-                    self._safe_states.add(w.state)
-                    on_stack.remove(w.state)
-                    if w == node:
-                        break
+                if node.lowlink == node.index:
+                    self._unsafe_states.add(node.state)
+                    while True:
+                        w = stack.pop()
+                        # self._safe_states.add(w.state)
+                        on_stack.remove(w.state)
+                        if w == node:
+                            break
             return safe_state
         return tarjan(TarjanOracle.Node(state))
+    
