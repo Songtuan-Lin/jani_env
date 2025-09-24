@@ -35,11 +35,11 @@ class TarjanOracle:
                 safe_action = True
                 action = self._model.get_action(action_idx)
                 successors = self._model.get_successors(node.state, action)
-                if len(successors) == 0:
-                    continue
                 for succ_state in successors:
                     if succ_state in on_stack:
                         loop_node = on_stack[succ_state]
+                        assert loop_node.index != -1, "Node on stack has invalid index"
+                        assert loop_node.lowlink != -1, "Node on stack has invalid lowlink"
                         node.lowlink = min(node.lowlink, loop_node.lowlink)
                     else:
                         next_node = TarjanOracle.Node(succ_state)
