@@ -198,6 +198,9 @@ def main():
         type=str, choices=["value", "qvalue"], 
         default="value", help="Type of lower bound to use in IQL loss.")
     parser.add_argument(
+        "--expectile",
+        type=float, default=0.7, help="Expectile value for IQL loss.")
+    parser.add_argument(
         "--tune_hyperparameters",
         action="store_true", help="Whether to perform hyperparameter tuning.")
     parser.add_argument(
@@ -237,6 +240,7 @@ def main():
         "lr": 1e-3,
         "batch_size": args.batch_size,
         "steps_per_epoch": args.steps_per_epoch,
+        "expectile": args.expectile,
         "n_layers_q_module": 2,
         "hidden_size_q_module_0": 32,
         "hidden_size_q_module_1": 64,
@@ -263,6 +267,7 @@ def main():
         "actor_network": actor_module,
         "qvalue_network": q_module,
         "value_network": v_module,
+        "expectile": best_params["expectile"],
         "action_space": "categorical"
     }
     if args.use_lower_bound:
