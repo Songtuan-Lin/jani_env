@@ -208,6 +208,9 @@ def main():
         type=int, default=20, help="Number of trials for hyperparameter tuning.")
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument(
+        "--write_eval_results", 
+        type=str, default=None, help="Path to write evaluation results.")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -290,6 +293,10 @@ def main():
         print_info=True
     )
     results = evaluate_on_env(env, actor, num_episodes=100)
+    if args.write_eval_results is not None:
+        import json
+        with open(args.write_eval_results, "w") as f:
+            json.dump(results, f, indent=4)
     print(f"Final success rate over 100 episodes: {results['success_rate']:.2f}, avg reward: {results['avg_reward']:.2f}, failure rate: {results['failure_rate']:.2f}")
 
 if __name__ == "__main__":
