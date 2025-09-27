@@ -8,6 +8,7 @@ This module contains various callback classes used during training:
 - EvalCallback: Custom evaluation callback
 """
 
+from dataclasses import dataclass
 import numpy as np
 import torch
 from pathlib import Path
@@ -180,6 +181,15 @@ class ClassifierDebugCallback(BaseCallback):
 
 
 class ClassifierMonitorCallback(BaseCallback):
+
+    @dataclass
+    class EpisodeData:
+        state_vectors: list = []
+        state_objects: list = []
+        actions: list = []
+        safety_labels: list = []  # True if safe, False if unsafe
+        failure_states_count: int = 0
+
     '''Custom callback to monitor classifier's information during training.'''
     def __init__(self, env, monitor_freq: int = 10000, num_episodes: int = 30, tune_classifier: bool = False, data_dir: str = None, csv_output_path: str = None, model_save_dir: str = None, verbose: int = 0):
         super().__init__()
@@ -199,6 +209,9 @@ class ClassifierMonitorCallback(BaseCallback):
         self.classifier = None
         self.scaler = None
         self.jani_model = None
+
+        self.episodes = []  # Store data for each episode
+        self.cached_oracle_results = {}  # Cache oracle results to avoid redundant calls
         
         # Global state storage
         self.global_state_vectors = []  # Store vectorized representations
@@ -239,13 +252,14 @@ class ClassifierMonitorCallback(BaseCallback):
     
     def _run_episodes_and_collect_states(self):
         """Run episodes and collect both state vectors, state objects, and actions taken."""
-        encountered_state_vectors = []
-        encountered_state_objects = []
-        encountered_actions = []
+        episodes = []
         failure_states_count = 0  # Track number of failure states reached
         
         # Run episodes using the current policy
         for episode in range(self.num_episodes):
+            # Initialize episode data
+            episode_data = EpisodeData()
+
             obs, _ = self.env.reset()
             done = False
             truncated = False
@@ -254,68 +268,80 @@ class ClassifierMonitorCallback(BaseCallback):
             jani_env = self._unwrap_to_jani_env(self.env)
             current_state_obj = jani_env.get_state_repr()
             current_state_vector = current_state_obj.to_vector()
-            
-            encountered_state_vectors.append(current_state_vector)
-            encountered_state_objects.append(current_state_obj)
-            encountered_actions.append(None)  # No action for initial state
+
+            # Store initial state to episode data
+            episode_data.state_vectors.append(current_state_vector)
+            episode_data.state_objects.append(current_state_obj)
             
             # Check if initial state is a failure state
             if self.jani_model.failure_reached(current_state_obj):
                 failure_states_count += 1
 
-            while not (done or truncated):
+            while True:
                 # Get action masks for MaskablePPO
                 action_masks = get_action_masks(self.env)
                 
                 # Get action from model with action masks
                 action, _ = self.model.predict(obs, action_masks=action_masks, deterministic=True)
+                # (state, action taken in the state)
+                episode_data.actions.append(int(action))  # Store action taken in episode data
                 obs, reward, done, truncated, info = self.env.step(action)
-                # Store state after action
+
                 current_state_obj = jani_env.get_state_repr()
                 current_state_vector = current_state_obj.to_vector()
-                
-                encountered_state_vectors.append(current_state_vector)
-                encountered_state_objects.append(current_state_obj)
-                encountered_actions.append(int(action))  # Store the action that led to this state
-                    
-                # Check if this is a failure state
-                if self.jani_model.failure_reached(current_state_obj):
-                    failure_states_count += 1
-        
-        # Remove duplicates while keeping first occurrence and maintaining order
-        unique_state_vectors = []
-        unique_state_objects = []
-        unique_actions = []
-        seen_states = set()
-        
-        for state_vector, state_obj, action in zip(encountered_state_vectors, encountered_state_objects, encountered_actions):
-            state_tuple = tuple(state_vector)  # Convert to tuple for hashing
-            if state_tuple not in seen_states:
-                unique_state_vectors.append(state_vector)
-                unique_state_objects.append(state_obj)
-                unique_actions.append(action)
-                seen_states.add(state_tuple)
-        
-        return unique_state_vectors, unique_state_objects, unique_actions, failure_states_count
+
+                if done or truncated:
+                    if self.jani_model.failure_reached(current_state_obj):
+                        failure_states_count += 1
+                    # If it is the last state, we do not need to store it
+                    break
+
+                episode_data.state_vectors.append(current_state_vector)
+                episode_data.state_objects.append(current_state_obj)
+
+            episodes.append(episode_data)
+
+        return episodes
     
-    def _evaluate_classifier_performance(self, state_vectors, state_objects):
+    def _evaluate_classifier_performance(self, episodes):
         """Evaluate classifier performance against oracle on given states."""
-        if not state_vectors or self.oracle is None:
+        if not episodes or self.oracle is None:
             return {}
         
         import numpy as np
+        state_vectors = []
         oracle_predictions = []
         classifier_predictions = []
+
+        seen_states = set()  # To avoid duplicate evaluations
         
         # Always get oracle predictions
-        for state_obj in state_objects:
-            try:
-                oracle_is_safe = self.oracle.is_safe(state_obj)
-                oracle_predictions.append(oracle_is_safe)
-            except Exception as e:
-                if self.verbose >= 2:
-                    print(f"⚠️ Error evaluating state with oracle: {e}")
-                continue
+        for episode_data in episodes:
+            for (state_obj, state_vec) in zip(episode_data.state_objects, episode_data.state_vectors):
+                try:
+                    if state_obj in seen_states:
+                        assert state_obj in self.cached_oracle_results, "State in seen_states but not in cached results"
+                    if state_obj in self.cached_oracle_results:
+                        oracle_is_safe = self.cached_oracle_results[state_obj]
+                    else:
+                        oracle_is_safe = self.oracle.is_safe(state_obj)
+                        self.cached_oracle_results[state_obj] = oracle_is_safe
+                    if state_obj not in seen_states:
+                        oracle_predictions.append(oracle_is_safe)
+                    episode_data.safety_labels.append(oracle_is_safe)
+                    # if classifier exists, get its prediction too
+                    if self.classifier is not None:
+                        state_array = np.array(state_vec, dtype=np.float32).reshape(1, -1)
+                        from classifier import predict
+                        _, classifier_is_safe = predict(self.classifier, state_array, self.scaler)
+                        if state_obj not in seen_states:
+                            classifier_predictions.append(bool(classifier_is_safe))
+                            state_vectors.append(state_vec)
+                    seen_states.add(state_obj)
+                except Exception as e:
+                    if self.verbose >= 2:
+                        print(f"⚠️ Error evaluating state with oracle: {e}")
+                    continue
         
         if not oracle_predictions:
             return {}
@@ -332,32 +358,7 @@ class ClassifierMonitorCallback(BaseCallback):
                 'oracle_predictions': oracle_predictions.tolist()
             }
         
-        # If classifier exists, also evaluate classifier performance
-        from classifier import predict
-        
-        for state_vector in state_vectors:
-            try:
-                # Get classifier prediction using state vector
-                state_array = np.array(state_vector, dtype=np.float32).reshape(1, -1)
-                _, classifier_is_safe = predict(self.classifier, state_array, self.scaler)
-                classifier_predictions.append(bool(classifier_is_safe))
-                
-            except Exception as e:
-                if self.verbose >= 2:
-                    print(f"⚠️ Error evaluating state with classifier: {e}")
-                classifier_predictions.append(False)  # Default to unsafe if error
-                continue
-        
-        if len(classifier_predictions) != len(oracle_predictions):
-            # Fallback if lengths don't match
-            if self.verbose >= 1:
-                print(f"⚠️ Length mismatch: oracle={len(oracle_predictions)}, classifier={len(classifier_predictions)}")
-            return {
-                'total_states': len(oracle_predictions),
-                'safe_states': np.sum(oracle_predictions),
-                'unsafe_states': unsafe_count,
-                'oracle_predictions': oracle_predictions.tolist()
-            }
+        assert len(classifier_predictions) == len(oracle_predictions), "Mismatch in oracle and classifier predictions lengths"
         
         classifier_predictions = np.array(classifier_predictions)
         
@@ -382,6 +383,7 @@ class ClassifierMonitorCallback(BaseCallback):
             'total_states': len(oracle_predictions),
             'safe_states': np.sum(oracle_predictions),
             'unsafe_states': unsafe_count,
+            'state_vectors': state_vectors,
             'oracle_predictions': oracle_predictions.tolist(),
             'classifier_predictions': classifier_predictions.tolist()
         }
@@ -564,6 +566,44 @@ class ClassifierMonitorCallback(BaseCallback):
         
         return previously_visited_unsafe_count
     
+    def _count_repeated_unsafe_actions(self):
+        if hasattr(self.env, 'envs'):
+            # Vectorized environment - get first individual environment
+            first_env = self._unwrap_to_jani_env(self.env.envs[0])
+        else:
+            # Single environment
+            first_env = self._unwrap_to_jani_env(self.env)
+        num_repeated_unsafe_actions = 0
+        num_new_unsafe_actions = 0
+        for episode_data in self.episodes:
+            for idx in range(len(episode_data.state_vectors) - 1):
+                if episode_data.safety_labels[idx + 1]:
+                    continue  # Next state is safe, skip
+                state_vec = episode_data.state_vectors[idx]
+                state_obj = episode_data.state_objects[idx]
+                original_action = episode_data.actions[idx]
+                # Get model's predicted action for this state
+                action_mask = first_env.action_mask_under_state(state_obj)
+                predicted_action, _ = self.model.predict(np.array(state_vec), action_masks=action_mask)
+
+                if predicted_action == original_action:
+                    num_repeated_unsafe_actions += 1
+                else:
+                    predicted_action_obj = self.jani_model.get_action(predicted_action)
+                    next_state_obj = self.jani_model.get_transition(state_obj, predicted_action_obj)
+                    if next_state_obj in self.cached_oracle_results:
+                        is_safe = self.cached_oracle_results[next_state_obj]
+                    else:
+                        is_safe = self.oracle.is_safe(next_state_obj)
+                        self.cached_oracle_results[next_state_obj] = is_safe
+                    if not is_safe:
+                        num_new_unsafe_actions += 1
+
+        return {
+            "num_repeated_unsafe_actions": num_repeated_unsafe_actions,
+            "num_new_unsafe_actions": num_new_unsafe_actions
+        }
+
     def _write_to_csv(self, state_vectors, actions, oracle_predictions):
         """Write collected data to CSV file if csv_output_path is provided."""
         if self.csv_output_path is None:
@@ -626,31 +666,25 @@ class ClassifierMonitorCallback(BaseCallback):
                 print(f"🔍 Monitoring classifier at timestep {self.n_calls}")
 
             # Save the current policy model
-            self._save_policy_model()
+            # self._save_policy_model()
             
             # Run episodes and collect state vectors, objects, actions, and failure states count
-            state_vectors, state_objects, actions, failure_states_count = self._run_episodes_and_collect_states()
+            episodes = self._run_episodes_and_collect_states()
             
-            if self.verbose >= 1:
-                print(f"📊 Collected {len(state_vectors)} unique states from {self.num_episodes} episodes")
-                print(f"❌ Failure states reached: {failure_states_count}")
+            # if self.verbose >= 1:
+            #     print(f"📊 Collected {len(state_vectors)} unique states from {self.num_episodes} episodes")
+            #     print(f"❌ Failure states reached: {failure_states_count}")
                 # Count actions (excluding None for initial states)
-                valid_actions = [a for a in actions if a is not None]
-                if valid_actions:
-                    action_counts = {}
-                    for action in valid_actions:
-                        action_counts[action] = action_counts.get(action, 0) + 1
-                    print(f"🎯 Actions taken: {dict(sorted(action_counts.items()))}")
             
             # Evaluate classifier performance against oracle
-            performance_metrics = self._evaluate_classifier_performance(state_vectors, state_objects)
+            performance_metrics = self._evaluate_classifier_performance(episodes)
             
             if performance_metrics:
                 unsafe_states_count = performance_metrics['unsafe_states']
                 total_states = performance_metrics['total_states']
                 
                 # Add failure states count to performance metrics
-                performance_metrics['failure_states_reached'] = failure_states_count
+                # performance_metrics['failure_states_reached'] = failure_states_count
                 
                 # Calculate ratio of unsafe states to total states
                 unsafe_ratio = unsafe_states_count / total_states if total_states > 0 else 0.0
@@ -658,12 +692,14 @@ class ClassifierMonitorCallback(BaseCallback):
                 
                 # Calculate number of unsafe states that were previously visited
                 # Do this BEFORE updating global storage to avoid counting current states as "previously visited"
-                oracle_predictions = performance_metrics.get('oracle_predictions', [])
-                previously_visited_unsafe_count = self._count_previously_visited_unsafe_states(state_vectors, oracle_predictions)
-                performance_metrics['previously_visited_unsafe_states'] = previously_visited_unsafe_count
+                comparision_against_history = self._count_repeated_unsafe_actions()
+                performance_metrics.update(comparision_against_history)
+                # previously_visited_unsafe_count = self._count_previously_visited_unsafe_states(state_vectors, oracle_predictions)
+                # performance_metrics['previously_visited_unsafe_states'] = previously_visited_unsafe_count
             
             # Update global storage AFTER counting previously visited states
-            self._update_global_storage(state_vectors, state_objects, actions)
+            self.episodes += episodes  # Store episodes for future reference
+            # self._update_global_storage(state_vectors, state_objects, actions)
             
             if performance_metrics:
                 if self.verbose >= 1:
@@ -686,11 +722,11 @@ class ClassifierMonitorCallback(BaseCallback):
                 self._log_to_wandb(performance_metrics)
                 
                 # Write to CSV if path is provided
-                self._write_to_csv(state_vectors, actions, performance_metrics['oracle_predictions'])
+                # self._write_to_csv(state_vectors, actions, performance_metrics['oracle_predictions'])
                 
                 # Fine-tune classifier if requested
                 if self.tune_classifier:
-                    self._fine_tune_classifier(state_vectors, performance_metrics['oracle_predictions'])
+                    self._fine_tune_classifier(performance_metrics['state_vectors'], performance_metrics['oracle_predictions'])
             else:
                 if self.verbose >= 1:
                     print("⚠️ No performance metrics calculated")
