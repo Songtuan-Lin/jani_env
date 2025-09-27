@@ -521,7 +521,7 @@ class ClassifierMonitorCallback(BaseCallback):
         if WANDB_AVAILABLE and wandb.run is not None:
             log_dict = {}
             for key, value in metrics.items():
-                if key not in ['oracle_predictions', 'classifier_predictions']:  # Skip raw predictions
+                if key not in ['oracle_predictions', 'classifier_predictions', 'state_vectors']:  # Skip raw predictions
                     log_dict[f'classifier_monitor/{key}'] = value
             
             log_dict['classifier_monitor/timesteps'] = self.n_calls
