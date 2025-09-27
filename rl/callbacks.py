@@ -8,7 +8,7 @@ This module contains various callback classes used during training:
 - EvalCallback: Custom evaluation callback
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 import torch
 from pathlib import Path
@@ -184,10 +184,10 @@ class ClassifierMonitorCallback(BaseCallback):
 
     @dataclass
     class EpisodeData:
-        state_vectors: list = []
-        state_objects: list = []
-        actions: list = []
-        safety_labels: list = []  # True if safe, False if unsafe
+        state_vectors: list = field(default_factory=list)
+        state_objects: list = field(default_factory=list)
+        actions: list = field(default_factory=list)
+        safety_labels: list = field(default_factory=list)  # True if safe, False if unsafe
         failure_states_count: int = 0
 
     '''Custom callback to monitor classifier's information during training.'''
@@ -258,7 +258,7 @@ class ClassifierMonitorCallback(BaseCallback):
         # Run episodes using the current policy
         for episode in range(self.num_episodes):
             # Initialize episode data
-            episode_data = EpisodeData()
+            episode_data = self.EpisodeData()
 
             obs, _ = self.env.reset()
             done = False
@@ -301,7 +301,7 @@ class ClassifierMonitorCallback(BaseCallback):
 
             episodes.append(episode_data)
 
-        return episodes
+        return episodes, failure_states_count
     
     def _evaluate_classifier_performance(self, episodes):
         """Evaluate classifier performance against oracle on given states."""
@@ -669,11 +669,11 @@ class ClassifierMonitorCallback(BaseCallback):
             # self._save_policy_model()
             
             # Run episodes and collect state vectors, objects, actions, and failure states count
-            episodes = self._run_episodes_and_collect_states()
+            episodes, failure_states_count = self._run_episodes_and_collect_states()
             
-            # if self.verbose >= 1:
-            #     print(f"📊 Collected {len(state_vectors)} unique states from {self.num_episodes} episodes")
-            #     print(f"❌ Failure states reached: {failure_states_count}")
+            if self.verbose >= 1:
+                # print(f"📊 Collected {len(state_vectors)} unique states from {self.num_episodes} episodes")
+                print(f"❌ Failure states reached: {failure_states_count}")
                 # Count actions (excluding None for initial states)
             
             # Evaluate classifier performance against oracle
@@ -711,12 +711,10 @@ class ClassifierMonitorCallback(BaseCallback):
                     
                     # Always show oracle-based metrics
                     unsafe_ratio = performance_metrics['unsafe_ratio']
-                    previously_visited_unsafe = performance_metrics['previously_visited_unsafe_states']
                     
                     print(f"   Total states: {performance_metrics['total_states']}, Safe: {performance_metrics['safe_states']}, Unsafe: {unsafe_states_count}")
                     print(f"⚠️  Unsafe states encountered this callback: {unsafe_states_count}")
                     print(f"📊 Unsafe ratio: {unsafe_ratio:.3f} ({unsafe_states_count}/{total_states})")
-                    print(f"🔄 Previously visited unsafe states: {previously_visited_unsafe}")
                 
                 # Log to wandb (includes failure_states_reached and available metrics)
                 self._log_to_wandb(performance_metrics)
