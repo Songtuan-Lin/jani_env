@@ -1,6 +1,8 @@
 # Core RL libraries
 stable-baselines3>=2.0.0
 sb3-contrib>=2.0.0
+torchrl>=0.8.0
+tensordict>=0.6.0
 
 # Hyperparameter optimization
 optuna>=3.0.0
