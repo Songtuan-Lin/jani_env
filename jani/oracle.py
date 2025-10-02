@@ -30,11 +30,15 @@ class TarjanOracle:
             stack.append(node)
             on_stack[node.state] = node
             safe_state = False
+            num_applicable_actions = 0
             # Explore successors
             for action_idx in range(self._model.get_action_count()):
                 safe_action = True
                 action = self._model.get_action(action_idx)
                 successors = self._model.get_successors(node.state, action)
+                if len(successors) == 0:
+                    continue
+                num_applicable_actions += 1
                 for succ_state in successors:
                     if succ_state in on_stack:
                         loop_node = on_stack[succ_state]
@@ -49,6 +53,8 @@ class TarjanOracle:
                 if safe_action:
                     safe_state = True
                     break
+            if num_applicable_actions == 0:
+                safe_state = True
             # if not safe_state:
             #     self._unsafe_states.add(node.state)
             if safe_state:
