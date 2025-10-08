@@ -46,8 +46,8 @@ def evaluate_model(model, dataloader, device):
             outputs = model(features)
             predictions = (outputs > 0.5).float()
             
-            all_preds.extend(predictions.cpu().numpy())
-            all_targets.extend(targets.numpy())
+            all_preds.extend(predictions.cpu().numpy().flatten())
+            all_targets.extend(targets.numpy().flatten())
     
     # Calculate metrics
     accuracy = accuracy_score(all_targets, all_preds)
