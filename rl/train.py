@@ -89,6 +89,8 @@ def parse_arguments():
     # overwrite initial state generator to a pure random one
     parser.add_argument('--random_init', action='store_true',
                        help='Use random initial state generator instead of the one defined in the model')
+    parser.add_argument('--use_sampled_init', action='store_true',
+                       help='Use sampled initial state generator instead of the one defined in the model (if any)')
     
     # Training arguments
     parser.add_argument('--total_timesteps', type=int, default=1000000,
@@ -240,7 +242,7 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
         other_files_provided = any([args.start_file, args.goal_file, args.safe_file])
         if other_files_provided:
             warnings.warn(
-                "Property file provided along with start/goal/safe files. "
+                "Property file provided along with goal/safe files. "
                 "Only property file will be used, other files will be ignored.",
                 UserWarning
             )
@@ -248,6 +250,12 @@ def validate_file_arguments(args) -> Tuple[Dict[str, str], bool]:
         file_args['property_file'] = args.property_file
         if args.random_init:
             file_args['random_init'] = args.random_init
+        if args.use_sampled_init:
+            if not args.start_file:
+                raise ValueError("--use_sampled_init requires --start_file to be provided")
+            print(f"🎲 Using sampled initial state generator from: {args.start_file}")
+            file_args['use_sampled_init'] = args.use_sampled_init
+            file_args['start_file'] = args.start_file
         return file_args, True
     
     else:
