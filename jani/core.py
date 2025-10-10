@@ -433,7 +433,7 @@ class Automaton:
 
 
 class JANI:
-    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False, seed: Optional[int] = None, block_previous: bool = True, block_all: bool = False):
+    def __init__(self, model_file: str, start_file: str = None, goal_file: str = None, failure_file: str = None, property_file: str = None, interface_file: str = None, random_init: bool = False, seed: Optional[int] = None, block_previous: bool = True, block_all: bool = False, use_sampled_init: bool = False):
         def add_action(action_info: dict, idx: int) -> Action:
             """Add a new action to the action list."""
             return Action(action_info['name'], idx)
@@ -583,6 +583,13 @@ class JANI:
         # overwrite initial state generator to a pure random one if random_init is True
         if random_init:
             self._init_generator = JANI.RandomGenerator(self)
+
+        if use_sampled_init:
+            # Sampled init states from a file
+            if start_file is None:
+                raise ValueError("start_file must be provided when use_sampled_init is True.")
+            start_spec = json.loads(Path(start_file).read_text('utf-8'))
+            self._init_generator = JANI.FixedGenerator(start_spec, self)
         
         # Initialize RNG for consistent seeding throughout the JANI instance
         self._rng = np.random.default_rng(seed)

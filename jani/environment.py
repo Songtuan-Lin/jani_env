@@ -7,9 +7,34 @@ from classifier import load_trained_model, predict
 
 
 class JaniEnv(gym.Env):
-    def __init__(self, model_file, start_file: str = None, goal_file: str = None, safe_file: str = None, property_file: str = None, random_init: bool = False, use_classifier: bool = False, classifier_model: str = None, safe_reward: float = 0.0, unsafe_reward: float = -0.01, seed: Optional[int] = None, block_previous: bool = True, block_all: bool = False):
+    def __init__(
+            self, 
+            model_file, 
+            start_file: str = None, 
+            goal_file: str = None, 
+            safe_file: str = None, 
+            property_file: str = None, 
+            random_init: bool = False, 
+            use_classifier: bool = False, 
+            classifier_model: str = None, 
+            safe_reward: float = 0.0, 
+            unsafe_reward: float = -0.01, 
+            seed: Optional[int] = None, 
+            block_previous: bool = True, 
+            block_all: bool = False,
+            use_sampled_init: bool = False):
         super().__init__()
-        self._jani = JANI(model_file, start_file, goal_file, safe_file, property_file, random_init=random_init, seed=seed, block_previous=block_previous, block_all=block_all)
+        self._jani = JANI(
+            model_file, 
+            start_file, 
+            goal_file, 
+            safe_file, 
+            property_file, 
+            random_init=random_init, 
+            seed=seed, 
+            block_previous=block_previous, 
+            block_all=block_all, 
+            use_sampled_init=use_sampled_init)
         # Define action and observation space
         self.action_space = gym.spaces.Discrete(self._jani.get_action_count())
         lower_bounds = []
