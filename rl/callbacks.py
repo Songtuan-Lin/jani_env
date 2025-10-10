@@ -573,8 +573,10 @@ class ClassifierMonitorCallback(BaseCallback):
         else:
             # Single environment
             first_env = self._unwrap_to_jani_env(self.env)
+        visited_pairs = set()
         num_repeated_unsafe_actions = 0
-        num_new_unsafe_actions = 0
+        num_actions_to_safe = 0
+        num_actions_to_unsafe = 0
         for episode_data in self.episodes:
             for idx in range(len(episode_data.state_vectors) - 1):
                 if episode_data.safety_labels[idx + 1]:
@@ -582,6 +584,9 @@ class ClassifierMonitorCallback(BaseCallback):
                 state_vec = episode_data.state_vectors[idx]
                 state_obj = episode_data.state_objects[idx]
                 original_action = episode_data.actions[idx]
+                if (state_obj, original_action) in visited_pairs:
+                    continue  # Already evaluated this state-action pair
+                visited_pairs.add((state_obj, original_action))
                 # Get model's predicted action for this state
                 action_mask = first_env.action_mask_under_state(state_obj)
                 predicted_action, _ = self.model.predict(np.array(state_vec), action_masks=action_mask)
@@ -593,15 +598,17 @@ class ClassifierMonitorCallback(BaseCallback):
                     next_state_obj = self.jani_model.get_transition(state_obj, predicted_action_obj)
                     if next_state_obj in self.cached_oracle_results:
                         is_safe = self.cached_oracle_results[next_state_obj]
+                        num_actions_to_safe += 1
                     else:
                         is_safe = self.oracle.is_safe(next_state_obj)
                         self.cached_oracle_results[next_state_obj] = is_safe
                     if not is_safe:
-                        num_new_unsafe_actions += 1
+                        num_actions_to_unsafe += 1
 
         return {
             "num_repeated_unsafe_actions": num_repeated_unsafe_actions,
-            "num_new_unsafe_actions": num_new_unsafe_actions
+            "num_actions_to_safe": num_actions_to_safe,
+            "num_actions_to_unsafe": num_actions_to_unsafe
         }
 
     def _write_to_csv(self, state_vectors, actions, oracle_predictions):
