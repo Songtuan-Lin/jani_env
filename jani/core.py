@@ -569,7 +569,8 @@ class JANI:
                 self._init_generator = init_state_generator(property_spec['start'])
                 self._goal_expr = goal_expression(property_spec['goal'])
                 self._failure_expr = failure_expression(property_spec['failure'])
-                start_file, goal_file, failure_file = None, None, None # Ensure these are not used
+                goal_file, failure_file = None, None # Ensure these are not used
+                # start_file, goal_file, failure_file = None, None, None # Ensure these are not used
         if start_file is not None and goal_file is not None and failure_file is not None:
             # start states
             start_spec = json.loads(Path(start_file).read_text('utf-8'))
