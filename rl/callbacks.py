@@ -574,6 +574,7 @@ class ClassifierMonitorCallback(BaseCallback):
             # Single environment
             first_env = self._unwrap_to_jani_env(self.env)
         visited_pairs = set()
+        num_previously_unsafe_actions = 0
         num_repeated_unsafe_actions = 0
         num_actions_to_safe = 0
         num_actions_to_unsafe = 0
@@ -587,6 +588,7 @@ class ClassifierMonitorCallback(BaseCallback):
                 if (state_obj, original_action) in visited_pairs:
                     continue  # Already evaluated this state-action pair
                 visited_pairs.add((state_obj, original_action))
+                num_previously_unsafe_actions += 1
                 # Get model's predicted action for this state
                 action_mask = first_env.action_mask_under_state(state_obj)
                 predicted_action, _ = self.model.predict(np.array(state_vec), action_masks=action_mask)
@@ -614,7 +616,10 @@ class ClassifierMonitorCallback(BaseCallback):
         return {
             "num_repeated_unsafe_actions": num_repeated_unsafe_actions,
             "num_actions_to_safe": num_actions_to_safe,
-            "num_actions_to_unsafe": num_actions_to_unsafe
+            "num_actions_to_unsafe": num_actions_to_unsafe,
+            "ratio_repeated_unsafe_actions": num_repeated_unsafe_actions / num_previously_unsafe_actions if num_previously_unsafe_actions > 0 else 0.0,
+            "ratio_actions_to_safe": num_actions_to_safe / num_previously_unsafe_actions if num_previously_unsafe_actions > 0 else 0.0,
+            "ratio_actions_to_unsafe": num_actions_to_unsafe / num_previously_unsafe_actions if num_previously_unsafe_actions > 0 else 0.0
         }
 
     def _write_to_csv(self, state_vectors, actions, oracle_predictions):
