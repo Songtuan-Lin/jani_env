@@ -595,14 +595,20 @@ class ClassifierMonitorCallback(BaseCallback):
                     num_repeated_unsafe_actions += 1
                 else:
                     predicted_action_obj = self.jani_model.get_action(predicted_action)
-                    next_state_obj = self.jani_model.get_transition(state_obj, predicted_action_obj)
-                    if next_state_obj in self.cached_oracle_results:
-                        is_safe = self.cached_oracle_results[next_state_obj]
+                    successors = self.jani_model.get_successors(state_obj, predicted_action_obj)
+                    is_safe_action = True
+                    for next_state_obj in successors:
+                        if next_state_obj in self.cached_oracle_results:
+                            is_safe = self.cached_oracle_results[next_state_obj]
+                        else:
+                            is_safe = self.oracle.is_safe(next_state_obj)
+                            self.cached_oracle_results[next_state_obj] = is_safe
+                        if not is_safe:
+                            is_safe_action = False
+                            break
+                    if is_safe_action:
                         num_actions_to_safe += 1
                     else:
-                        is_safe = self.oracle.is_safe(next_state_obj)
-                        self.cached_oracle_results[next_state_obj] = is_safe
-                    if not is_safe:
                         num_actions_to_unsafe += 1
 
         return {
