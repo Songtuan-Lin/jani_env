@@ -114,24 +114,24 @@ class CheckFixedFaultsCallback(BaseCallback):
 
     def _on_training_start(self):
         # Get the JANI model from the passed env - handle vectorized environments
-        if hasattr(self.env, 'envs'):
+        if hasattr(self.training_env, 'envs'):
             # Vectorized environment - get first individual environment
-            first_env = self._unwrap_to_jani_env(self.env.envs[0])
+            first_env = self._unwrap_to_jani_env(self.training_env.envs[0])
         else:
             # Single environment
-            first_env = self._unwrap_to_jani_env(self.env)
-            
+            first_env = self._unwrap_to_jani_env(self.training_env)
+
         self.jani_model = first_env.get_model()
         self.oracle = TarjanOracle(self.jani_model)
 
     def _count_repeated_faults(self):
         # Get the environment
-        if hasattr(self.env, 'envs'):
+        if hasattr(self.training_env, 'envs'):
             # Vectorized environment - get first individual environment
-            first_env = self._unwrap_to_jani_env(self.env.envs[0])
+            first_env = self._unwrap_to_jani_env(self.training_env.envs[0])
         else:
             # Single environment
-            first_env = self._unwrap_to_jani_env(self.env)
+            first_env = self._unwrap_to_jani_env(self.training_env)
 
         num_repeated_faults = 0
         num_new_faults = 0
