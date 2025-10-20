@@ -101,6 +101,7 @@ def parse_args():
     parser.add_argument("--goal_file", help="Path to the goal file")
     parser.add_argument("--safe_file", help="Path to the safe file")
     parser.add_argument("--property_file", help="Path to the property file")
+    parser.add_argument("--use_sampled_init", action="store_true", help="Use sampled initial states")
     parser.add_argument("--policy_file", help="Path to the policy file")
     parser.add_argument("--random_init", action="store_true", help="Use random initial state generator")
     parser.add_argument("--output_path", default="simulation_results.csv", help="Path to save the CSV results file")
@@ -124,7 +125,8 @@ if __name__ == "__main__":
         "goal_file": args.goal_file,
         "safe_file": args.safe_file,
         "property_file": args.property_file,
-        "random_init": args.random_init
+        "random_init": args.random_init,
+        "use_sampled_init": args.use_sampled_init
     }
     
     # Load policy if specified
