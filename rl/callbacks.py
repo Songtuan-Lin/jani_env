@@ -11,8 +11,10 @@ This module contains various callback classes used during training:
 from dataclasses import dataclass, field
 import numpy as np
 import torch
+import pandas as pd
 from pathlib import Path
 from typing import Optional
+from pathlib import Path
 
 # Optional imports for advanced features
 try:
@@ -26,6 +28,7 @@ from sb3_contrib.common.maskable.evaluation import evaluate_policy
 from sb3_contrib.common.maskable.utils import get_action_masks
 
 from jani.oracle import TarjanOracle
+from jani.core import State
 
 
 class WandbCallback(BaseCallback):
@@ -76,6 +79,108 @@ class WandbCallback(BaseCallback):
                     wandb.log(log_dict)
         
         return True
+
+
+class CheckFixedFaultsCallback(BaseCallback):
+    """Custom callback to check for a fixed set of faults during training."""
+    
+    def __init__(self, traj_csv_path, check_freq=2050, verbose=0):
+        super().__init__(verbose)
+        traj_csv_path = Path(traj_csv_path)
+        assert traj_csv_path.exists(), f"Trajectories CSV not found at {traj_csv_path}"
+        traj_data = pd.read_csv(traj_csv_path)
+        self.faults = self._read_faults(traj_data)
+        self.cached_oracle_results = dict()  # Cache oracle results
+        self.check_freq = check_freq
+
+    def _read_faults(self, traj_data):
+        """Read faults from trajectory data."""
+        faults = set()
+        for r in range(len(traj_data) - 1):
+            if traj_data.iloc[r + 1, -1] == 0:  # Next state is unsafe
+                state_vec = tuple(traj_data.iloc[r, :-1].tolist())
+                unsafe_action = traj_data.iloc[r, -5]
+                faults.add((state_vec, unsafe_action))
+        return faults
+    
+    def _unwrap_to_jani_env(self, env):
+        """Helper method to unwrap environment to get JaniEnv."""
+        unwrapped_env = env
+        while hasattr(unwrapped_env, 'env'):
+            unwrapped_env = unwrapped_env.env
+        if hasattr(unwrapped_env, 'unwrapped'):
+            unwrapped_env = unwrapped_env.unwrapped
+        return unwrapped_env
+
+    def _on_training_start(self):
+        # Get the JANI model from the passed env - handle vectorized environments
+        if hasattr(self.env, 'envs'):
+            # Vectorized environment - get first individual environment
+            first_env = self._unwrap_to_jani_env(self.env.envs[0])
+        else:
+            # Single environment
+            first_env = self._unwrap_to_jani_env(self.env)
+            
+        self.jani_model = first_env.get_model()
+        self.oracle = TarjanOracle(self.jani_model)
+
+    def _count_repeated_faults(self):
+        # Get the environment
+        if hasattr(self.env, 'envs'):
+            # Vectorized environment - get first individual environment
+            first_env = self._unwrap_to_jani_env(self.env.envs[0])
+        else:
+            # Single environment
+            first_env = self._unwrap_to_jani_env(self.env)
+
+        num_repeated_faults = 0
+        num_new_faults = 0
+        num_new_safe_actions = 0
+        for (state_features, unsafe_action) in self.faults:
+            state_vec = np.array(state_features, dtype=np.float32)
+            state_obj = State.from_vector(self.jani_model, state_features)
+            action_masks = first_env.action_mask_under_state(state_obj)
+            predicted_action, _ = self.model.predict(state_vec, action_masks=action_masks)
+            if predicted_action == unsafe_action:
+                num_repeated_faults += 1
+            else:
+                predicted_action_obj = self.jani_model.get_action(predicted_action)
+                successors = self.jani_model.get_successors(state_obj, predicted_action_obj)
+                is_safe_action = True
+                for next_state_obj in successors:
+                    if next_state_obj in self.cached_oracle_results:
+                        is_safe = self.cached_oracle_results[next_state_obj]
+                    else:
+                        is_safe = self.oracle.is_safe(next_state_obj)
+                        self.cached_oracle_results[next_state_obj] = is_safe
+                    if not is_safe:
+                        is_safe_action = False
+                        break
+                if is_safe_action:
+                    num_new_safe_actions += 1
+                else:
+                    num_new_faults += 1
+        return {
+            "repeated_faults": num_repeated_faults,
+            "new_faults": num_new_faults,
+            "new_safe_actions": num_new_safe_actions
+        }
+
+    def _on_step(self):
+        if self.n_calls % self.check_freq == 0:
+            performance_metrics = self._count_repeated_faults()
+            if WANDB_AVAILABLE and wandb.run is not None:
+                log_dict = {
+                    'fixed_faults/repeated_faults': performance_metrics['repeated_faults'],
+                    'fixed_faults/new_faults': performance_metrics['new_faults'],
+                    'fixed_faults/new_safe_actions': performance_metrics['new_safe_actions'],
+                    'fixed_faults/timesteps': self.num_timesteps
+                }
+                wandb.log(log_dict)
+            else:
+                raise RuntimeError("Weights & Biases is not available for logging.")
+        return True
+
 
 
 class ClassifierDebugCallback(BaseCallback):

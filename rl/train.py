@@ -55,7 +55,7 @@ from sb3_contrib.common.maskable.evaluation import evaluate_policy
 from sb3_contrib.common.maskable.utils import get_action_masks
 
 from jani.environment import JaniEnv
-from .callbacks import ClassifierDebugCallback, ClassifierMonitorCallback, WandbCallback, EvalCallback
+from .callbacks import ClassifierDebugCallback, ClassifierMonitorCallback, WandbCallback, EvalCallback, CheckFixedFaultsCallback
 from .buffer import RolloutBufferWithLB
 from classifier import load_trained_model
 
@@ -169,6 +169,14 @@ def parse_arguments():
                        help='Directory containing classifier training data (required for online fine-tuning)')
     parser.add_argument('--disable_monitor_model_saving', action='store_true',
                        help='Disable saving policy models during classifier monitoring')
+
+    # Check fixed faults callback arguments
+    parser.add_argument('--check_fixed_faults', action='store_true',
+                          help='Enable checking for a fixed set of faults during training')
+    parser.add_argument('--check_freq', type=int, default=2050,
+                        help='Frequency (in timesteps) to check for fixed faults (default: 2050)')
+    parser.add_argument('--fixed_faults_csv', type=str, default=None,
+                        help='Path to CSV file containing fixed faults to check against')
     
     # Floored advantage estimation arguments
     parser.add_argument('--use_floored_advantages', action='store_true',
@@ -542,6 +550,22 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
             print("🔍 Classifier debugging enabled - will compare predictions with Tarjan oracle")
     elif args.debug_classifier and not args.use_classifier:
         print("⚠️ Warning: --debug_classifier enabled but --use_classifier is not. Debug callback will not be added.")
+
+    # Check fixed faults callback (if enabled)
+    if args.check_fixed_faults:
+        if args.fixed_faults_csv is None:
+            raise ValueError("--fixed_faults_csv must be provided when --check_fixed_faults is enabled")
+        if not Path(args.fixed_faults_csv).exists():
+            raise FileNotFoundError(f"Fixed faults CSV file not found: {args.fixed_faults_csv}")
+        
+        fixed_faults_callback = CheckFixedFaultsCallback(
+            traj_csv_path=args.fixed_faults_csv,
+            check_freq=args.check_freq,
+            verbose=args.verbose
+        )
+        callbacks.append(fixed_faults_callback)
+        if args.verbose >= 1:
+            print(f"🛠️ Fixed faults checking enabled - will check faults from: {args.fixed_faults_csv} every {args.check_freq} timesteps")
     
     # Classifier monitor callback (if monitor_classifier is enabled)
     if args.monitor_classifier:

@@ -52,7 +52,7 @@ class Simulator:
             episode_reward = 0.0
             done = False
             truncated = False
-            cache_state(self._env.unwrapped.get_state_repr(), action=-1, reward=0.0, terminal=done, truncated=truncated)
+            # cache_state(self._env.unwrapped.get_state_repr(), action=-1, reward=0.0, terminal=done, truncated=truncated)
             while not done and not truncated:
                 action_masks = get_action_masks(self._env)
                 if self._policy is not None:
@@ -62,9 +62,10 @@ class Simulator:
                     # sample one
                     rng = np.random.default_rng(self._seed) if self._seed is not None else np.random.default_rng()
                     action = rng.choice(valid_actions)
+                state_obj = self._env.unwrapped.get_state_repr()
                 obs, reward, done, truncated, info = self._env.step(action)
                 episode_reward += reward
-                cache_state(self._env.unwrapped.get_state_repr(), action=action, reward=reward, terminal=done, truncated=truncated)
+                cache_state(state_obj, action=action, reward=reward, terminal=done, truncated=truncated)
             rewards.append(episode_reward)
 
         if self._output_path:
