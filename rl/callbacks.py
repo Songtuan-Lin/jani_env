@@ -138,7 +138,7 @@ class CheckFixedFaultsCallback(BaseCallback):
         num_new_safe_actions = 0
         for (state_features, unsafe_action) in self.faults:
             state_vec = np.array(state_features, dtype=np.float32)
-            state_obj = State.from_vector(self.jani_model, state_features)
+            state_obj = State.from_vector(state_features, self.jani_model.get_constants_variables())
             action_masks = first_env.action_mask_under_state(state_obj)
             predicted_action, _ = self.model.predict(state_vec, action_masks=action_masks)
             if predicted_action == unsafe_action:
