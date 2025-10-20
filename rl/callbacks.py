@@ -98,7 +98,7 @@ class CheckFixedFaultsCallback(BaseCallback):
         faults = set()
         for r in range(len(traj_data) - 1):
             if traj_data.iloc[r + 1, -1] == 0:  # Next state is unsafe
-                state_vec = tuple(traj_data.iloc[r, :-1].tolist())
+                state_vec = tuple(traj_data.iloc[r, :-5].tolist())
                 unsafe_action = traj_data.iloc[r, -5]
                 faults.add((state_vec, unsafe_action))
         return faults
