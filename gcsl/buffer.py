@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from tensordict import TensorDict
 from torchrl.envs import Transform
 from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage
 
@@ -16,7 +17,7 @@ class GCSLReplayBuffer:
             super().__init__(in_keys=[], out_keys=['current_obs', 'goal_conditions'])
             self.env = env
 
-        def forward(self, x):
+        def forward(self, x: TensorDict) -> TensorDict:
             batch_size = x.batch_size[0] 
             lengths = x["episode_length"]  # Assuming episode_length is provided in x
             # Sample start and end indices for each sampled trajectory
@@ -32,8 +33,22 @@ class GCSLReplayBuffer:
             x['goal_conditions'] = self.env.compute_goal_condition(reached_state)
             return x
 
-    def __init__(self, buffer_size: int, max_horizon: int = 2048):
+    def __init__(self, buffer_size: int, env, max_horizon: int = 2048):
         self.buffer_size = buffer_size
+        self.env = env
         self.max_horizon = max_horizon
+        # Initialize storage for replay buffer
         self.storage = LazyTensorStorage(max_size=buffer_size)
-        self.replay_buffer = TensorDictReplayBuffer(storage=self.storage)
+        self.replay_buffer = TensorDictReplayBuffer(
+            storage=self.storage,
+            transform=self.SampleIndexTransform(env),
+        )
+
+    def sample_batch(self, batch_size: int):
+        """Sample a batch of transitions for GCSL training."""
+        sampled_data = self.replay_buffer.sample(batch_size)
+        return sampled_data
+    
+    def add_trajectory(self, trajectory: TensorDict):
+        """Add a trajectory to the replay buffer."""
+        self.replay_buffer.add(trajectory)
