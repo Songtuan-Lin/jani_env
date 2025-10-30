@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <variant>
 #include <random>
+#include <filesystem>
 #include "nlohmann/json.hpp"
 #include "base_components.h"
 #include "expressions.h"
@@ -88,26 +89,28 @@ public:
 };
 
 class JANIEngine {
-    std::vector<Action*> actions;
-    std::vector<Variable*> constants;
-    std::vector<Variable*> variables;
-    std::vector<Automaton*> automata;
+    // Actions in the model
+    std::vector<std::unique_ptr<Action>> actions;
+    // Constants in the model
+    std::vector<std::unique_ptr<Variable>> constants;
+    // Variables in the model
+    std::vector<std::unique_ptr<Variable>> variables;
+    // Automata in the model (currently only one is supported)
+    std::vector<std::unique_ptr<Automaton>> automata;
+    // Expression for the objective
+    std::unique_ptr<Expression> goal_expression;
 
-    Automaton* constructAutomaton(const nlohmann::json& json_obj, int automaton_id);
+    std::unique_ptr<Automaton> constructAutomaton(const nlohmann::json& json_obj, int automaton_id);
+    std::unique_ptr<Variable> constructConstant(const nlohmann::json& json_obj);
+    std::unique_ptr<Variable> constructVariable(const nlohmann::json& json_obj);
 public:
-    ~JANIEngine() {
-        for (auto action : actions) {
-            delete action;
-        }
-        for (auto var : variables) {
-            delete var;
-        }
-        for (auto const_var : constants) {
-            delete const_var;
-        }
-        for (auto automaton : automata) {
-            delete automaton;
-        }
-    }
+    JANIEngine(
+        const std::filesystem::path& jani_model_path, 
+        const std::filesystem::path& jani_property_path,
+        const std::filesystem::path& start_states_path,
+        const std::filesystem::path& objective_path,
+        const std::filesystem::path& failure_property_path
+    );
+    ~JANIEngine() {}
 };
 #endif // JANI_ENGINE_H

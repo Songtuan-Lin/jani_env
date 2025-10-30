@@ -6,7 +6,7 @@
 int main() {
 
     // Create a JANI engine instance
-    JANIEngine engine;
+    std::cout << "Creating JANI Engine..." << std::endl;
 
     return 0;
 }
