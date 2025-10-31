@@ -112,8 +112,54 @@ JANIEngine::JANIEngine(
         nlohmann::json property_obj = all_properties_json[0]["expression"];
         // Construct the start states expression
         nlohmann::json start_property = property_obj["start"];
-        if (start_property.contains("file")) {
+        if (start_property.contains("file"))
+            // Load start states from file
             start_file_path = start_property["file"].get<std::string>();
+        if (!start_property.contains("op"))
+            throw std::runtime_error("Unsupported start states property format");
+        if (start_property["op"].get<std::string>() == "states-values") {
+            // Load start states from values
+            nlohmann::json states_array = start_property["values"];
+            init_state_generator = std::make_unique<InitStatesFromPool>();
+            // Iterate through each state
+            for (auto it = states_array.begin(); it != states_array.end(); ++it) {
+                std::unique_ptr<std::unordered_map<std::string, std::variant<int, double, bool>>> state_values = 
+                    std::make_unique<std::unordered_map<std::string, std::variant<int, double, bool>>>();
+                // Iterate through each variable assignment
+                for (auto val_it = (*it)["variables"].begin(); val_it != (*it)["variables"].end(); ++val_it) {
+                    std::string var_name = val_it["var"].get<std::string>();
+                    std::variant<int, double, bool> var_value = val_it["value"].get<std::variant<int, double, bool>>();
+                    (*state_values)[var_name] = var_value;
+                }
+                std::unique_ptr<State> state = std::make_unique<State>();
+                for (auto const_it = constants.begin(); const_it != constants.end(); ++const_it)
+                    // Copy constant variables
+                    state->setVariable((*const_it)->getName(), (*const_it)->clone());
+                for (auto var_it = variables.begin(); var_it != variables.end(); ++var_it) {
+                    std::string var_name = (*var_it)->getName();
+                    if (state_values->find(var_name) != state_values->end()) {
+                        throw std::runtime_error("Variable " + var_name + " missing in start state definition");
+                    }
+                    // Copy the variable and set its initial value
+                    std::unique_ptr<Variable> new_var = (*var_it)->clone();
+                    switch ((*state_values)[var_name].index()) {
+                        case 0: // int
+                            new_var->setValue(std::get<int>((*state_values)[var_name]));
+                            break;
+                        case 1: // double
+                            new_var->setValue(std::get<double>((*state_values)[var_name]));
+                            break;
+                        case 2: // bool
+                            new_var->setValue(std::get<bool>((*state_values)[var_name]));
+                            break;
+                        default:
+                            throw std::runtime_error("Unsupported variable type in start state assignment");
+                    }
+                    state->setVariable(var_name, std::move(new_var));
+                }
+                // Add the constructed state to the initial states pool
+                init_state_generator->addInitialState(std::move(state));
+            }
         }
     }
 }

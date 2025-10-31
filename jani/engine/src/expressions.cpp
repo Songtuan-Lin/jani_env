@@ -88,6 +88,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* right = construct(json_obj["right"]);
             return new OrExpression(left, right);
         }
+    } else {
+        throw std::invalid_argument("Unsupported operator in JSON object: " + op);
     }
     return nullptr;
 }

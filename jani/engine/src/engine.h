@@ -89,6 +89,33 @@ public:
     }
 };
 
+
+class InitStateGenerator {
+    // Placeholder for initial state generation logic
+    public:
+    virtual std::unique_ptr<State> generateInitialState() const = 0;
+};
+
+
+class InitStatesFromPool : public InitStateGenerator {
+    std::vector<std::unique_ptr<State>> initial_states_pool;
+public:
+    InitStatesFromPool() = default;
+    void addInitialState(std::unique_ptr<State> state) {
+        initial_states_pool.push_back(std::move(state));
+    }
+
+    std::unique_ptr<State> generateInitialState() const override {
+        if (initial_states_pool.empty()) {
+            throw std::runtime_error("No initial states available");
+        }
+        // Randomly select an initial state from the pool
+        std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<> dist(0, initial_states_pool.size() - 1);
+        return initial_states_pool[dist(rng)]->clone();
+    }
+};
+
 class JANIEngine {
     // Actions in the model
     std::vector<std::unique_ptr<Action>> actions;
@@ -100,6 +127,8 @@ class JANIEngine {
     std::vector<std::unique_ptr<Automaton>> automata;
     // Expression for the objective
     std::unique_ptr<Expression> goal_expression;
+    // Initial state generator
+    std::unique_ptr<InitStateGenerator> init_state_generator;
 
     std::unique_ptr<Automaton> constructAutomaton(const nlohmann::json& json_obj, int automaton_id);
     std::unique_ptr<Variable> constructConstant(const nlohmann::json& json_obj);
