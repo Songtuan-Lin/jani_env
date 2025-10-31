@@ -21,11 +21,12 @@ class Variable {
     bool is_constant;
 public:
     Variable(int id, const std::string& name, bool is_constant) : id(id), name(name), is_constant(is_constant) {}
+    virtual ~Variable() = default;
     int getId() const { return id; }
     std::string getName() const { return name; }
     bool isConstant() const { return is_constant; }
-    virtual Variable* update(const std::variant<int, double, bool>& val) const = 0;
-    virtual Variable* clone() const = 0;
+    virtual std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const = 0;
+    virtual std::unique_ptr<Variable> clone() const = 0;
     virtual std::variant<int, double, bool> getValue() const = 0;
 };
 
@@ -44,20 +45,20 @@ public:
     }
     double getLowerBound() const { return lower_bound; }
     double getUpperBound() const { return upper_bound; }
-    Variable* update(const std::variant<int, double, bool>& val) const {
+    std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const {
         // Returns a new RealVariable with updated value
         if (std::holds_alternative<double>(val)) {
             double new_val = std::get<double>(val);
             if (new_val < lower_bound || new_val > upper_bound) {
                 throw std::runtime_error("Value out of bounds in RealVariable update");
             }
-            return new RealVariable(getId(), getName(), lower_bound, upper_bound, new_val);
+            return std::make_unique<RealVariable>(getId(), getName(), lower_bound, upper_bound, new_val);
         }
         throw std::runtime_error("Invalid type for RealVariable update");
     }
-    Variable* clone() const {
+    std::unique_ptr<Variable> clone() const {
         // Returns a new RealVariable with the same properties
-        return new RealVariable(getId(), getName(), lower_bound, upper_bound, value);
+        return std::make_unique<RealVariable>(getId(), getName(), lower_bound, upper_bound, value);
     }
 };
 
@@ -67,12 +68,12 @@ public:
     RealConstant(int id, const std::string& name, double value)
         : Variable(id, name, true), value(value) {}
     std::variant<int, double, bool> getValue() const { return value; }
-    Variable* update(const std::variant<int, double, bool>& val) const {
+    std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const {
         throw std::runtime_error("Cannot update a constant variable");
     }
-    Variable* clone() const {
+    std::unique_ptr<Variable> clone() const {
         // Returns a new RealConstant with the same properties
-        return new RealConstant(getId(), getName(), value);
+        return std::make_unique<RealConstant>(getId(), getName(), value);
     }
 };
 
@@ -83,16 +84,16 @@ public:
         : Variable(id, name, false), value(initial_value) {}
     std::variant<int, double, bool> getValue() const { return value; }
     void setValue(bool val) { value = val; }
-    Variable* update(const std::variant<int, double, bool>& val) const {
+    std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const {
         // Returns a new BooleanVariable with updated value
         if (std::holds_alternative<bool>(val)) {
-            return new BooleanVariable(getId(), getName(), std::get<bool>(val));
+            return std::make_unique<BooleanVariable>(getId(), getName(), std::get<bool>(val));
         }
         throw std::runtime_error("Invalid type for BooleanVariable update");
     }
-    Variable* clone() const {
+    std::unique_ptr<Variable> clone() const {
         // Returns a new BooleanVariable with the same properties
-        return new BooleanVariable(getId(), getName(), value);
+        return std::make_unique<BooleanVariable>(getId(), getName(), value);
     }
 };
 
@@ -102,12 +103,12 @@ public:
     BooleanConstant(int id, const std::string& name, bool value)
         : Variable(id, name, true), value(value) {}
     std::variant<int, double, bool> getValue() const { return value; }
-    Variable* update(const std::variant<int, double, bool>& val) const {
+    std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const {
         throw std::runtime_error("Cannot update a constant variable");
     }
-    Variable* clone() const {
+    std::unique_ptr<Variable> clone() const {
         // Returns a new BooleanConstant with the same properties
-        return new BooleanConstant(getId(), getName(), value);
+        return std::make_unique<BooleanConstant>(getId(), getName(), value);
     }
 };
 
@@ -126,20 +127,20 @@ public:
     }
     int getLowerBound() const { return lower_bound; }
     int getUpperBound() const { return upper_bound; }
-    Variable* update(const std::variant<int, double, bool>& val) const {
+    std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const {
         // Returns a new IntVariable with updated value
         if (std::holds_alternative<int>(val)) {
             int new_val = std::get<int>(val);
             if (new_val < lower_bound || new_val > upper_bound) {
                 throw std::runtime_error("Value out of bounds in IntVariable update");
             }
-            return new IntVariable(getId(), getName(), lower_bound, upper_bound, new_val);
+            return std::make_unique<IntVariable>(getId(), getName(), lower_bound, upper_bound, new_val);
         }
         throw std::runtime_error("Invalid type for IntVariable update");
     }
-    Variable* clone() const {
+    std::unique_ptr<Variable> clone() const {
         // Returns a new IntVariable with the same properties
-        return new IntVariable(getId(), getName(), lower_bound, upper_bound, value);
+        return std::make_unique<IntVariable>(getId(), getName(), lower_bound, upper_bound, value);
     }
 };
 
@@ -149,36 +150,32 @@ public:
     IntConstant(int id, const std::string& name, int value)     
         : Variable(id, name, true), value(value) {}
     std::variant<int, double, bool> getValue() const { return value; }
-    Variable* update(const std::variant<int, double, bool>& val) const {
+    std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) const {
         throw std::runtime_error("Cannot update a constant variable");
     }
-    Variable* clone() const {
+    std::unique_ptr<Variable> clone() const {
         // Returns a new IntConstant with the same properties
-        return new IntConstant(getId(), getName(), value);
+        return std::make_unique<IntConstant>(getId(), getName(), value);
     }
 };
 
 class State {
-    std::unordered_map<std::string, Variable*>* state_values;
+    std::unordered_map<std::string, std::unique_ptr<Variable>> state_values;
 public:
-    State() : state_values(new std::unordered_map<std::string, Variable*>()) {}
-    ~State() {
-        for (auto& pair : *state_values) {
-            delete pair.second;
-        }
-    }
-    void setVariable(const std::string& name, Variable* var) {
-        (*state_values)[name] = var;
+    State() = default;
+    ~State() = default;
+    void setVariable(const std::string& name, std::unique_ptr<Variable> var) {
+        state_values[name] = std::move(var);
     }
     Variable* getSingleVariable(const std::string& name) const {
-        auto it = state_values->find(name);
-        if (it != state_values->end()) {
-            return it->second;
+        auto it = state_values.find(name);
+        if (it != state_values.end()) {
+            return it->second.get();
         }
-        return nullptr;
+        throw std::runtime_error("Variable not found in state: " + name);
     }
-    const std::unordered_map<std::string, Variable*>* getAllVariables() const {
-        return state_values;
+    const std::unordered_map<std::string, std::unique_ptr<Variable>>* getAllVariables() const {
+        return &state_values;
     }
 };
 #endif // JANI_ENGINE_BASE_COMPONENTS_H

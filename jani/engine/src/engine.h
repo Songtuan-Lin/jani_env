@@ -58,7 +58,7 @@ public:
 
         // Create a new state and apply the assignments
         State* new_state = new State();
-        const std::unordered_map<std::string, Variable*>* all_vars = ctx_state.getAllVariables();
+        const std::unordered_map<std::string, std::unique_ptr<Variable>>* all_vars = ctx_state.getAllVariables();
         for (const auto& pair : *all_vars) {
             if (assignments.find(pair.first) == assignments.end()) {
                 // No assignment for this variable, clone the existing one
@@ -66,8 +66,9 @@ public:
             } else {
                 // Assignment exists, return the updated variable
                 Expression* expr = assignments.at(pair.first);
-                Variable* new_variable = pair.second->update(expr->eval(ctx_state));
-                new_state->setVariable(pair.first, new_variable);
+                std::unique_ptr<Variable> new_variable = pair.second->update(expr->eval(ctx_state));
+                // Be careful to move the unique_ptr
+                new_state->setVariable(pair.first, std::move(new_variable));
             }
         }
         return new_state;
