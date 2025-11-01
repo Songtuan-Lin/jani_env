@@ -6,6 +6,7 @@
 #include <variant>
 #include <random>
 #include <filesystem>
+#include <memory>
 #include "nlohmann/json.hpp"
 #include "base_components.h"
 #include "expressions.h"
@@ -93,26 +94,30 @@ public:
 class InitStateGenerator {
     // Placeholder for initial state generation logic
     public:
-    virtual std::unique_ptr<State> generateInitialState() const = 0;
+    virtual State* generateInitialState() const = 0;
+    virtual void addInitialState(std::unique_ptr<State> state) = 0;
 };
 
 
-class InitStatesFromPool : public InitStateGenerator {
+class InitStatesFromValues : public InitStateGenerator {
     std::vector<std::unique_ptr<State>> initial_states_pool;
 public:
-    InitStatesFromPool() = default;
-    void addInitialState(std::unique_ptr<State> state) {
+    InitStatesFromValues() = default;
+
+    ~InitStatesFromValues() = default;
+
+    void addInitialState(std::unique_ptr<State> state) override {
         initial_states_pool.push_back(std::move(state));
     }
 
-    std::unique_ptr<State> generateInitialState() const override {
+    State* generateInitialState() const override {
         if (initial_states_pool.empty()) {
             throw std::runtime_error("No initial states available");
         }
         // Randomly select an initial state from the pool
         std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<> dist(0, initial_states_pool.size() - 1);
-        return initial_states_pool[dist(rng)]->clone();
+        return initial_states_pool[dist(rng)].get();
     }
 };
 
@@ -127,12 +132,23 @@ class JANIEngine {
     std::vector<std::unique_ptr<Automaton>> automata;
     // Expression for the objective
     std::unique_ptr<Expression> goal_expression;
+    // Expression for the failure property
+    std::unique_ptr<Expression> failure_expression;
     // Initial state generator
     std::unique_ptr<InitStateGenerator> init_state_generator;
 
+    // Construct a single automaton
     std::unique_ptr<Automaton> constructAutomaton(const nlohmann::json& json_obj, int automaton_id);
+    // Construct a constant variable
     std::unique_ptr<Variable> constructConstant(const nlohmann::json& json_obj);
+    // Construct a variable
     std::unique_ptr<Variable> constructVariable(const nlohmann::json& json_obj);
+    // Construct initial state generator from values
+    std::unique_ptr<InitStateGenerator> constructGeneratorFromValues(const nlohmann::json& states_array);
+    // Construct objective expression
+    std::unique_ptr<Expression> constructObjectiveExpression(const nlohmann::json& json_obj);
+    // Construct failure expression
+    std::unique_ptr<Expression> constructFailureExpression(const nlohmann::json& json_obj);
 public:
     JANIEngine(
         const std::filesystem::path& jani_model_path, 
