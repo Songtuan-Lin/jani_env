@@ -107,7 +107,7 @@ public:
 class InitStateGenerator {
     // Placeholder for initial state generation logic
     public:
-    virtual State* generateInitialState() const = 0;
+    virtual State* generateInitialState(std::mt19937& rng) const = 0;
     virtual void addInitialState(std::unique_ptr<State> state) = 0;
 };
 
@@ -123,12 +123,11 @@ public:
         initial_states_pool.push_back(std::move(state));
     }
 
-    State* generateInitialState() const override {
+    State* generateInitialState(std::mt19937& rng) const override {
         if (initial_states_pool.empty()) {
             throw std::runtime_error("No initial states available");
         }
         // Randomly select an initial state from the pool
-        std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<> dist(0, initial_states_pool.size() - 1);
         return initial_states_pool[dist(rng)].get();
     }
@@ -163,6 +162,7 @@ class JANIEngine {
     // Construct failure expression
     std::unique_ptr<Expression> constructFailureExpression(const nlohmann::json& json_obj);
 public:
+    JANIEngine() = default;
     JANIEngine(
         const std::filesystem::path& jani_model_path, 
         const std::filesystem::path& jani_property_path,
@@ -171,5 +171,30 @@ public:
         const std::filesystem::path& failure_property_path
     );
     ~JANIEngine() {}
+
+    // For testing purposes
+    std::unique_ptr<InitStateGenerator> testConstructGeneratorFromValues(const nlohmann::json& states_array) {
+        return constructGeneratorFromValues(states_array);
+    }
+
+    std::unique_ptr<Automaton> testConstructAutomaton(const nlohmann::json& json_obj, int automaton_id) {
+        return constructAutomaton(json_obj, automaton_id);
+    }
+
+    std::unique_ptr<Variable> testConstructVariable(const nlohmann::json& json_obj) {
+        return constructVariable(json_obj);
+    }
+
+    void testAddVariable(std::unique_ptr<Variable> variable) {
+        variables.push_back(std::move(variable));
+    }
+
+    std::unique_ptr<Variable> testConstructConstant(const nlohmann::json& json_obj) {
+        return constructConstant(json_obj);
+    }
+    
+    void testAddConstant(std::unique_ptr<Variable> constant) {
+        constants.push_back(std::move(constant));
+    }
 };
 #endif // JANI_ENGINE_H
