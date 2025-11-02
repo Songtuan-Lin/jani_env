@@ -242,7 +242,7 @@ public:
     }
 
     bool operator==(const State& other) const {
-        if (state_values.size() != other.state_values.getAllVariables()->size()) {
+        if (state_values.size() != other.getAllVariables()->size()) {
             throw std::runtime_error("States have different number of variables");
         }
         for (const auto& pair : state_values) {
