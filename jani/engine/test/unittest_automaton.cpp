@@ -40,12 +40,12 @@ protected:
                 "guard": { 
                     "exp": {
                         "left": {
-                            "left": "10",
-                            "right": x,
+                            "left": 10,
+                            "right": "x",
                             "op": "<"
                         },
                         "right": {
-                            "left": "7",
+                            "left": 7,
                             "right": "y",
                             "op": "<"
                         },
@@ -118,4 +118,24 @@ TEST_F(AutomatonTest, GuardEvaluation) {
     ctx_state.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 10, 5)); // y = 5
     enabled = (*complex_transitions)[0]->isEnabled(ctx_state);
     EXPECT_FALSE(enabled); // Guard y < 5 should be false
+}
+
+TEST_F(AutomatonTest, ApplyAssignments) {
+    State ctx_state;
+    ctx_state.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 10, 2)); // x = 2
+    ctx_state.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 10, 1)); // y = 1
+
+    const std::vector<const TransitionEdge*>* simple_transitions = automaton->getTransitionsForAction("a");
+    (*simple_transitions)[0]->applyAssignments(ctx_state);
+
+    IntVariable* x_var = dynamic_cast<IntVariable*>(ctx_state.getVariable("x"));
+    EXPECT_EQ(x_var->getValue(), 3); // x should be incremented by 1
+
+    const std::vector<const TransitionEdge*>* complex_transitions = automaton->getTransitionsForAction("b");
+    (*complex_transitions)[0]->applyAssignments(ctx_state);
+
+    x_var = dynamic_cast<IntVariable*>(ctx_state.getVariable("x"));
+    IntVariable* y_var = dynamic_cast<IntVariable*>(ctx_state.getVariable("y"));
+    EXPECT_EQ(x_var->getValue(), 1); // x should be decremented by 2 (3 - 2)
+    EXPECT_EQ(y_var->getValue(), 3); // y should be multiplied by 3 (1 * 3)
 }

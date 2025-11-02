@@ -54,6 +54,9 @@ public:
     }
 
     State* apply(State& ctx_state, std::mt19937& rng) const {
+        if (!isEnabled(ctx_state)) {
+            throw std::runtime_error("Transition guard is not satisfied in the current state");
+        }
         // Select a destination based on probabilities
         std::discrete_distribution<> dist(probabilities.begin(), probabilities.end());
         int selected = dist(rng);
