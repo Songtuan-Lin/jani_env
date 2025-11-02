@@ -32,5 +32,14 @@ target_include_directories(expression_test
     PRIVATE
         src/
 )
+
+add_executable(automaton_test test/unittest_automaton.cpp src/engine.cpp src/expressions.cpp)
+target_link_libraries(automaton_test GTest::gtest_main)
+target_include_directories(automaton_test
+    PRIVATE
+        src/
+)
+
 include(GoogleTest)
 gtest_discover_tests(expression_test)
+gtest_discover_tests(automaton_test)

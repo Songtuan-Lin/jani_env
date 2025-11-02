@@ -44,6 +44,7 @@ public:
             probabilities.push_back(1.0); // Default probability
         }
     }
+    
     bool isEnabled(const State& ctx_state) const {
         auto guard_val = guard->eval(ctx_state);
         if (std::holds_alternative<bool>(guard_val)) {
@@ -51,6 +52,7 @@ public:
         }
         throw std::runtime_error("Guard expression did not evaluate to a boolean");
     }
+
     State* apply(State& ctx_state, std::mt19937& rng) const {
         // Select a destination based on probabilities
         std::discrete_distribution<> dist(probabilities.begin(), probabilities.end());
@@ -87,6 +89,14 @@ public:
 
     void addTransition(TransitionEdge* transition) {
         transitions[transition->getLabel()].push_back(transition);
+    }
+
+    const std::vector<const TransitionEdge*>* getTransitionsForAction(const std::string& action_label) const {
+        auto it = transitions.find(action_label);
+        if (it != transitions.end()) {
+            return &(it->second);
+        }
+        throw std::runtime_error("No transitions found for action: " + action_label);
     }
 };
 
