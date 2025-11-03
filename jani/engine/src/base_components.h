@@ -1,6 +1,7 @@
 #ifndef JANI_ENGINE_BASE_COMPONENTS_H
 #define JANI_ENGINE_BASE_COMPONENTS_H
 #include <vector>
+#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -223,7 +224,14 @@ class State {
     std::unordered_map<std::string, std::unique_ptr<Variable>> state_values;
 public:
     State() = default;
+
     ~State() = default;
+
+    State(const State& other) {
+        for (const auto& pair : other.state_values) {
+            state_values[pair.first] = std::move(pair.second->clone());
+        }
+    }
 
     void setVariable(const std::string& name, std::unique_ptr<Variable> var) {
         state_values[name] = std::move(var);
@@ -254,6 +262,35 @@ public:
             }
         }
         return true;
+    }
+
+    std::string toString() const {
+        std::vector<std::string> var_strings;
+        var_strings.resize(state_values.size());
+        for (const auto& pair : state_values) {
+            int var_id = pair.second->getId();
+            std::string var_name = pair.first;
+            std::variant<int, double, bool> var_value = pair.second->getValue();
+            std::string value_str;
+            if (std::holds_alternative<int>(var_value)) {
+                value_str = std::to_string(std::get<int>(var_value));
+            } else if (std::holds_alternative<double>(var_value)) {
+                value_str = std::to_string(std::get<double>(var_value));
+            } else if (std::holds_alternative<bool>(var_value)) {
+                value_str = std::get<bool>(var_value) ? "true" : "false";
+            }
+            std::string var_repr = var_name + " = " + value_str;
+            var_strings[var_id] = var_repr;
+        }
+        std::string state_repr = "[";
+        for (size_t i = 0; i < var_strings.size(); ++i) {
+            state_repr += var_strings[i];
+            if (i < var_strings.size() - 1) {
+                state_repr += ", ";
+            }
+        }
+        state_repr += "]";
+        return state_repr;
     }
 };
 #endif // JANI_ENGINE_BASE_COMPONENTS_H

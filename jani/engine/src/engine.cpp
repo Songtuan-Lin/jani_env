@@ -88,7 +88,8 @@ std::unique_ptr<InitStateGenerator> JANIEngine::constructGeneratorFromValues(con
             state->setVariable((*const_it)->getName(), (*const_it)->clone());
         for (auto var_it = variables.begin(); var_it != variables.end(); ++var_it) {
             std::string var_name = (*var_it)->getName();
-            if (state_values->find(var_name) != state_values->end()) {
+            // Check that the variable is defined in the state values
+            if (state_values->find(var_name) == state_values->end()) {
                 throw std::runtime_error("Variable " + var_name + " missing in start state definition");
             }
             // Copy the variable and set its initial value

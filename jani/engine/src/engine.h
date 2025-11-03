@@ -109,6 +109,7 @@ class InitStateGenerator {
     public:
     virtual State* generateInitialState(std::mt19937& rng) const = 0;
     virtual void addInitialState(std::unique_ptr<State> state) = 0;
+    virtual const std::vector<std::unique_ptr<State>>& getInitialStatePool() const = 0;
 };
 
 
@@ -130,6 +131,10 @@ public:
         // Randomly select an initial state from the pool
         std::uniform_int_distribution<> dist(0, initial_states_pool.size() - 1);
         return initial_states_pool[dist(rng)].get();
+    }
+
+    const std::vector<std::unique_ptr<State>>& getInitialStatePool() const override {
+        return initial_states_pool;
     }
 };
 
