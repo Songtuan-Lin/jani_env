@@ -293,4 +293,11 @@ public:
         return state_repr;
     }
 };
+
+
+struct StateHasher {
+    std::size_t operator()(const State& s) const noexcept {
+        return std::hash<std::string>{}(s.toString());
+    }
+};
 #endif // JANI_ENGINE_BASE_COMPONENTS_H
