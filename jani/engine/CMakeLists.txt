@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Find Boost libraries
+find_package(Boost REQUIRED)
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -22,26 +25,27 @@ file(GLOB_RECURSE PROJECT_SOURCES src/engine.cpp src/expressions.cpp src/main.cp
 
 # Create the executable (name: jani_engine)
 add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
+target_link_libraries(${PROJECT_NAME} Boost::headers)
 
 # Link GoogleTest to the project
 enable_testing()
 
 add_executable(expression_test test/unittest_expr.cpp src/expressions.cpp)
-target_link_libraries(expression_test GTest::gtest_main)
+target_link_libraries(expression_test GTest::gtest_main Boost::headers)
 target_include_directories(expression_test
     PRIVATE
         src/
 )
 
 add_executable(automaton_test test/unittest_automaton.cpp src/engine.cpp src/expressions.cpp)
-target_link_libraries(automaton_test GTest::gtest_main)
+target_link_libraries(automaton_test GTest::gtest_main Boost::headers)
 target_include_directories(automaton_test
     PRIVATE
         src/
 )
 
 add_executable(engine_test test/unittest_engine.cpp src/engine.cpp src/expressions.cpp)
-target_link_libraries(engine_test GTest::gtest_main)
+target_link_libraries(engine_test GTest::gtest_main Boost::headers)
 target_include_directories(engine_test
     PRIVATE
         src/

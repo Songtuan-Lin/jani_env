@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <variant>
 #include <memory>
+#include <boost/container_hash/hash.hpp>
 
 
 class Action {
@@ -292,12 +293,32 @@ public:
         state_repr += "]";
         return state_repr;
     }
+
+    std::vector<double> toRealVector() const {
+        std::vector<double> real_values;
+        real_values.resize(state_values.size());
+        for (const auto& pair : state_values) {
+            int var_id = pair.second->getId();
+            std::variant<int, double, bool> var_value = pair.second->getValue();
+            if (std::holds_alternative<double>(var_value)) {
+                real_values[var_id] = std::get<double>(var_value);
+            } else if (std::holds_alternative<int>(var_value)) {
+                real_values[var_id] = static_cast<double>(std::get<int>(var_value));
+            } else if (std::holds_alternative<bool>(var_value)) {
+                real_values[var_id] = std::get<bool>(var_value) ? 1.0 : 0.0;
+            } else {
+                throw std::runtime_error("Variable type cannot be converted to real number");
+            }
+        }
+        return real_values;
+    }
 };
 
 
 struct StateHasher {
     std::size_t operator()(const State& s) const noexcept {
-        return std::hash<std::string>{}(s.toString());
+        boost::hash<std::vector<double>> vector_hasher;
+        return vector_hasher(s.toRealVector());
     }
 };
 #endif // JANI_ENGINE_BASE_COMPONENTS_H
