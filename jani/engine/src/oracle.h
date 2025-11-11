@@ -4,14 +4,30 @@
 
 
 struct TarjanNode {
-    State *state;
+    State state;
     int index;
     int lowlink;
-    TarjanNode(State *s) : state(s), index(-1), lowlink(-1) {}
+    TarjanNode(State s) : state(s), index(-1), lowlink(-1) {}
 };
 
 
 class TarjanOracle {
+    JANIEngine* engine;
     // Cache the safety results for states
-    std::unordered_map<State*, int, StateHasher> cache;
+    std::unordered_map<State, int, StateHasher> cache;
+    bool tarjan_dfs(TarjanNode* node, int index,
+                    std::vector<TarjanNode*>& stack,
+                    std::unordered_set<State, StateHasher>& on_stack);
+public:
+    TarjanOracle(JANIEngine* eng) : engine(eng) {}
+    int isStateSafe(State* state) {
+        // Perform Tarjan's algorithm starting from this state
+        std::vector<TarjanNode*> stack;
+        std::unordered_set<State, StateHasher> on_stack;
+        TarjanNode *node = new TarjanNode(*state);
+        bool safe = tarjan_dfs(node, 0, stack, on_stack);
+        int result = safe ? 1 : 0;
+        cache[*state] = result;
+        return result;
+    }
 }
