@@ -7,6 +7,11 @@ struct TarjanNode {
     State *state;
     int index;
     int lowlink;
-    bool on_stack;
-    TarjanNode(State *s) : state(s), index(-1), lowlink(-1), on_stack(false) {}
+    TarjanNode(State *s) : state(s), index(-1), lowlink(-1) {}
 };
+
+
+class TarjanOracle {
+    // Cache the safety results for states
+    std::unordered_map<State*, int, StateHasher> cache;
+}
