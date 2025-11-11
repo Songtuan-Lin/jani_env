@@ -177,3 +177,43 @@ TEST_F(EngineTest, StateHash) {
     hash_2 = hasher(state_2);
     EXPECT_NE(hash_1, hash_2) << "Hashes should differ for different states.";
 }
+
+TEST_F(EngineTest, StateMap) {
+    std::unordered_set<State, StateHasher> state_set;
+
+    State state_1;
+    state_1.setVariable("x", std::make_unique<RealVariable>(0, "x", -9.7, 9.7, 6.356856));
+    state_1.setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.1415968));
+    state_1.setVariable("z", std::make_unique<BooleanVariable>(2, "z", true));
+    state_set.insert(state_1);
+    // Construct an identical state
+    State state_2;
+    state_2.setVariable("x", std::make_unique<RealVariable>(0, "x", -9.7, 9.7, 6.356856));
+    state_2.setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.1415968));
+    state_2.setVariable("z", std::make_unique<BooleanVariable>(2, "z", true));
+    EXPECT_TRUE(state_set.find(state_2) != state_set.end()) << "State set should contain identical state.";
+    
+    State state_3;
+    state_3.setVariable("x", std::make_unique<RealVariable>(0, "x", -9.7, 9.7, 1.9999999999));
+    state_3.setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.000000000001));
+    state_3.setVariable("z", std::make_unique<BooleanVariable>(2, "z", false));
+    state_set.insert(state_3);
+
+    State state_4;
+    state_4.setVariable("x", std::make_unique<RealVariable>(0, "x", -9.7, 9.7, 1.9999999999));
+    state_4.setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.000000000001));
+    state_4.setVariable("z", std::make_unique<BooleanVariable>(2, "z", false));
+    EXPECT_TRUE(state_set.find(state_4) != state_set.end()) << "State set should contain identical state.";
+
+    State state_5;
+    state_5.setVariable("x", std::make_unique<RealVariable>(0, "x", -9.7, 9.7, 1.9999999998));
+    state_5.setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.000000000001));
+    state_5.setVariable("z", std::make_unique<BooleanVariable>(2, "z", false)); 
+    EXPECT_TRUE(state_set.find(state_5) == state_set.end()) << "State set should not contain different state.";
+
+    State state_6;
+    state_6.setVariable("x", std::make_unique<RealVariable>(0, "x", -9.7, 9.7, 1.9999999999));
+    state_6.setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.0));
+    state_6.setVariable("z", std::make_unique<BooleanVariable>(2, "z", false));
+    EXPECT_TRUE(state_set.find(state_6) == state_set.end()) << "State set should not contain different state.";
+}
