@@ -154,6 +154,8 @@ class JANIEngine {
     // Initial state generator
     std::unique_ptr<InitStateGenerator> init_state_generator;
 
+    // Construct an action
+    std::unique_ptr<Action> constructAction(std::string action_label, int index);
     // Construct a single automaton
     std::unique_ptr<Automaton> constructAutomaton(const nlohmann::json& json_obj, int automaton_id);
     // Construct a constant variable
@@ -177,6 +179,45 @@ public:
     );
     ~JANIEngine() {}
 
+    // Get the number of actions
+    int get_num_actions() {
+        return actions.size();
+    }
+
+    // Check whether the state reaches the goal
+    bool reach_goal(State &s) {
+        auto result = goal_expression->eval(s);
+        if (!std::holds_alternative<bool>(result))
+            throw std::runtime_error("Goal expression does not evaluate to boolean");
+        return std::get<bool>(result);
+    }
+
+    // Check whether the state is a failure state
+    bool reach_failure(State &s) {
+        auto result = failure_expression->eval(s);
+        if (!std::holds_alternative<bool>(result))
+            throw std::runtime_error("Failure expression does not evaluate to boolean");
+        return std::get<bool>(result);
+    }
+
+    std::vector<bool> get_action_mask(State &s) {
+        std::vector<bool> action_mask;
+        for (int action_idx = 0; action_idx < actions.size(); action_idx++) {
+            std::string action_label = actions[action_idx]->getLabel();
+            // TODO: Check the passed argument
+            const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
+            bool is_enabled = false;
+            for (const auto it: *transitions) 
+                // If one transition is enabled, the action is applicable
+                if (it->isEnabled(s)) {
+                    is_enabled = true;
+                    break; 
+                }
+            action_mask.push_back(is_enabled);
+        }
+        return action_mask;
+    }
+
     // For testing purposes
     std::unique_ptr<InitStateGenerator> testConstructGeneratorFromValues(const nlohmann::json& states_array) {
         return constructGeneratorFromValues(states_array);
@@ -184,6 +225,10 @@ public:
 
     std::unique_ptr<Automaton> testConstructAutomaton(const nlohmann::json& json_obj, int automaton_id) {
         return constructAutomaton(json_obj, automaton_id);
+    }
+
+    void testAddAutomaton(std::unique_ptr<Automaton> automaton) {
+        automata.push_back(std::move(automaton));
     }
 
     std::unique_ptr<Variable> testConstructVariable(const nlohmann::json& json_obj) {
@@ -200,6 +245,14 @@ public:
     
     void testAddConstant(std::unique_ptr<Variable> constant) {
         constants.push_back(std::move(constant));
+    }
+
+    std::unique_ptr<Action> testConstructAction(std::string action_label, int action_id) {
+        return constructAction(action_label, action_id);
+    }
+
+    void testAddAction(std::unique_ptr<Action> action) {
+        actions.push_back(std::move(action));
     }
 };
 #endif // JANI_ENGINE_H

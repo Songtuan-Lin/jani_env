@@ -3,6 +3,11 @@
 #include "engine.h"
 
 
+std::unique_ptr<Action> JANIEngine::constructAction(std::string action_label, int action_id) {
+    auto action = std::make_unique<Action>(action_id, action_label);
+    return action;
+}
+
 std::unique_ptr<Automaton> JANIEngine::constructAutomaton(const nlohmann::json& json_obj, int automaton_id) {
     auto automaton = std::make_unique<Automaton>(automaton_id);
     // Assume json_obj is an element of "automata" array

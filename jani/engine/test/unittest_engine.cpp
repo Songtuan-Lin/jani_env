@@ -257,3 +257,97 @@ TEST_F(EngineTest, StateHashByPointer) {
     state_6->setVariable("z", std::make_unique<BooleanVariable>(2, "z", false));
     EXPECT_TRUE(state_set.find(*state_6) == state_set.end()) << "State set should not contain different state.";
 }
+
+class EngineSimpleAutomatonTest : public ::testing::Test {
+protected:
+    JANIEngine engine;
+
+    void SetUp() override {
+        nlohmann::json automaton_json = nlohmann::json::parse(R"({
+            "edges": [
+            {
+                "action": "a",
+                "guard": { 
+                    "exp": {
+                        "left": "x",
+                        "right": 5,
+                        "op": "<"
+                    }
+                },
+                "destinations": [
+                    {
+                        "assignments": [
+                            { "ref": "x", 
+                              "value":  
+                                {
+                                    "left": "x",
+                                    "right": 1,
+                                    "op": "+"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "action": "b",
+                "guard": { 
+                    "exp": {
+                        "left": {
+                            "left": 10,
+                            "right": "x",
+                            "op": "<"
+                        },
+                        "right": {
+                            "left": 7,
+                            "right": "y",
+                            "op": "<"
+                        },
+                        "op": "∧"
+                    }
+                },
+                "destinations": [
+                    {
+                        "assignments": [
+                            { "ref": "x", 
+                              "value":  
+                                {
+                                    "left": "x",
+                                    "right": 2,
+                                    "op": "-"
+                                }
+                            },
+                            { "ref": "y",
+                              "value":
+                                {
+                                    "left": "y",
+                                    "right": 3,
+                                    "op": "*"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }]
+        })");
+        std::unique_ptr<Automaton> automaton = engine.testConstructAutomaton(automaton_json, 0);
+        engine.testAddAutomaton(std::move(automaton));
+        // Action a for testing
+        std::unique_ptr<Action> action_a = engine.testConstructAction("a", 0);
+        engine.testAddAction(std::move(action_a));
+        // Action b for testing
+        std::unique_ptr<Action> action_b = engine.testConstructAction("b", 1);
+        engine.testAddAction(std::move(action_b));
+    }
+};
+
+TEST_F(EngineSimpleAutomatonTest, ActionMaskTest) {
+    State s;
+    s.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 50, 3)); // x = 3
+    s.setVariable("y", std::make_unique<IntVariable>(1, "y", 0, 50, 9)); // y = 9
+
+    std::vector<bool> action_mask = engine.get_action_mask(s);
+    EXPECT_EQ(action_mask.size(), 2); // Should contain 2 actions
+    EXPECT_TRUE(action_mask[0]); // Action a should be applicable
+    EXPECT_FALSE(action_mask[1]); // Action b should not be applicable
+}
