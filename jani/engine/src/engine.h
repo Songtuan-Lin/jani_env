@@ -53,7 +53,7 @@ public:
         throw std::runtime_error("Guard expression did not evaluate to a boolean");
     }
 
-    State* apply(State& ctx_state, std::mt19937& rng) const {
+    State apply(State& ctx_state, std::mt19937& rng) const {
         if (!isEnabled(ctx_state)) {
             throw std::runtime_error("Transition guard is not satisfied in the current state");
         }
@@ -63,21 +63,46 @@ public:
         const auto& assignments = destinations[selected];
 
         // Create a new state and apply the assignments
-        State* new_state = new State();
+        State new_state;
         const std::unordered_map<std::string, std::unique_ptr<Variable>>* all_vars = ctx_state.getAllVariables();
         for (const auto& pair : *all_vars) {
             if (assignments.find(pair.first) == assignments.end()) {
                 // No assignment for this variable, clone the existing one
-                new_state->setVariable(pair.first, pair.second->clone());
+                new_state.setVariable(pair.first, pair.second->clone());
             } else {
                 // Assignment exists, return the updated variable
                 Expression* expr = assignments.at(pair.first);
                 std::unique_ptr<Variable> new_variable = pair.second->update(expr->eval(ctx_state));
                 // Be careful to move the unique_ptr
-                new_state->setVariable(pair.first, std::move(new_variable));
+                new_state.setVariable(pair.first, std::move(new_variable));
             }
         }
         return new_state;
+    }
+
+    std::vector<State> getAllPossibleOutcomes(State& ctx_state) const {
+        if (!isEnabled(ctx_state)) {
+            throw std::runtime_error("Transition guard is not satisfied in the current state");
+        }
+        std::vector<State> outcomes;
+        for (const auto& assignments : destinations) {
+            State new_state;
+            const std::unordered_map<std::string, std::unique_ptr<Variable>>* all_vars = ctx_state.getAllVariables();
+            for (const auto& pair : *all_vars) {
+                if (assignments.find(pair.first) == assignments.end()) {
+                    // No assignment for this variable, clone the existing one
+                    new_state.setVariable(pair.first, pair.second->clone());
+                } else {
+                    // Assignment exists, return the updated variable
+                    Expression* expr = assignments.at(pair.first);
+                    std::unique_ptr<Variable> new_variable = pair.second->update(expr->eval(ctx_state));
+                    // Be careful to move the unique_ptr
+                    new_state.setVariable(pair.first, std::move(new_variable));
+                }
+            }
+            outcomes.push_back(new_state);
+        }
+        return outcomes;
     }
 };
 
@@ -216,6 +241,27 @@ public:
             action_mask.push_back(is_enabled);
         }
         return action_mask;
+    }
+
+    std::vector<State> get_all_successor_states(State &s, int action_id) {
+        if (action_id < 0 || action_id >= actions.size()) {
+            throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
+        }
+        std::string action_label = actions[action_id]->getLabel();
+        const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
+        std::vector<State> successor_states;
+        int num_transitions = 0;
+        for (const auto it: *transitions) {
+            if (it->isEnabled(s)) {
+                if (num_transitions > 0) {
+                    throw std::runtime_error("More than one transition enabled for the same action");
+                }
+                std::vector<State> outcomes = it->getAllPossibleOutcomes(s);
+                successor_states.insert(successor_states.end(), outcomes.begin(), outcomes.end());
+                num_transitions++;
+            }
+        }
+        return successor_states;
     }
 
     // For testing purposes

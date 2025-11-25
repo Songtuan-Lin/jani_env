@@ -12,7 +12,8 @@ public:
     virtual ~Expression() {}
     virtual std::string toString() const = 0;
     virtual std::variant<int, double, bool> eval(const State& ctx_state) const = 0;
-    static Expression* construct(const nlohmann::json& json_obj);
+    // TODO: Change to returning unique_ptr later
+    static std::unique_ptr<Expression> construct(const nlohmann::json& json_obj);
 };
 
 class VariableExpression : public Expression {
