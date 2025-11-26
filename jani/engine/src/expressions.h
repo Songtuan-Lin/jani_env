@@ -13,7 +13,7 @@ public:
     virtual std::string toString() const = 0;
     virtual std::variant<int, double, bool> eval(const State& ctx_state) const = 0;
     // TODO: Change to returning unique_ptr later
-    static std::unique_ptr<Expression> construct(const nlohmann::json& json_obj);
+    static Expression* construct(const nlohmann::json& json_obj);
 };
 
 class VariableExpression : public Expression {
@@ -25,7 +25,7 @@ public:
     }
     std::variant<int, double, bool> eval(const State& ctx_state) const override {
         // Lookup the variable in the context state
-        Variable* var = ctx_state.getSingleVariable(name);
+        const Variable* var = ctx_state.getSingleVariable(name);
         if (var == nullptr) {
             throw std::runtime_error("Variable not found in context state: " + name);
         }

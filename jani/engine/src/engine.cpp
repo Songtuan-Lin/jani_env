@@ -121,7 +121,7 @@ std::unique_ptr<InitStateGenerator> JANIEngine::constructGeneratorFromValues(con
 }
 
 std::unique_ptr<Expression> JANIEngine::constructObjectiveExpression(const nlohmann::json& json_obj) {
-    if (!(json_obj["op"].get<std::string>() == "state-condition")) 
+    if (!(json_obj["op"].get<std::string>() == "objective")) 
         throw std::runtime_error("Unsupported objective expression format");
     nlohmann::json goal_section = json_obj["goal"];
     if (!(goal_section["op"].get<std::string>() == "state-condition"))

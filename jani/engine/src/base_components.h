@@ -238,7 +238,7 @@ public:
         state_values[name] = std::move(var);
     }
 
-    Variable* getSingleVariable(const std::string& name) const {
+    const Variable* getSingleVariable(const std::string& name) const {
         auto it = state_values.find(name);
         if (it != state_values.end()) {
             return it->second.get();
@@ -246,12 +246,12 @@ public:
         throw std::runtime_error("Variable not found in state: " + name);
     }
 
-    const std::unordered_map<std::string, std::unique_ptr<Variable>>* getAllVariables() const {
-        return &state_values;
+    const std::unordered_map<std::string, std::unique_ptr<Variable>>& getAllVariables() const {
+        return state_values;
     }
 
     bool operator==(const State& other) const {
-        if (state_values.size() != other.getAllVariables()->size()) {
+        if (state_values.size() != other.getAllVariables().size()) {
             throw std::runtime_error("States have different number of variables");
         }
         for (const auto& pair : state_values) {

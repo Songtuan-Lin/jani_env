@@ -64,8 +64,8 @@ public:
 
         // Create a new state and apply the assignments
         State new_state;
-        const std::unordered_map<std::string, std::unique_ptr<Variable>>* all_vars = ctx_state.getAllVariables();
-        for (const auto& pair : *all_vars) {
+        const std::unordered_map<std::string, std::unique_ptr<Variable>> all_vars = ctx_state.getAllVariables();
+        for (const auto& pair : all_vars) {
             if (assignments.find(pair.first) == assignments.end()) {
                 // No assignment for this variable, clone the existing one
                 new_state.setVariable(pair.first, pair.second->clone());
@@ -87,8 +87,8 @@ public:
         std::vector<State> outcomes;
         for (const auto& assignments : destinations) {
             State new_state;
-            const std::unordered_map<std::string, std::unique_ptr<Variable>>* all_vars = ctx_state.getAllVariables();
-            for (const auto& pair : *all_vars) {
+            const std::unordered_map<std::string, std::unique_ptr<Variable>> all_vars = ctx_state.getAllVariables();
+            for (const auto& pair : all_vars) {
                 if (assignments.find(pair.first) == assignments.end()) {
                     // No assignment for this variable, clone the existing one
                     new_state.setVariable(pair.first, pair.second->clone());
@@ -299,6 +299,22 @@ public:
 
     void testAddAction(std::unique_ptr<Action> action) {
         actions.push_back(std::move(action));
+    }
+
+    std::unique_ptr<Expression> testConstructObjectiveExpression(const nlohmann::json& json_obj) {
+        return constructObjectiveExpression(json_obj);
+    }
+
+    void testSetObjectiveExpression(std::unique_ptr<Expression> expr) {
+        goal_expression = std::move(expr);
+    }
+
+    std::unique_ptr<Expression> testConstructFailureExpression(const nlohmann::json& json_obj) {
+        return constructFailureExpression(json_obj);
+    }
+
+    void testSetFailureExpression(std::unique_ptr<Expression> expr) {
+        failure_expression = std::move(expr);
     }
 };
 #endif // JANI_ENGINE_H
