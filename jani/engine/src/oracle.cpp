@@ -4,7 +4,7 @@
 
 bool TarjanOracle::tarjan_dfs(
     TarjanNode* node, int index, 
-    std::vector<TarjanNode*> &stack, 
+    std::vector<State> &stack, 
     std::unordered_map<State, TarjanNode*, StateHasher> &on_stack_map) {
         if ((node->index != -1) || (node->lowlink != -1)) 
             throw std::runtime_error("Node should not be initialized before");
@@ -17,7 +17,7 @@ bool TarjanOracle::tarjan_dfs(
             return false; // A failure state is an unsafe state
         node->index = index;
         node->lowlink = index;
-        stack.push_back(node);
+        stack.push_back(node->state);
         on_stack_map[node->state] = node;
         
         // Iterate through all applicable actions
@@ -55,24 +55,24 @@ bool TarjanOracle::tarjan_dfs(
         if (is_safe_state) {
             if (node->lowlink == node->index) {
                 cache[node->state] = true; // Mark the state as safe in the cache
-                TarjanNode* w = nullptr;
+                State w;
                 do {
                     w = stack.back();
                     stack.pop_back();
-                    on_stack_map.erase(w->state);
-                } while (w->state != node->state);
+                    on_stack_map.erase(w);
+                } while (w != node->state);
             }
             return true;
         } else {
             if (node->lowlink == node->index) {
                 // Mark the state as unsafe in the cache
                 cache[node->state] = false;
-                TarjanNode* w = nullptr;
+                State w;
                 do {
                     w = stack.back();
                     stack.pop_back();
-                    on_stack_map.erase(w->state);
-                } while (w->state != node->state);
+                    on_stack_map.erase(w);
+                } while (w != node->state);
             }
             return false;
         }

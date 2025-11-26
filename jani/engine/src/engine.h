@@ -64,7 +64,7 @@ public:
 
         // Create a new state and apply the assignments
         State new_state;
-        const std::unordered_map<std::string, std::unique_ptr<Variable>> all_vars = ctx_state.getAllVariables();
+        const std::unordered_map<std::string, std::unique_ptr<Variable>>& all_vars = ctx_state.getAllVariables();
         for (const auto& pair : all_vars) {
             if (assignments.find(pair.first) == assignments.end()) {
                 // No assignment for this variable, clone the existing one
@@ -87,7 +87,7 @@ public:
         std::vector<State> outcomes;
         for (const auto& assignments : destinations) {
             State new_state;
-            const std::unordered_map<std::string, std::unique_ptr<Variable>> all_vars = ctx_state.getAllVariables();
+            const std::unordered_map<std::string, std::unique_ptr<Variable>>& all_vars = ctx_state.getAllVariables();
             for (const auto& pair : all_vars) {
                 if (assignments.find(pair.first) == assignments.end()) {
                     // No assignment for this variable, clone the existing one
