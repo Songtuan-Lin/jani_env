@@ -9,13 +9,23 @@ bool TarjanOracle::tarjan_dfs(
         // std::cout << "DEBUG: Visiting state: " << node->state.toString() << std::endl;
         if ((node->index != -1) || (node->lowlink != -1)) 
             throw std::runtime_error("Node should not be initialized before");
-        if (cache.find(node->state) != cache.end()) 
+        if (cache.find(node->state) != cache.end()) { 
+            // std::cout << "  DEBUG: State found in cache." << std::endl;
+            // std::cout << "  DEBUG: State marked " << (cache[node->state] ? "safe." : "unsafe.") << std::endl;
+            // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
             return cache[node->state]; // If the state has been cached
+        }
         // TODO: Check whether this inputs the reference of the state
-        if (engine->reach_goal(node->state))
+        if (engine->reach_goal(node->state)) {
+            // std::cout << "  DEBUG: State is a goal state, marked safe." << std::endl;
+            // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
             return true; // A goal state is a safe state
-        if (engine->reach_failure(node->state))
+        }
+        if (engine->reach_failure(node->state)) {
+            // std::cout << "  DEBUG: State is a failure state, marked unsafe." << std::endl;
+            // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
             return false; // A failure state is an unsafe state
+        }
         node->index = index;
         node->lowlink = index;
         stack.push_back(node->state);
@@ -36,6 +46,7 @@ bool TarjanOracle::tarjan_dfs(
             std::vector<State> successor_states = engine->get_all_successor_states(node->state, action_id);
             for (State& succ_state : successor_states) {
                 if (on_stack_map.find(succ_state) != on_stack_map.end()) {
+                    // std::cout << "  DEBUG: Successor state is on stack: " << succ_state.toString() << std::endl;
                     // Successor is on stack, update lowlink
                     TarjanNode* succ_node = on_stack_map[succ_state];
                     node->lowlink = std::min(node->lowlink, succ_node->lowlink);
@@ -67,6 +78,8 @@ bool TarjanOracle::tarjan_dfs(
                     on_stack_map.erase(w);
                 } while (w != node->state);
             }
+            // std::cout << "  DEBUG: State marked safe." << std::endl;
+            // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
             return true;
         } else {
             if (node->lowlink == node->index) {
@@ -79,6 +92,8 @@ bool TarjanOracle::tarjan_dfs(
                     on_stack_map.erase(w);
                 } while (w != node->state);
             }
+            // std::cout << "  DEBUG: State marked unsafe." << std::endl;
+            // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
             return false;
         }
     }
