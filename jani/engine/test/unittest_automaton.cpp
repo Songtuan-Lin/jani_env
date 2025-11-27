@@ -136,6 +136,11 @@ TEST_F(AutomatonTest, ApplyAssignments) {
     target_state.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 20, 3)); // x should be incremented by 1 (2 + 1)
     target_state.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 30, 1)); // y remains unchanged
     EXPECT_TRUE(new_state == target_state);
+    // Dummy incorrect state check
+    State wrong_state_a;
+    wrong_state_a.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 20, 4)); // x incorrect
+    wrong_state_a.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 30, 1)); // y remains unchanged
+    EXPECT_FALSE(new_state == wrong_state_a);
 
     // Test action "b"
     const std::vector<const TransitionEdge*>* complex_transitions = automaton->getTransitionsForAction("b");
@@ -145,4 +150,9 @@ TEST_F(AutomatonTest, ApplyAssignments) {
     target_state.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 20, 9)); // x should be decremented by 2 (11 - 2)
     target_state.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 30, 24)); // y should be multiplied by 3 (8 * 3)
     EXPECT_TRUE(new_state == target_state);
+    // Dummy incorrect state check
+    State wrong_state_b;
+    wrong_state_b.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 20, 10)); // x incorrect
+    wrong_state_b.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 30, 24)); // y remains unchanged
+    EXPECT_FALSE(new_state == wrong_state_b);
 }
