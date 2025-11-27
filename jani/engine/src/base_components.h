@@ -234,6 +234,16 @@ public:
         }
     }
 
+    State& operator=(const State& other) {
+        if (this != &other) {
+            state_values.clear();
+            for (const auto& pair : other.state_values) {
+                state_values[pair.first] = std::move(pair.second->clone());
+            }
+        }
+        return *this;
+    }
+
     void setVariable(const std::string& name, std::unique_ptr<Variable> var) {
         state_values[name] = std::move(var);
     }

@@ -51,7 +51,7 @@ target_include_directories(engine_test
         src/
 )
 
-add_executable(oracle_test test/unittest_oracle.cpp src/engine.cpp src/expressions.cpp)
+add_executable(oracle_test test/unittest_oracle.cpp src/engine.cpp src/expressions.cpp src/oracle.cpp)
 target_link_libraries(oracle_test GTest::gtest_main Boost::headers)
 target_include_directories(oracle_test
     PRIVATE

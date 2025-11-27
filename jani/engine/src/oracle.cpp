@@ -22,7 +22,7 @@ bool TarjanOracle::tarjan_dfs(
         
         // Iterate through all applicable actions
         int num_actions = engine->get_num_actions();
-        std::vector<bool> action_mask = engine->get_action_mask(node->state)
+        std::vector<bool> action_mask = engine->get_action_mask(node->state);
         bool is_safe_state = true; // If no action is applicable, the state is safe
         for (int action_id = 0; action_id < num_actions; action_id++) {
             if (!action_mask[action_id])

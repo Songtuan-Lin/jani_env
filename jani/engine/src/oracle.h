@@ -16,7 +16,7 @@ class TarjanOracle {
     // Cache the safety results for states
     std::unordered_map<State, bool, StateHasher> cache;
     bool tarjan_dfs(TarjanNode* node, int index,
-                    std::vector<TarjanNode*>& stack,
+                    std::vector<State>& stack,
                     std::unordered_map<State, TarjanNode*, StateHasher>& on_stack_map);
 public:
     TarjanOracle(JANIEngine* eng) : engine(eng) {}
@@ -31,4 +31,4 @@ public:
         cache[*state] = safe;
         return safe;
     }
-}
+};

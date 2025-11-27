@@ -130,12 +130,12 @@ TEST_F(AutomatonTest, ApplyAssignments) {
 
     // Test action "a"
     const std::vector<const TransitionEdge*>* simple_transitions = automaton->getTransitionsForAction("a");
-    State* new_state = (*simple_transitions)[0]->apply(ctx_state, rng);
+    State new_state = (*simple_transitions)[0]->apply(ctx_state, rng);
     // Ground truth check
     State target_state;
     target_state.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 20, 3)); // x should be incremented by 1 (2 + 1)
     target_state.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 30, 1)); // y remains unchanged
-    EXPECT_TRUE(*new_state == target_state);
+    EXPECT_TRUE(new_state == target_state);
 
     // Test action "b"
     const std::vector<const TransitionEdge*>* complex_transitions = automaton->getTransitionsForAction("b");
@@ -144,7 +144,5 @@ TEST_F(AutomatonTest, ApplyAssignments) {
     new_state = (*complex_transitions)[0]->apply(ctx_state, rng);
     target_state.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 20, 9)); // x should be decremented by 2 (11 - 2)
     target_state.setVariable("y", std::make_unique<IntVariable>(0, "y", 0, 30, 24)); // y should be multiplied by 3 (8 * 3)
-    EXPECT_TRUE(*new_state == target_state);
-
-    delete new_state;
+    EXPECT_TRUE(new_state == target_state);
 }
