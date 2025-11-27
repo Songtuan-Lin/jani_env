@@ -80,8 +80,8 @@ protected:
                             "op": "≤"
                         },
                         "right": {
-                            "left": 7,
-                            "right": "y",
+                            "left": "y",
+                            "right": 7,
                             "op": "<"
                         },
                         "op": "∧"
@@ -152,5 +152,5 @@ TEST_F(OracleTest, StateSafety) {
     s->setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 10, 3)); // x = 3
     s->setVariable("y", std::make_unique<IntVariable>(1, "y", 0, 10, 6)); // y = 6
     bool is_safe = oracle->isStateSafe(s);
-    EXPECT_FALSE(is_safe); // (x < 5) is true, so action "
+    EXPECT_FALSE(is_safe);
 }

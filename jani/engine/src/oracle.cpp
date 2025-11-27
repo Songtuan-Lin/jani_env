@@ -6,6 +6,7 @@ bool TarjanOracle::tarjan_dfs(
     TarjanNode* node, int index, 
     std::vector<State> &stack, 
     std::unordered_map<State, TarjanNode*, StateHasher> &on_stack_map) {
+        // std::cout << "DEBUG: Visiting state: " << node->state.toString() << std::endl;
         if ((node->index != -1) || (node->lowlink != -1)) 
             throw std::runtime_error("Node should not be initialized before");
         if (cache.find(node->state) != cache.end()) 
@@ -25,8 +26,12 @@ bool TarjanOracle::tarjan_dfs(
         std::vector<bool> action_mask = engine->get_action_mask(node->state);
         bool is_safe_state = true; // If no action is applicable, the state is safe
         for (int action_id = 0; action_id < num_actions; action_id++) {
-            if (!action_mask[action_id])
+            // std::cout << "  DEBUG: Checking action id " << action_id;
+            if (!action_mask[action_id]) {
+                // std::cout << " -- Action not applicable" << std::endl;
                 continue; // Continue to the next action if it is not applicable
+            }
+            // std::cout << " -- Action applicable" << std::endl;
             bool is_safe_action = true;
             std::vector<State> successor_states = engine->get_all_successor_states(node->state, action_id);
             for (State& succ_state : successor_states) {
