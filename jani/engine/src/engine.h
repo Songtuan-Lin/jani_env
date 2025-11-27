@@ -178,6 +178,10 @@ class JANIEngine {
     std::unique_ptr<Expression> failure_expression;
     // Initial state generator
     std::unique_ptr<InitStateGenerator> init_state_generator;
+    // Current state
+    State current_state;
+    // Random number generator
+    std::mt19937 rng;
 
     // Construct an action
     std::unique_ptr<Action> constructAction(std::string action_label, int index);
@@ -200,7 +204,8 @@ public:
         const std::filesystem::path& jani_property_path,
         const std::filesystem::path& start_states_path,
         const std::filesystem::path& objective_path,
-        const std::filesystem::path& failure_property_path
+        const std::filesystem::path& failure_property_path,
+        int seed
     );
     ~JANIEngine() {}
 
@@ -262,6 +267,34 @@ public:
             }
         }
         return successor_states;
+    }
+
+    std::vector<double> reset() {
+        // Generate a new initial state
+        current_state = *(init_state_generator->generateInitialState(rng));
+        return current_state.toRealVector();
+    }
+
+    std::vector<double> step(int action_id) {
+        if (action_id < 0 || action_id >= actions.size()) {
+            throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
+        }
+        std::string action_label = actions[action_id]->getLabel();
+        const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
+        int num_enabled = 0;
+        for (const auto it: *transitions) {
+            if (it->isEnabled(current_state)) {
+                if (num_enabled > 0) {
+                    throw std::runtime_error("More than one transition enabled for the same action");
+                }
+                // Apply the transition
+                State new_state = it->apply(current_state, rng);
+                // Update current state
+                current_state = new_state;
+                return current_state.toRealVector();
+            }
+        }
+        throw std::runtime_error("No enabled transition found for action: " + action_label);
     }
 
     // For testing purposes
