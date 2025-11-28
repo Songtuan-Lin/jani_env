@@ -451,6 +451,19 @@ TEST_F(EngineTest, StepTest) {
     // EXPECT_TRUE(next_state_vector == target_state_vector) << "Next state vector " << to_string(next_state_vector) << " does not match expected values " << to_string(target_state_vector) << ".";
 }
 
+TEST_F(EngineTest, ConstructionTest) {
+    JANIEngine engine_from_file = JANIEngine(
+        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/bouncing_ball.jani",
+        "",
+        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/start.jani",
+        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/objective.jani",
+        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/safe.jani",
+        42);
+    EXPECT_EQ(engine_from_file.get_num_variables(), 3);
+    EXPECT_EQ(engine_from_file.get_num_constants(), 8);
+    EXPECT_EQ(engine_from_file.get_num_actions(), 2);
+}
+
 class EngineSimpleAutomatonTest : public ::testing::Test {
 protected:
     JANIEngine engine;

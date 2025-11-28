@@ -214,6 +214,14 @@ public:
         return actions.size();
     }
 
+    int get_num_variables() {
+        return variables.size();
+    }
+    
+    int get_num_constants() {
+        return constants.size();
+    }
+
     // Check whether the state reaches the goal
     bool reach_goal(State &s) {
         auto result = goal_expression->eval(s);

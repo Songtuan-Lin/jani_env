@@ -154,6 +154,12 @@ JANIEngine::JANIEngine(
     }
     nlohmann::json jani_json = nlohmann::json::parse(model_file);
     model_file.close();
+    // Construct actions
+    for (auto it = jani_json["actions"].begin(); it != jani_json["actions"].end(); ++it) {
+        std::string action_label = (*it)["name"].get<std::string>();
+        auto action = constructAction(action_label, actions.size());
+        actions.push_back(std::move(action));
+    }
     // Construct constants
     for (auto it = jani_json["constants"].begin(); it != jani_json["constants"].end(); ++it) {
         auto constant = constructConstant(*it);
