@@ -141,8 +141,10 @@ JANIEngine::JANIEngine(
     const std::filesystem::path& jani_property_path,
     const std::filesystem::path& start_states_path,
     const std::filesystem::path& objective_path,
-    const std::filesystem::path& failure_property_path
+    const std::filesystem::path& failure_property_path,
+    int seed
 ) {
+    rng = std::mt19937(seed); // Set the random seed
     // Placeholders for file paths
     std::filesystem::path start_file_path, objective_file_path, failure_file_path;
     // Load and parse the JANI model file

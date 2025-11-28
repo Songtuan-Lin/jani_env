@@ -88,6 +88,10 @@ public:
             return std::get<int>(left_val) + std::get<int>(right_val);
         } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<double>(right_val)) {
             return std::get<double>(left_val) + std::get<double>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            return static_cast<double>(std::get<int>(left_val)) + std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            return std::get<double>(left_val) + static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in addition");
     }
@@ -112,6 +116,10 @@ public:
             return std::get<int>(left_val) - std::get<int>(right_val);
         } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<double>(right_val)) {
             return std::get<double>(left_val) - std::get<double>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            return static_cast<double>(std::get<int>(left_val)) - std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            return std::get<double>(left_val) - static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in subtraction");
     }
@@ -136,6 +144,10 @@ public:
             return std::get<int>(left_val) * std::get<int>(right_val);
         } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<double>(right_val)) {
             return std::get<double>(left_val) * std::get<double>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            return static_cast<double>(std::get<int>(left_val)) * std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            return std::get<double>(left_val) * static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in multiplication");
     }
@@ -166,6 +178,16 @@ public:
                 throw std::runtime_error("Division by zero");
             }
             return std::get<double>(left_val) / std::get<double>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            if (std::get<double>(right_val) == 0.0) {
+                throw std::runtime_error("Division by zero");
+            }
+            return static_cast<double>(std::get<int>(left_val)) / std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            if (std::get<int>(right_val) == 0) {
+                throw std::runtime_error("Division by zero");
+            }
+            return std::get<double>(left_val) / static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in division");
     }
@@ -190,6 +212,10 @@ public:
             return std::get<int>(left_val) < std::get<int>(right_val);
         } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<double>(right_val)) {
             return std::get<double>(left_val) < std::get<double>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            return static_cast<double>(std::get<int>(left_val)) < std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            return std::get<double>(left_val) < static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in less than comparison");
     }
@@ -214,6 +240,10 @@ public:
             return std::get<int>(left_val) <= std::get<int>(right_val);
         } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<double>(right_val)) {
             return std::get<double>(left_val) <= std::get<double>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            return static_cast<double>(std::get<int>(left_val)) <= std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            return std::get<double>(left_val) <= static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in less than or equal comparison");
     }
@@ -237,12 +267,16 @@ public:
         if (left_val.index() != right_val.index()) {
             throw std::runtime_error("Type mismatch in equality comparison");
         }
-        if (std::holds_alternative<int>(left_val)) {
+        if (std::holds_alternative<int>(left_val) && std::holds_alternative<int>(right_val)) {
             return std::get<int>(left_val) == std::get<int>(right_val);
-        } else if (std::holds_alternative<double>(left_val)) {
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<double>(right_val)) {
             return std::get<double>(left_val) == std::get<double>(right_val);
-        } else if (std::holds_alternative<bool>(left_val)) {
+        } else if (std::holds_alternative<bool>(left_val) && std::holds_alternative<bool>(right_val)) {
             return std::get<bool>(left_val) == std::get<bool>(right_val);
+        } else if (std::holds_alternative<int>(left_val) && std::holds_alternative<double>(right_val)) {
+            return static_cast<double>(std::get<int>(left_val)) == std::get<double>(right_val);
+        } else if (std::holds_alternative<double>(left_val) && std::holds_alternative<int>(right_val)) {
+            return std::get<double>(left_val) == static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Unsupported type in equality comparison");
     }

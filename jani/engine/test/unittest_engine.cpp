@@ -6,13 +6,44 @@
 #include "base_components.h"
 
 
+std::string to_string(const std::vector<double>& v) {
+    std::ostringstream oss;
+    oss << "[";
+
+    for (size_t i = 0; i < v.size(); ++i) {
+        oss << v[i];
+        if (i + 1 < v.size()) oss << ", ";
+    }
+
+    oss << "]";
+    return oss.str();
+}
+
+
 class EngineTest : public ::testing::Test {
 protected:
     std::unique_ptr<InitStateGenerator> init_generator;
     std::mt19937 rng;
+    JANIEngine engine;
     void SetUp() override {
-        JANIEngine engine;
         rng = std::mt19937(50); // Fixed seed for reproducibility
+        // Add some constants to the engine
+        nlohmann::json constants_json = nlohmann::json::parse(R"([
+            {
+                "name": "gravity",
+                "type": "real",
+                "value": -9.8067
+            },
+            {
+                "name": "timestep",
+                "type": "real",
+                "value": 0.3
+            }
+        ])");
+        for (auto it = constants_json.begin(); it != constants_json.end(); ++it) {
+            std::unique_ptr<Variable> constant = engine.testConstructConstant(*it);
+            engine.testAddConstant(std::move(constant));
+        }
         // Add some variables to the engine
         nlohmann::json variables_json = nlohmann::json::parse(R"([
             {
@@ -46,18 +77,6 @@ protected:
         for (auto it = variables_json.begin(); it != variables_json.end(); ++it) {
             std::unique_ptr<Variable> var = engine.testConstructVariable(*it);
             engine.testAddVariable(std::move(var));
-        }
-        // Add some constants to the engine
-        nlohmann::json constants_json = nlohmann::json::parse(R"([
-            {
-                "name": "gravity",
-                "type": "real",
-                "value": -9.8067
-            }
-        ])");
-        for (auto it = constants_json.begin(); it != constants_json.end(); ++it) {
-            std::unique_ptr<Variable> constant = engine.testConstructConstant(*it);
-            engine.testAddConstant(std::move(constant));
         }
         // Add some initial states
         nlohmann::json json_obj = nlohmann::json::parse(R"([
@@ -111,6 +130,160 @@ protected:
             }
         ])");
         init_generator = engine.testConstructGeneratorFromValues(json_obj);
+        // Add an automaton
+        nlohmann::json automaton_json = nlohmann::json::parse(R"(
+        {
+            "edges": [
+                {
+                    "action": "push",
+                    "destinations": [
+                        {
+                            "assignments": [
+                                {
+                                    "ref": "height",
+                                    "value": {
+                                        "left": "height",
+                                        "op": "+",
+                                        "right": {
+                                            "left": {
+                                                "left": "velocity",
+                                                "op": "*",
+                                                "right": "timestep"
+                                            },
+                                            "op": "+",
+                                            "right": {
+                                                "left": {
+                                                    "left": 0.5,
+                                                    "op": "*",
+                                                    "right": "gravity"
+                                                },
+                                                "op": "*",
+                                                "right": {
+                                                    "left": "timestep",
+                                                    "op": "*",
+                                                    "right": "timestep"
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "velocity",
+                                    "value": {
+                                        "left": "velocity",
+                                        "op": "+",
+                                        "right": {
+                                            "left": {
+                                                "left": "timestep",
+                                                "op": "*",
+                                                "right": "gravity"
+                                            },
+                                            "op": "-",
+                                            "right": 4
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "episode",
+                                    "value": {
+                                        "left": "episode",
+                                        "op": "+",
+                                        "right": 1
+                                    }
+                                }
+                            ],
+                            "location": "loc_0"
+                        }
+                    ],
+                    "guard": {
+                        "exp": {
+                            "left": {
+                                "left": 5,
+                                "op": "≤",
+                                "right": "height"
+                            },
+                            "op": "∧",
+                            "right": {
+                                "left": {
+                                    "left": "height",
+                                    "op": "≤",
+                                    "right": 9
+                                },
+                                "op": "∧",
+                                "right": {
+                                    "left": {
+                                        "left": {
+                                            "left": {
+                                                "left": {
+                                                    "left": 0,
+                                                    "op": "-",
+                                                    "right": "velocity"
+                                                },
+                                                "op": "*",
+                                                "right": "timestep"
+                                            },
+                                            "op": "-",
+                                            "right": {
+                                                "left": 0.5,
+                                                "op": "*",
+                                                "right": {
+                                                    "left": "gravity",
+                                                    "op": "*",
+                                                    "right": {
+                                                        "left": "timestep",
+                                                        "op": "*",
+                                                        "right": "timestep"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "op": "<",
+                                        "right": "height"
+                                    },
+                                    "op": "∧",
+                                    "right": {
+                                        "left": {
+                                            "left": -100,
+                                            "op": "≤",
+                                            "right": {
+                                                "left": {
+                                                    "left": "velocity",
+                                                    "op": "-",
+                                                    "right": 4
+                                                },
+                                                "op": "+",
+                                                "right": {
+                                                    "left": "gravity",
+                                                    "op": "*",
+                                                    "right": "timestep"
+                                                }
+                                            }
+                                        },
+                                        "op": "∧",
+                                        "right": {
+                                            "left": {
+                                                "left": "episode",
+                                                "op": "+",
+                                                "right": 1
+                                            },
+                                            "op": "≤",
+                                            "right": 4000
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "location": "loc_0"
+                }
+            ]
+        }
+        )");
+        std::unique_ptr<Automaton> automaton = engine.testConstructAutomaton(automaton_json, 0);
+        engine.testAddAutomaton(std::move(automaton));
+        // Add an action
+        std::unique_ptr<Action> action = engine.testConstructAction("push", 0);
+        engine.testAddAction(std::move(action));
     }
 };
 
@@ -256,6 +429,26 @@ TEST_F(EngineTest, StateHashByPointer) {
     state_6->setVariable("y", std::make_unique<RealVariable>(1, "y", -5.0, 5.0, -3.0));
     state_6->setVariable("z", std::make_unique<BooleanVariable>(2, "z", false));
     EXPECT_TRUE(state_set.find(*state_6) == state_set.end()) << "State set should not contain different state.";
+}
+
+TEST_F(EngineTest, StepTest) {
+    State s;
+    s.setVariable("episode", std::make_unique<IntVariable>(2, "episode", 0, 4000, 10));
+    s.setVariable("height", std::make_unique<RealVariable>(3, "height", 0, 1000, 7.0));
+    s.setVariable("velocity", std::make_unique<RealVariable>(4, "velocity", -100, 100, 3.0));
+    s.setVariable("gravity", std::make_unique<RealConstant>(0, "gravity", -9.8067));
+    s.setVariable("timestep", std::make_unique<RealConstant>(1, "timestep", 0.3));
+
+    engine.set_current_state(s);
+    std::vector<double> target_state_vector = {-9.8067, 0.3, 11, 7.0 + 3.0 * 0.3 + 0.5 * -9.8067 * 0.3 * 0.3, 3.0 + (-9.8067 * 0.3 - 4)};
+    std::vector<double> next_state_vector = engine.step(0); // Action index 0 corresponds to "push"
+    for (size_t i = 0; i < next_state_vector.size(); ++i) {
+        EXPECT_NEAR(next_state_vector[i], target_state_vector[i], 1e-10) << "Mismatch at index " << i << ": expected " << target_state_vector[i] << ", got " << next_state_vector[i];
+    }
+    // Check not equal
+    std::vector<double> wrong_state_vector = {-9.8067, 0.3, 11, 7.4587, -3.0};
+    EXPECT_FALSE(next_state_vector == wrong_state_vector) << "Next state vector should not match wrong state vector.";
+    // EXPECT_TRUE(next_state_vector == target_state_vector) << "Next state vector " << to_string(next_state_vector) << " does not match expected values " << to_string(target_state_vector) << ".";
 }
 
 class EngineSimpleAutomatonTest : public ::testing::Test {

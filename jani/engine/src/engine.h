@@ -297,6 +297,25 @@ public:
         throw std::runtime_error("No enabled transition found for action: " + action_label);
     }
 
+    void set_current_state(const State& s) {
+        const std::unordered_map<std::string, std::unique_ptr<Variable>>& state_values = s.getAllVariables();
+        for (const auto& c : constants) {
+            if (state_values.find(c->getName()) == state_values.end()) 
+                throw std::runtime_error("Constant variable " + c->getName() + " not found in the provided state");
+            if (c->getId() != state_values.at(c->getName())->getId()) 
+                throw std::runtime_error("Constant variable " + c->getName() + " ID mismatch");
+            if (c->getValue() != state_values.at(c->getName())->getValue()) 
+                throw std::runtime_error("Constant variable " + c->getName() + " value mismatch");
+        }
+        for (const auto& v : variables) {
+            if (state_values.find(v->getName()) == state_values.end()) 
+                throw std::runtime_error("Variable " + v->getName() + " not found in the provided state");
+            if (v->getId() != state_values.at(v->getName())->getId()) 
+                throw std::runtime_error("Variable " + v->getName() + " ID mismatch");
+        }
+        current_state = s;
+    }
+
     // For testing purposes
     std::unique_ptr<InitStateGenerator> testConstructGeneratorFromValues(const nlohmann::json& states_array) {
         return constructGeneratorFromValues(states_array);
