@@ -217,7 +217,7 @@ public:
     int get_num_variables() {
         return variables.size();
     }
-    
+
     int get_num_constants() {
         return constants.size();
     }
@@ -238,7 +238,7 @@ public:
         return std::get<bool>(result);
     }
 
-    std::vector<bool> get_action_mask(State &s) {
+    std::vector<bool> get_action_mask(const State &s) {
         std::vector<bool> action_mask;
         for (int action_idx = 0; action_idx < actions.size(); action_idx++) {
             std::string action_label = actions[action_idx]->getLabel();
@@ -254,6 +254,10 @@ public:
             action_mask.push_back(is_enabled);
         }
         return action_mask;
+    }
+
+    std::vector<bool> get_current_action_mask() {
+        return get_action_mask(current_state);
     }
 
     std::vector<State> get_all_successor_states(State &s, int action_id) {

@@ -8,8 +8,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Find Python interpreter and Development module
+if (CMAKE_VERSION VERSION_LESS 3.18)
+  set(DEV_MODULE Development)
+else()
+  set(DEV_MODULE Development.Module)
+endif()
+
+find_package(Python 3.12 COMPONENTS Interpreter ${DEV_MODULE} REQUIRED)
+
 # Find Boost libraries
 find_package(Boost REQUIRED)
+
+# Find nanobind
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
+find_package(nanobind CONFIG REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -23,9 +38,17 @@ FetchContent_MakeAvailable(googletest)
 # Collect all .cpp files in src/
 file(GLOB_RECURSE PROJECT_SOURCES src/engine.cpp src/expressions.cpp src/main.cpp)
 
-# Create the executable (name: jani_engine)
-add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
+# Create the library (name: jani_engine)
+add_library(${PROJECT_NAME} src/engine.cpp src/expressions.cpp src/oracle.cpp)
 target_link_libraries(${PROJECT_NAME} Boost::headers)
+target_include_directories(${PROJECT_NAME}
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/src
+)
+
+# Create nanobind module
+nanobind_add_module(backend backend.cpp)
+target_link_libraries(backend PRIVATE ${PROJECT_NAME})
 
 # Link GoogleTest to the project
 enable_testing()
