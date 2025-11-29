@@ -154,6 +154,7 @@ JANIEngine::JANIEngine(
     }
     nlohmann::json jani_json = nlohmann::json::parse(model_file);
     model_file.close();
+    std::cout << "DEBUG: Starting to construct JANI model from file: " << jani_model_path << std::endl;
     // Construct actions
     for (auto it = jani_json["actions"].begin(); it != jani_json["actions"].end(); ++it) {
         std::string action_label = (*it)["name"].get<std::string>();
@@ -178,12 +179,15 @@ JANIEngine::JANIEngine(
     if (automata.size() > 1) {
         throw std::runtime_error("Currently only single automaton models are supported");
     }
+    std::cout << "DEBUG: Finished constructing JANI model from file: " << jani_model_path << std::endl;
+
     // Load the properties of the model
     if (jani_property_path.empty()) {
         if (start_states_path.empty() || objective_path.empty() || failure_property_path.empty()) {
             throw std::runtime_error("Either a JANI property file or all of start states, objective, and failure property files must be provided");
         } 
     } else {
+        std::cout << "DEBUG: Starting to load properties from file: " << jani_property_path << std::endl;
         std::ifstream property_file(jani_property_path);
         if (!property_file.is_open()) {
             throw std::runtime_error("Failed to open JANI property file: " + jani_property_path.string());
@@ -195,7 +199,9 @@ JANIEngine::JANIEngine(
             throw std::runtime_error("Currently only single property models are supported");
         }
         nlohmann::json property_obj = all_properties_json[0]["expression"];
+
         // Construct the start states expression
+        std::cout << "DEBUG: Starting to construct start states expression from property" << std::endl;
         nlohmann::json start_property = property_obj["start"];
         if (start_property.contains("file"))
             // Load start states from file
@@ -203,22 +209,29 @@ JANIEngine::JANIEngine(
         if (!start_property.contains("op"))
             throw std::runtime_error("Unsupported start states property format");
         // Currently generating initial states based on constraints is not supported
+        std::cout << "DEBUG: Finished constructing start states expression from property" << std::endl;
 
         // Construct the objective expression
-        nlohmann::json objective_property = property_obj["goal"];
+        std::cout << "DEBUG: Starting to construct objective expression from property" << std::endl;
+        nlohmann::json objective_property = property_obj["objective"];
         if (objective_property.contains("file"))
             // Load objective from file
             objective_file_path = objective_property["file"].get<std::string>();
         else 
             goal_expression = constructObjectiveExpression(objective_property);
+        std::cout << "DEBUG: Finished constructing objective expression from property" << std::endl;
 
         // Construct the failure property expression
-        nlohmann::json failure_property = property_obj["failure"];
+        std::cout << "DEBUG: Starting to construct failure property expression from property" << std::endl;
+        nlohmann::json failure_property = property_obj["reach"];
         if (failure_property.contains("file"))
             // Load failure property from file
             failure_file_path = failure_property["file"].get<std::string>();
         else 
             failure_expression = constructFailureExpression(failure_property);
+        std::cout << "DEBUG: Finished constructing failure property expression from property" << std::endl;
+
+        std::cout << "DEBUG: Finished loading properties from file: " << jani_property_path << std::endl;
     }
 
     // Load start states from file if specified

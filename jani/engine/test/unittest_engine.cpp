@@ -311,6 +311,22 @@ TEST_F(EngineTest, InitialStateGeneration) {
     EXPECT_TRUE(samples.size() <= 3) << "Initial state generator is producing too many states.";
 }
 
+TEST_F(EngineTest, StateFromVector) {
+    State s;
+    s.setVariable("episode", std::make_unique<IntVariable>(2, "episode", 0, 4000, 10));
+    s.setVariable("height", std::make_unique<RealVariable>(3, "height", 0, 1000, 7.3567));
+    s.setVariable("velocity", std::make_unique<RealVariable>(4, "velocity", -100, 100, 3.1578));
+    s.setVariable("gravity", std::make_unique<RealConstant>(0, "gravity", -9.8067));
+    s.setVariable("timestep", std::make_unique<RealConstant>(1, "timestep", 0.3));
+
+    std::vector<double> vec = {-9.8067, 0.3, 10.0, 7.3567, 3.1578};
+    State s_from_vec = engine.create_state_from_vector(vec);
+    EXPECT_TRUE(s == s_from_vec) << "State constructed from vector does not match expected state.";
+
+    std::vector<double> false_vec = {-9.8067, 0.3, 10.0, 7.3567, 3.1579};
+    State s_false = engine.create_state_from_vector(false_vec);
+    EXPECT_FALSE(s == s_false) << "States with different variable values are considered equal.";
+}
 
 TEST_F(EngineTest, StateHash) {
     State state_1;
@@ -453,11 +469,11 @@ TEST_F(EngineTest, StepTest) {
 
 TEST_F(EngineTest, ConstructionTest) {
     JANIEngine engine_from_file = JANIEngine(
-        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/bouncing_ball.jani",
+        "../../../examples/bouncing_ball/bouncing_ball.jani",
         "",
-        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/start.jani",
-        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/objective.jani",
-        "/Users/songtuanlin/codes/jani_env/examples/bouncing_ball/safe.jani",
+        "../../../examples/bouncing_ball/start.jani",
+        "../../../examples/bouncing_ball/objective.jani",
+        "../../../examples/bouncing_ball/safe.jani",
         42);
     EXPECT_EQ(engine_from_file.get_num_variables(), 3);
     EXPECT_EQ(engine_from_file.get_num_constants(), 8);

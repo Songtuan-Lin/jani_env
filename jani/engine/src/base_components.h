@@ -66,11 +66,11 @@ public:
         if (std::holds_alternative<double>(val)) {
             double new_val = std::get<double>(val);
             if (new_val < lower_bound || new_val > upper_bound) {
-                throw std::runtime_error("Value out of bounds in RealVariable update");
+                throw std::runtime_error("Value out of bounds in RealVariable " + getName() + " update");
             }
             return std::make_unique<RealVariable>(getId(), getName(), lower_bound, upper_bound, new_val);
         }
-        throw std::runtime_error("Invalid type for RealVariable update");
+        throw std::runtime_error("Invalid type for RealVariable " + getName() + " update");
     }
 
     std::unique_ptr<Variable> clone() {
@@ -122,6 +122,18 @@ public:
         // Returns a new BooleanVariable with updated value
         if (std::holds_alternative<bool>(val)) {
             return std::make_unique<BooleanVariable>(getId(), getName(), std::get<bool>(val));
+        } else if (std::holds_alternative<int>(val)) {
+            int int_val = std::get<int>(val);
+            if (int_val == 0)
+                return std::make_unique<BooleanVariable>(getId(), getName(), false);
+            else if (int_val == 1) 
+                return std::make_unique<BooleanVariable>(getId(), getName(), true);
+        } else if (std::holds_alternative<double>(val)) {
+            double double_val = std::get<double>(val);
+            if (double_val == 0.0)
+                return std::make_unique<BooleanVariable>(getId(), getName(), false);
+            else if (double_val == 1.0)
+                return std::make_unique<BooleanVariable>(getId(), getName(), true);
         }
         throw std::runtime_error("Invalid type for BooleanVariable update");
     }
@@ -186,11 +198,18 @@ public:
         if (std::holds_alternative<int>(val)) {
             int new_val = std::get<int>(val);
             if (new_val < lower_bound || new_val > upper_bound) {
-                throw std::runtime_error("Value out of bounds in IntVariable update");
+                throw std::runtime_error("Value " + std::to_string(new_val) + " out of bounds in IntVariable " + getName() + " update");
             }
             return std::make_unique<IntVariable>(getId(), getName(), lower_bound, upper_bound, new_val);
+        } else if (std::holds_alternative<double>(val)) {
+            double new_val = std::get<double>(val);
+            int int_val = static_cast<int>(new_val);
+            if (int_val < lower_bound || int_val > upper_bound) {
+                throw std::runtime_error("Value " + std::to_string(int_val) + " out of bounds in IntVariable " + getName() + " update");
+            }
+            return std::make_unique<IntVariable>(getId(), getName(), lower_bound, upper_bound, int_val);
         }
-        throw std::runtime_error("Invalid type for IntVariable update");
+        throw std::runtime_error("Invalid type for IntVariable " + getName() + " update");
     }
 
     std::unique_ptr<Variable> clone() {

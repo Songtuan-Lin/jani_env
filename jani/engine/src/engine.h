@@ -26,7 +26,10 @@ public:
                 delete pair.second;
     }
     std::string getLabel() const { return label; }
-    Expression* getGuard() const { return guard; }
+    const Expression* getGuard() const { return guard; }
+    const std::vector<std::unordered_map<std::string, Expression*>>& getDestinations() const {
+        return destinations;
+    }
     void addDestination(const nlohmann::json& json_obj) {
         // json_obj is expected to be an element of the "destinations" array of the jani file
         std::unordered_map<std::string, Expression*> assignments;
@@ -260,6 +263,27 @@ public:
         return get_action_mask(current_state);
     }
 
+    State create_state_from_vector(const std::vector<double>& values) {
+        if (values.size() != constants.size() + variables.size()) {
+            throw std::runtime_error("Input vector size does not match number of variables");
+        }
+        State new_state;
+        // Add constants
+        for (size_t i = 0; i < constants.size(); i++) {
+            if (values[i] != std::get<double>(constants[i]->getValue())) {
+                throw std::runtime_error("Constant variable " + constants[i]->getName() + " value mismatch");
+            }
+            new_state.setVariable(constants[i]->getName(), constants[i]->clone());
+        }
+        // Add variables with values from the input vector
+        for (size_t i = 0; i < variables.size(); i++) {
+            const auto& var = variables[i];
+            std::unique_ptr<Variable> new_var = var->update(values[i + constants.size()]);
+            new_state.setVariable(var->getName(), std::move(new_var));
+        }
+        return new_state;
+    }
+
     std::vector<State> get_all_successor_states(State &s, int action_id) {
         if (action_id < 0 || action_id >= actions.size()) {
             throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
@@ -329,6 +353,41 @@ public:
     }
 
     // For testing purposes
+    std::vector<std::string> testGuardsForAction(int action_id) {
+        if (action_id < 0 || action_id >= actions.size()) {
+            throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
+        }
+        std::string action_label = actions[action_id]->getLabel();
+        const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
+        std::vector<std::string> guard_strs;
+        for (const auto it: *transitions) {
+            guard_strs.push_back(it->getGuard()->toString());
+        }
+        return guard_strs;
+    }
+
+    std::vector<std::vector<std::unordered_map<std::string, std::string>>> testDestinationsForAction(int action_id) {
+        if (action_id < 0 || action_id >= actions.size()) {
+            throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
+        }
+        std::string action_label = actions[action_id]->getLabel();
+        const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
+        std::vector<std::vector<std::unordered_map<std::string, std::string>>> all_destinations;
+        for (const auto it: *transitions) {
+            std::vector<std::unordered_map<std::string, std::string>> dests_for_transition;
+            const auto& destinations = it->getDestinations();
+            for (const auto& assignment_map : destinations) {
+                std::unordered_map<std::string, std::string> assignment_str_map;
+                for (const auto& pair : assignment_map) {
+                    assignment_str_map[pair.first] = pair.second->toString();
+                }
+                dests_for_transition.push_back(assignment_str_map);
+            }
+            all_destinations.push_back(dests_for_transition);
+        }
+        return all_destinations;
+    }
+
     std::unique_ptr<InitStateGenerator> testConstructGeneratorFromValues(const nlohmann::json& states_array) {
         return constructGeneratorFromValues(states_array);
     }

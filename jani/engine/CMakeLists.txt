@@ -45,6 +45,8 @@ target_include_directories(${PROJECT_NAME}
     PUBLIC
         ${PROJECT_SOURCE_DIR}/src
 )
+# Enable position independent code for the library
+set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Create nanobind module
 nanobind_add_module(backend backend.cpp)

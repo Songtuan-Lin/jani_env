@@ -175,7 +175,7 @@ TEST_F(OracleTest, UnsafeState) {
     State *s = new State();
     s->setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 10, 3)); // x = 3
     s->setVariable("y", std::make_unique<IntVariable>(1, "y", 0, 10, 6)); // y = 6
-    bool is_safe = oracle->isStateSafe(s);
+    bool is_safe = oracle->isStateSafe(*s);
     EXPECT_FALSE(is_safe);
 }
 
@@ -187,6 +187,6 @@ TEST_F(OracleTest, SafeState) {
     State *s = new State();
     s->setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 10, 3)); // x = 3
     s->setVariable("y", std::make_unique<IntVariable>(1, "y", 0, 10, 6)); // y = 6
-    bool is_safe = oracle->isStateSafe(s);
+    bool is_safe = oracle->isStateSafe(*s);
     EXPECT_TRUE(is_safe);
 }
