@@ -465,6 +465,15 @@ TEST_F(EngineTest, StepTest) {
     std::vector<double> wrong_state_vector = {-9.8067, 0.3, 11, 7.4587, -3.0};
     EXPECT_FALSE(next_state_vector == wrong_state_vector) << "Next state vector should not match wrong state vector.";
     // EXPECT_TRUE(next_state_vector == target_state_vector) << "Next state vector " << to_string(next_state_vector) << " does not match expected values " << to_string(target_state_vector) << ".";
+
+    std::vector<double> next_target_state_vector = {-9.8067, 0.3, 12, 
+        (7.0 + 3.0 * 0.3 + 0.5 * -9.8067 * 0.3 * 0.3) + 
+        ((3.0 + (-9.8067 * 0.3 - 4)) * 0.3 + 0.5 * -9.8067 * 0.3 * 0.3),
+        (3.0 + (-9.8067 * 0.3 - 4)) + (-9.8067 * 0.3 - 4)};
+    next_state_vector = engine.step(0); // Action index 0 corresponds to "push"
+    for (size_t i = 0; i < next_state_vector.size(); ++i) {
+        EXPECT_NEAR(next_state_vector[i], next_target_state_vector[i], 1e-10) << "Mismatch at index " << i << ": expected " << next_target_state_vector[i] << ", got " << next_state_vector[i];
+    }
 }
 
 TEST_F(EngineTest, ConstructionTest) {

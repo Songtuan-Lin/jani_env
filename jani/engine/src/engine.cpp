@@ -144,9 +144,18 @@ JANIEngine::JANIEngine(
     const std::filesystem::path& failure_property_path,
     int seed
 ) {
+    std::cout << "DEBUG: Initializing JANIEngine with model: " << jani_model_path 
+              << ", property: " << jani_property_path 
+              << ", start states: " << start_states_path 
+              << ", objective: " << objective_path 
+              << ", failure property: " << failure_property_path 
+              << ", seed: " << seed << std::endl;
     rng = std::mt19937(seed); // Set the random seed
     // Placeholders for file paths
     std::filesystem::path start_file_path, objective_file_path, failure_file_path;
+    start_file_path = start_states_path;
+    objective_file_path = objective_path;
+    failure_file_path = failure_property_path;
     // Load and parse the JANI model file
     std::ifstream model_file(jani_model_path);
     if (!model_file.is_open()) {
@@ -235,7 +244,9 @@ JANIEngine::JANIEngine(
     }
 
     // Load start states from file if specified
+    std::cout << "DEBUG: Processing start states" << std::endl;
     if (!start_file_path.empty()) {
+        std::cout << "DEBUG: Starting to load start states from file: " << start_file_path << std::endl;
         std::ifstream start_file(start_file_path);
         if (!start_file.is_open()) {
             throw std::runtime_error("Failed to open start states file: " + start_file_path.string());
@@ -249,9 +260,12 @@ JANIEngine::JANIEngine(
         } else {
             throw std::runtime_error("Unsupported start states property format in file");
         }
+        std::cout << "DEBUG: Finished loading start states from file: " << start_file_path << std::endl;
     }
     // Load objective from file if specified
+    std::cout << "DEBUG: Processing objective" << std::endl;
     if (!objective_file_path.empty()) {
+        std::cout << "DEBUG: Starting to load objective from file: " << objective_file_path << std::endl;
         std::ifstream objective_file(objective_file_path);
         if (!objective_file.is_open()) {
             throw std::runtime_error("Failed to open objective file: " + objective_file_path.string());
@@ -259,9 +273,12 @@ JANIEngine::JANIEngine(
         nlohmann::json objective_json = nlohmann::json::parse(objective_file);
         objective_file.close();
         goal_expression = constructObjectiveExpression(objective_json);
+        std::cout << "DEBUG: Finished loading objective from file: " << objective_file_path << std::endl;
     }
     // Load failure property from file if specified
+    std::cout << "DEBUG: Processing failure property" << std::endl;
     if (!failure_file_path.empty()) {
+        std::cout << "DEBUG: Starting to load failure property from file: " << failure_file_path << std::endl;
         std::ifstream failure_file(failure_file_path);
         if (!failure_file.is_open()) {
             throw std::runtime_error("Failed to open failure property file: " + failure_file_path.string());
@@ -269,5 +286,6 @@ JANIEngine::JANIEngine(
         nlohmann::json failure_json = nlohmann::json::parse(failure_file);
         failure_file.close();
         failure_expression = constructFailureExpression(failure_json);
+        std::cout << "DEBUG: Finished loading failure property from file: " << failure_file_path << std::endl;
     }
 }

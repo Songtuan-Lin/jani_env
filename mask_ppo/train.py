@@ -1,0 +1,184 @@
+import argparse
+import numpy as np
+
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
+from datetime import datetime
+
+from jani.env import JANIEnv
+from gymnasium.wrappers import TimeLimit
+
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import VecMonitor
+
+from sb3_contrib.common.wrappers import ActionMasker
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
+
+# Optional imports for advanced features
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+    try:
+        from optuna.integration import WeightsAndBiasesCallback
+        OPTUNA_WANDB_CALLBACK_AVAILABLE = True
+    except ImportError:
+        OPTUNA_WANDB_CALLBACK_AVAILABLE = False
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    OPTUNA_WANDB_CALLBACK_AVAILABLE = False
+    print("Warning: Optuna not available. Hyperparameter tuning will be disabled.")
+
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
+
+
+def create_env(file_args, n_envs = 1, monitor = False, time_limited = True):
+    """Create JANI environment with specified parameters."""
+    def make_env():
+        env = JANIEnv(
+            jani_model_path=file_args["jani_model"],
+            jani_property_path=file_args["jani_property"],
+            start_states_path=file_args["start_states"],
+            objective_path=file_args["objective"],
+            failure_property_path=file_args["failure_property"],
+            seed=file_args["seed"],
+            goal_reward=file_args["goal_reward"],
+            failure_reward=file_args["failure_reward"]
+        )
+        if time_limited:
+            env = TimeLimit(env, max_episode_steps=file_args["max_steps"])
+        # Apply action masking
+        env = ActionMasker(env, mask_fn)
+        if monitor:
+            env = Monitor(env)
+        return env
+    
+    print(f"DEBUG: File arguments: {file_args}")
+    env = None
+    if n_envs == 1:
+        env = make_env()
+    else:
+        env = make_vec_env(make_env, n_envs=n_envs)
+        if monitor:
+            env = VecMonitor(env)
+
+    return env
+
+def mask_fn(env) -> np.ndarray:
+    """Action masking function for the environment."""
+    return env.unwrapped.action_mask()
+
+def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str, Any]] = None):
+    """Train the model with given hyperparameters."""
+    # Set up logging directories
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    experiment_name = args.experiment_name or f"jani_training_{timestamp}"
+    
+    log_dir = Path(args.log_dir) / experiment_name
+    model_save_dir = Path(args.model_save_dir) / experiment_name
+    log_dir.mkdir(parents=True, exist_ok=True)
+    model_save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize wandb if available and not disabled
+    if WANDB_AVAILABLE and not args.disable_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=experiment_name,
+            config={
+                **vars(args),
+                **(hyperparams or {}),
+                'file_args': file_args
+            }
+        )
+    
+    # Create environments
+    print("Creating training environment...")
+    train_env = create_env(file_args, args.n_envs, monitor=False, time_limited=True)
+
+    # Default hyperparameters if not provided
+    if hyperparams is None:
+        hyperparams = {
+            'learning_rate': 3e-4,
+            'n_steps': 2048,
+            'batch_size': 64,
+            'n_epochs': 10,
+            'gamma': 0.99,
+            'gae_lambda': 0.95,
+            'clip_range': 0.2,
+            'ent_coef': 0.0,
+            'vf_coef': 0.5,
+            'max_grad_norm': 0.5,
+        }
+    
+    print(f"Training with hyperparameters: {hyperparams}")
+
+    # Initialize MaskablePPO model
+    model = MaskablePPO(
+            MaskableActorCriticPolicy,
+            train_env,
+            tensorboard_log=str(log_dir),
+            verbose=args.verbose,
+            device=args.device,
+            seed=args.seed,
+            **hyperparams
+        )
+    reset_timesteps = True
+    
+    # Placeholder for callbacks
+    callbacks = []
+
+    # Start training
+    model.learn(
+        total_timesteps=args.total_timesteps,
+        callback=callbacks,
+        tb_log_name="PPO",
+        reset_num_timesteps=reset_timesteps
+    )
+
+def main():
+    parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")
+    parser.add_argument('--jani_model', type=str, required=True, help="Path to the JANI model file.")
+    parser.add_argument('--jani_property', type=str, default="", help="Path to the JANI property file.")
+    parser.add_argument('--start_states', type=str, default="", help="Path to the start states file.")
+    parser.add_argument('--objective', type=str, default="", help="Path to the objective file.")
+    parser.add_argument('--failure_property', type=str, default="", help="Path to the failure property file.")
+    parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
+    parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
+    parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
+    parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
+    parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
+    parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save models.")
+    parser.add_argument('--experiment_name', type=str, default="", help="Name of the experiment.")
+    parser.add_argument('--verbose', type=int, default=1, help="Verbosity level.")
+    parser.add_argument('--device', type=str, default='auto', help="Device to use for training (cpu or cuda).")
+    parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
+    parser.add_argument('--wandb_project', type=str, default="jani_rl", help="Weights & Biases project name.")
+    parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
+
+    args = parser.parse_args()
+
+    file_args = {
+        'jani_model': args.jani_model,
+        'jani_property': args.jani_property,
+        'start_states': args.start_states,
+        'objective': args.objective,
+        'failure_property': args.failure_property,
+        'goal_reward': args.goal_reward,
+        'failure_reward': args.failure_reward,
+        'seed': args.seed,
+        'max_steps': args.max_steps
+    }
+
+    train_model(args, file_args)
+
+if __name__ == "__main__":
+    main()

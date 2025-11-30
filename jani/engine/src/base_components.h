@@ -32,6 +32,8 @@ public:
     virtual std::unique_ptr<Variable> clone() = 0;
     virtual void setValue(const std::variant<int, double, bool>& val) = 0;
     virtual std::variant<int, double, bool> getValue() const = 0;
+    virtual double getLowerBound() const = 0;
+    virtual double getUpperBound() const = 0;
 };
 
 class RealVariable: public Variable {
@@ -100,6 +102,10 @@ public:
         // Returns a new RealConstant with the same properties
         return std::make_unique<RealConstant>(getId(), getName(), value);
     }
+
+    double getLowerBound() const { return value; }
+
+    double getUpperBound() const { return value; }
 };
 
 class BooleanVariable: public Variable {
@@ -117,6 +123,10 @@ public:
             throw std::runtime_error("Invalid type for BooleanVariable");
         }
     }
+
+    double getLowerBound() const { return 0.0; }
+
+    double getUpperBound() const { return 1.0; }
 
     std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) {
         // Returns a new BooleanVariable with updated value
@@ -164,6 +174,10 @@ public:
         // Returns a new BooleanConstant with the same properties
         return std::make_unique<BooleanConstant>(getId(), getName(), value);
     }
+
+    double getLowerBound() const { return value ? 1.0 : 0.0; }
+
+    double getUpperBound() const { return value ? 1.0 : 0.0; }
 };
 
 class IntVariable: public Variable {
@@ -189,9 +203,9 @@ public:
         }
     }
 
-    int getLowerBound() const { return lower_bound; }
+    double getLowerBound() const { return static_cast<double>(lower_bound); }
 
-    int getUpperBound() const { return upper_bound; }
+    double getUpperBound() const { return static_cast<double>(upper_bound); }
 
     std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) {
         // Returns a new IntVariable with updated value
@@ -238,6 +252,10 @@ public:
         // Returns a new IntConstant with the same properties
         return std::make_unique<IntConstant>(getId(), getName(), value);
     }
+
+    double getLowerBound() const { return static_cast<double>(value); }
+    
+    double getUpperBound() const { return static_cast<double>(value); }
 };
 
 class State {

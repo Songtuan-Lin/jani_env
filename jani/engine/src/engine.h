@@ -233,12 +233,20 @@ public:
         return std::get<bool>(result);
     }
 
+    bool reach_goal_current() {
+        return reach_goal(current_state);
+    }
+
     // Check whether the state is a failure state
     bool reach_failure(State &s) {
         auto result = failure_expression->eval(s);
         if (!std::holds_alternative<bool>(result))
             throw std::runtime_error("Failure expression does not evaluate to boolean");
         return std::get<bool>(result);
+    }
+
+    bool reach_failure_current() {
+        return reach_failure(current_state);
     }
 
     std::vector<bool> get_action_mask(const State &s) {
@@ -358,21 +366,23 @@ public:
             if (!(lower_bounds.size() == c->getId())) {
                 throw std::runtime_error("Constant variable IDs are not continuous starting from 0");
             }
-            lower_bounds.push_back(std::get<double>(c->getValue()));
+            std::variant<int, double, bool> val = c->getValue();
+            if (std::holds_alternative<double>(val)) {
+                lower_bounds.push_back(std::get<double>(val));
+            } else if (std::holds_alternative<int>(val)) {
+                lower_bounds.push_back(static_cast<double>(std::get<int>(val)));
+            } else if (std::holds_alternative<bool>(val)) {
+                lower_bounds.push_back(std::get<bool>(val) ? 1.0 : 0.0);
+            } 
+            else {
+                throw std::runtime_error("Constant variable is not of type double for lower bound retrieval");
+            }
         }
         for (const auto& v : variables) {
             if (!(lower_bounds.size() == v->getId())) {
                 throw std::runtime_error("Variable IDs are not continuous starting from 0 after constants");
             }
-            if (auto int_var = dynamic_cast<IntVariable*>(v.get())) {
-                lower_bounds.push_back(static_cast<double>(int_var->getLowerBound()));
-            } else if (auto real_var = dynamic_cast<RealVariable*>(v.get())) {
-                lower_bounds.push_back(real_var->getLowerBound());
-            } else if (auto bool_var = dynamic_cast<BooleanVariable*>(v.get())) {
-                lower_bounds.push_back(0.0); // false
-            } else {
-                throw std::runtime_error("Unsupported variable type for lower bound retrieval");
-            }
+            lower_bounds.push_back(v->getLowerBound());
         }
         return lower_bounds;
     }
@@ -383,21 +393,23 @@ public:
             if (!(upper_bounds.size() == c->getId())) {
                 throw std::runtime_error("Constant variable IDs are not continuous starting from 0");
             }
-            upper_bounds.push_back(std::get<double>(c->getValue()));
+            std::variant<int, double, bool> val = c->getValue();
+            if (std::holds_alternative<double>(val)) {
+                upper_bounds.push_back(std::get<double>(val));;
+            } else if (std::holds_alternative<int>(val)) {
+                upper_bounds.push_back(static_cast<double>(std::get<int>(val)));
+            } else if (std::holds_alternative<bool>(val)) {
+                upper_bounds.push_back(std::get<bool>(val) ? 1.0 : 0.0);
+            } 
+            else {
+                throw std::runtime_error("Constant variable is not of type double for upper bound retrieval");
+            }
         }
         for (const auto& v : variables) {
             if (!(upper_bounds.size() == v->getId())) {
                 throw std::runtime_error("Variable IDs are not continuous starting from 0 after constants");
             }
-            if (auto int_var = dynamic_cast<IntVariable*>(v.get())) {
-                upper_bounds.push_back(static_cast<double>(int_var->getUpperBound()));
-            } else if (auto real_var = dynamic_cast<RealVariable*>(v.get())) {
-                upper_bounds.push_back(real_var->getUpperBound());
-            } else if (auto bool_var = dynamic_cast<BooleanVariable*>(v.get())) {
-                upper_bounds.push_back(1.0); // true
-            } else {
-                throw std::runtime_error("Unsupported variable type for upper bound retrieval");
-            }
+            upper_bounds.push_back(v->getUpperBound());
         }
         return upper_bounds;
     }

@@ -20,26 +20,59 @@ class JANIEnv(gym.Env):
                  start_states_path: str = "",
                  objective_path: str = "",
                  failure_property_path: str = "",
-                 seed: int = 42):
+                 seed: int = 42,
+                 goal_reward: float = 1.0,
+                 failure_reward: float = -1.0):
         super().__init__()
+        print(f"DEBUG: Initializing JANIEnv with model: {jani_model_path}, property: {jani_property_path}, start states: {start_states_path}, objective: {objective_path}, failure property: {failure_property_path}, seed: {seed}")
         self._engine = JANIEngine(jani_model_path, 
                                   jani_property_path, 
                                   start_states_path, 
                                   objective_path, 
                                   failure_property_path, 
                                   seed)
+        self._goal_reward = goal_reward
+        self._failure_reward = failure_reward
         # Define action and observation space
-        self.action_space = gym.spaces.Discrete(self._engine.get_action_count())
+        self.action_space = gym.spaces.Discrete(self._engine.get_num_actions())
         lower_bounds = self._engine.get_lower_bounds()
         upper_bounds = self._engine.get_upper_bounds()
         self.observation_space = gym.spaces.Box(low=np.array(lower_bounds), 
                                                 high=np.array(upper_bounds), 
                                                 dtype=np.float32)
-        # Initialize current state to None
-        self._current_state = None
+        # Initialize reset flag
+        self._reseted = False
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
         state_vec = self._engine.reset()
-        self._current_state = np.array(state_vec, dtype=np.float32)
+        self._reseted = True
+        assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         return np.array(state_vec, dtype=np.float32), {}
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
+        if not self._reseted:
+            raise RuntimeError("Environment must be reset before stepping.")
+        next_state_vec = self._engine.step(action)
+        self._current_state = np.array(next_state_vec, dtype=np.float32)
+        
+        # Compute reward and done flag
+        reward = None
+        done = None
+        if self._engine.reach_goal_current():
+            reward = self._goal_reward
+            done = True
+        elif self._engine.reach_failure_current():
+            reward = self._failure_reward
+            done = True
+        else:
+            reward = 0.0
+            done = False
+
+        return np.array(next_state_vec, dtype=np.float32), reward, done, False, {}
+
+    def action_mask(self) -> np.ndarray:
+        if not self._reseted:
+            raise RuntimeError("Environment must be reset before getting action mask.")
+        mask = self._engine.get_current_action_mask()
+        return np.array(mask, dtype=np.float32)
