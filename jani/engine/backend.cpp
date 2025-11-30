@@ -28,6 +28,10 @@ NB_MODULE(backend, m) {
         .def("get_current_action_mask", &JANIEngine::get_current_action_mask)
         .def("test_guards_for_action", &JANIEngine::testGuardsForAction)
         .def("test_destinations_for_action", &JANIEngine::testDestinationsForAction)
+        .def("reach_goal", &JANIEngine::reach_goal)
+        .def("reach_failure", &JANIEngine::reach_failure)
+        .def("get_lower_bounds", &JANIEngine::get_lower_bounds)
+        .def("get_upper_bounds", &JANIEngine::get_upper_bounds)
         .def("reset", &JANIEngine::reset)
         .def("step", &JANIEngine::step);
 }

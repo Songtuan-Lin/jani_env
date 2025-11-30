@@ -352,6 +352,56 @@ public:
         current_state = s;
     }
 
+    std::vector<double> get_lower_bounds() {
+        std::vector<double> lower_bounds;
+        for (const auto& c : constants) {
+            if (!(lower_bounds.size() == c->getId())) {
+                throw std::runtime_error("Constant variable IDs are not continuous starting from 0");
+            }
+            lower_bounds.push_back(std::get<double>(c->getValue()));
+        }
+        for (const auto& v : variables) {
+            if (!(lower_bounds.size() == v->getId())) {
+                throw std::runtime_error("Variable IDs are not continuous starting from 0 after constants");
+            }
+            if (auto int_var = dynamic_cast<IntVariable*>(v.get())) {
+                lower_bounds.push_back(static_cast<double>(int_var->getLowerBound()));
+            } else if (auto real_var = dynamic_cast<RealVariable*>(v.get())) {
+                lower_bounds.push_back(real_var->getLowerBound());
+            } else if (auto bool_var = dynamic_cast<BooleanVariable*>(v.get())) {
+                lower_bounds.push_back(0.0); // false
+            } else {
+                throw std::runtime_error("Unsupported variable type for lower bound retrieval");
+            }
+        }
+        return lower_bounds;
+    }
+
+    std::vector<double> get_upper_bounds() {
+        std::vector<double> upper_bounds;
+        for (const auto& c : constants) {
+            if (!(upper_bounds.size() == c->getId())) {
+                throw std::runtime_error("Constant variable IDs are not continuous starting from 0");
+            }
+            upper_bounds.push_back(std::get<double>(c->getValue()));
+        }
+        for (const auto& v : variables) {
+            if (!(upper_bounds.size() == v->getId())) {
+                throw std::runtime_error("Variable IDs are not continuous starting from 0 after constants");
+            }
+            if (auto int_var = dynamic_cast<IntVariable*>(v.get())) {
+                upper_bounds.push_back(static_cast<double>(int_var->getUpperBound()));
+            } else if (auto real_var = dynamic_cast<RealVariable*>(v.get())) {
+                upper_bounds.push_back(real_var->getUpperBound());
+            } else if (auto bool_var = dynamic_cast<BooleanVariable*>(v.get())) {
+                upper_bounds.push_back(1.0); // true
+            } else {
+                throw std::runtime_error("Unsupported variable type for upper bound retrieval");
+            }
+        }
+        return upper_bounds;
+    }
+
     // For testing purposes
     std::vector<std::string> testGuardsForAction(int action_id) {
         if (action_id < 0 || action_id >= actions.size()) {
