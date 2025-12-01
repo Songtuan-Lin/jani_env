@@ -253,9 +253,9 @@ JANIEngine::JANIEngine(
         }
         nlohmann::json start_states_json = nlohmann::json::parse(start_file);
         start_file.close();
-        if (start_states_json["op"].get<std::string>() == "states-values") {
+        if (start_states_json["properties"][0]["expression"]["start"]["op"].get<std::string>() == "states-values") {
             // Load start states from values
-            nlohmann::json states_array = start_states_json["values"];
+            nlohmann::json states_array = start_states_json["properties"][0]["expression"]["start"]["values"];
             init_state_generator = constructGeneratorFromValues(states_array);
         } else {
             throw std::runtime_error("Unsupported start states property format in file");

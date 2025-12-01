@@ -54,7 +54,6 @@ class JANIEnv(gym.Env):
         if not self._reseted:
             raise RuntimeError("Environment must be reset before stepping.")
         next_state_vec = self._engine.step(action)
-        self._current_state = np.array(next_state_vec, dtype=np.float32)
         
         # Compute reward and done flag
         reward = None
@@ -64,6 +63,9 @@ class JANIEnv(gym.Env):
             done = True
         elif self._engine.reach_failure_current():
             reward = self._failure_reward
+            done = True
+        elif np.sum(self.action_mask()) == 0.0:
+            reward = 0.0
             done = True
         else:
             reward = 0.0
