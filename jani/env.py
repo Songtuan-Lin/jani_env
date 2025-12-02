@@ -10,7 +10,7 @@ current_dir = Path(__file__).resolve().parent
 binding_dir = current_dir / "engine" / "build"
 sys.path.append(str(binding_dir))
 
-from backend import JANIEngine
+from backend import JANIEngine, TarjanOracle
 
 
 class JANIEnv(gym.Env):
@@ -22,17 +22,25 @@ class JANIEnv(gym.Env):
                  failure_property_path: str = "",
                  seed: int = 42,
                  goal_reward: float = 1.0,
-                 failure_reward: float = -1.0):
+                 failure_reward: float = -1.0,
+                 use_oracle: bool = False,
+                 unsafe_reward: float = -0.01) -> None:
         super().__init__()
-        print(f"DEBUG: Initializing JANIEnv with model: {jani_model_path}, property: {jani_property_path}, start states: {start_states_path}, objective: {objective_path}, failure property: {failure_property_path}, seed: {seed}")
+        # print(f"DEBUG: Initializing JANIEnv with model: {jani_model_path}, property: {jani_property_path}, start states: {start_states_path}, objective: {objective_path}, failure property: {failure_property_path}, seed: {seed}")
         self._engine = JANIEngine(jani_model_path, 
                                   jani_property_path, 
                                   start_states_path, 
                                   objective_path, 
                                   failure_property_path, 
                                   seed)
-        self._goal_reward = goal_reward
-        self._failure_reward = failure_reward
+        self._goal_reward: float = goal_reward
+        self._failure_reward: float = failure_reward
+        self._oracle: Optional[TarjanOracle] = None
+        if use_oracle:
+            self._oracle = TarjanOracle(self._engine)
+        self._unsafe_reward: Optional[float] = None
+        if self._oracle is not None:
+            self._unsafe_reward = unsafe_reward
         # Define action and observation space
         self.action_space = gym.spaces.Discrete(self._engine.get_num_actions())
         lower_bounds = self._engine.get_lower_bounds()
@@ -53,7 +61,10 @@ class JANIEnv(gym.Env):
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         if not self._reseted:
             raise RuntimeError("Environment must be reset before stepping.")
-        next_state_vec = self._engine.step(action)
+        next_state_vec = self._engine.step(action) # The current state should be automatically updated in the engine
+        if self._oracle is not None:
+            assert self._unsafe_reward is not None
+            is_next_state_safe = self._oracle.is_engine_state_safe()
         
         # Compute reward and done flag
         reward = None
@@ -68,7 +79,10 @@ class JANIEnv(gym.Env):
             reward = 0.0
             done = True
         else:
-            reward = 0.0
+            if self._oracle is not None and not is_next_state_safe:
+                reward = self._unsafe_reward
+            else:
+                reward = 0.0
             done = False
 
         return np.array(next_state_vec, dtype=np.float32), reward, done, False, {}

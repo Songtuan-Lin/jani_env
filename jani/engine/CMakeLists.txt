@@ -45,12 +45,20 @@ target_include_directories(${PROJECT_NAME}
     PUBLIC
         ${PROJECT_SOURCE_DIR}/src
 )
+target_compile_definitions(${PROJECT_NAME}
+    PUBLIC
+        $<$<CONFIG:Release>:NDEBUG>
+)
 # Enable position independent code for the library
 set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Create nanobind module
 nanobind_add_module(backend backend.cpp)
 target_link_libraries(backend PRIVATE ${PROJECT_NAME})
+target_compile_definitions(backend
+    PUBLIC
+        $<$<CONFIG:Release>:NDEBUG>
+)
 
 # Link GoogleTest to the project
 enable_testing()
@@ -68,6 +76,10 @@ target_include_directories(automaton_test
     PRIVATE
         src/
 )
+target_compile_definitions(automaton_test
+    PUBLIC
+        $<$<CONFIG:Release>:NDEBUG>
+)
 
 add_executable(engine_test test/unittest_engine.cpp src/engine.cpp src/expressions.cpp)
 target_link_libraries(engine_test GTest::gtest_main Boost::headers)
@@ -75,12 +87,20 @@ target_include_directories(engine_test
     PRIVATE
         src/
 )
+target_compile_definitions(engine_test
+    PUBLIC
+        $<$<CONFIG:Release>:NDEBUG>
+)
 
 add_executable(oracle_test test/unittest_oracle.cpp src/engine.cpp src/expressions.cpp src/oracle.cpp)
 target_link_libraries(oracle_test GTest::gtest_main Boost::headers)
 target_include_directories(oracle_test
     PRIVATE
         src/
+)
+target_compile_definitions(oracle_test
+    PUBLIC
+        $<$<CONFIG:Release>:NDEBUG>
 )
 
 include(GoogleTest)

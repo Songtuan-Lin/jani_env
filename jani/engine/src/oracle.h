@@ -21,6 +21,9 @@ class TarjanOracle {
 public:
     TarjanOracle(JANIEngine* eng) : engine(eng) {}
     bool isStateSafe(const State& state) {
+        #ifndef NDEBUG
+        std::cout << "DEBUG: Checking safety for state: " << state.toString() << std::endl;
+        #endif
         // Perform Tarjan's algorithm starting from this state
         std::vector<State> stack;
         // Check if a state is on the stack
@@ -43,5 +46,10 @@ public:
     bool isEngineStateSafe() {
         const State& state = engine->get_current_state();
         return isStateSafe(state);
+    }
+
+    // For testing purposes
+    const State getEngineCurrentState() {
+        return engine->get_current_state();
     }
 };

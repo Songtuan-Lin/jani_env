@@ -144,12 +144,14 @@ JANIEngine::JANIEngine(
     const std::filesystem::path& failure_property_path,
     int seed
 ) {
+    #ifndef NDEBUG
     std::cout << "DEBUG: Initializing JANIEngine with model: " << jani_model_path 
               << ", property: " << jani_property_path 
               << ", start states: " << start_states_path 
               << ", objective: " << objective_path 
               << ", failure property: " << failure_property_path 
               << ", seed: " << seed << std::endl;
+    #endif
     rng = std::mt19937(seed); // Set the random seed
     // Placeholders for file paths
     std::filesystem::path start_file_path, objective_file_path, failure_file_path;
@@ -163,7 +165,9 @@ JANIEngine::JANIEngine(
     }
     nlohmann::json jani_json = nlohmann::json::parse(model_file);
     model_file.close();
+    #ifndef NDEBUG
     std::cout << "DEBUG: Starting to construct JANI model from file: " << jani_model_path << std::endl;
+    #endif
     // Construct actions
     for (auto it = jani_json["actions"].begin(); it != jani_json["actions"].end(); ++it) {
         std::string action_label = (*it)["name"].get<std::string>();
@@ -188,7 +192,9 @@ JANIEngine::JANIEngine(
     if (automata.size() > 1) {
         throw std::runtime_error("Currently only single automaton models are supported");
     }
+    #ifndef NDEBUG
     std::cout << "DEBUG: Finished constructing JANI model from file: " << jani_model_path << std::endl;
+    #endif
 
     // Load the properties of the model
     if (jani_property_path.empty()) {
@@ -196,7 +202,9 @@ JANIEngine::JANIEngine(
             throw std::runtime_error("Either a JANI property file or all of start states, objective, and failure property files must be provided");
         } 
     } else {
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to load properties from file: " << jani_property_path << std::endl;
+        #endif
         std::ifstream property_file(jani_property_path);
         if (!property_file.is_open()) {
             throw std::runtime_error("Failed to open JANI property file: " + jani_property_path.string());
@@ -210,7 +218,9 @@ JANIEngine::JANIEngine(
         nlohmann::json property_obj = all_properties_json[0]["expression"];
 
         // Construct the start states expression
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to construct start states expression from property" << std::endl;
+        #endif
         nlohmann::json start_property = property_obj["start"];
         if (start_property.contains("file"))
             // Load start states from file
@@ -218,54 +228,82 @@ JANIEngine::JANIEngine(
         if (!start_property.contains("op"))
             throw std::runtime_error("Unsupported start states property format");
         // Currently generating initial states based on constraints is not supported
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished constructing start states expression from property" << std::endl;
+        #endif
 
         // Construct the objective expression
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to construct objective expression from property" << std::endl;
+        #endif
         nlohmann::json objective_property = property_obj["objective"];
         if (objective_property.contains("file"))
             // Load objective from file
             objective_file_path = objective_property["file"].get<std::string>();
         else 
             goal_expression = constructObjectiveExpression(objective_property);
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished constructing objective expression from property" << std::endl;
+        std::cout << "DEBUG: Objective expression: " << goal_expression->toString() << std::endl;
+        #endif
 
         // Construct the failure property expression
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to construct failure property expression from property" << std::endl;
+        #endif
         nlohmann::json failure_property = property_obj["reach"];
         if (failure_property.contains("file"))
             // Load failure property from file
             failure_file_path = failure_property["file"].get<std::string>();
         else 
             failure_expression = constructFailureExpression(failure_property);
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished constructing failure property expression from property" << std::endl;
+        std::cout << "DEBUG: Failure property expression: " << failure_expression->toString() << std::endl;
+        #endif
 
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished loading properties from file: " << jani_property_path << std::endl;
+        #endif
     }
 
     // Load start states from file if specified
+    #ifndef NDEBUG
     std::cout << "DEBUG: Processing start states" << std::endl;
+    #endif
     if (!start_file_path.empty()) {
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to load start states from file: " << start_file_path << std::endl;
+        #endif
         std::ifstream start_file(start_file_path);
         if (!start_file.is_open()) {
             throw std::runtime_error("Failed to open start states file: " + start_file_path.string());
         }
         nlohmann::json start_states_json = nlohmann::json::parse(start_file);
         start_file.close();
-        if (start_states_json["properties"][0]["expression"]["start"]["op"].get<std::string>() == "states-values") {
+        nlohmann::json start_states_property;
+        if (start_states_json.contains("properties")) {
+            start_states_property = start_states_json["properties"][0]["expression"]["start"];
+        } else {start_states_property = start_states_json;}
+        if (start_states_property["op"].get<std::string>() == "states-values") {
             // Load start states from values
-            nlohmann::json states_array = start_states_json["properties"][0]["expression"]["start"]["values"];
+            nlohmann::json states_array = start_states_property["values"];
             init_state_generator = constructGeneratorFromValues(states_array);
         } else {
             throw std::runtime_error("Unsupported start states property format in file");
         }
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished loading start states from file: " << start_file_path << std::endl;
+        #endif
     }
     // Load objective from file if specified
+    #ifndef NDEBUG
     std::cout << "DEBUG: Processing objective" << std::endl;
+    #endif
     if (!objective_file_path.empty()) {
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to load objective from file: " << objective_file_path << std::endl;
+        #endif
         std::ifstream objective_file(objective_file_path);
         if (!objective_file.is_open()) {
             throw std::runtime_error("Failed to open objective file: " + objective_file_path.string());
@@ -273,12 +311,19 @@ JANIEngine::JANIEngine(
         nlohmann::json objective_json = nlohmann::json::parse(objective_file);
         objective_file.close();
         goal_expression = constructObjectiveExpression(objective_json);
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished loading objective from file: " << objective_file_path << std::endl;
+        std::cout << "DEBUG: Objective expression: " << goal_expression->toString() << std::endl;
+        #endif
     }
     // Load failure property from file if specified
+    #ifndef NDEBUG
     std::cout << "DEBUG: Processing failure property" << std::endl;
+    #endif
     if (!failure_file_path.empty()) {
+        #ifndef NDEBUG
         std::cout << "DEBUG: Starting to load failure property from file: " << failure_file_path << std::endl;
+        #endif
         std::ifstream failure_file(failure_file_path);
         if (!failure_file.is_open()) {
             throw std::runtime_error("Failed to open failure property file: " + failure_file_path.string());
@@ -286,6 +331,9 @@ JANIEngine::JANIEngine(
         nlohmann::json failure_json = nlohmann::json::parse(failure_file);
         failure_file.close();
         failure_expression = constructFailureExpression(failure_json);
+        #ifndef NDEBUG
         std::cout << "DEBUG: Finished loading failure property from file: " << failure_file_path << std::endl;
+        std::cout << "DEBUG: Failure property expression: " << failure_expression->toString() << std::endl;
+        #endif
     }
 }

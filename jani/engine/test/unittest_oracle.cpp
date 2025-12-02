@@ -190,3 +190,22 @@ TEST_F(OracleTest, SafeState) {
     bool is_safe = oracle->isStateSafe(*s);
     EXPECT_TRUE(is_safe);
 }
+
+TEST_F(OracleTest, OracleWithSteps) {
+    State *s = new State();
+    s->setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 10, 3)); // x = 3
+    s->setVariable("y", std::make_unique<IntVariable>(1, "y", 0, 10, 6)); // y = 6
+    engine->set_current_state(*s);
+
+    bool is_safe = oracle->isEngineStateSafe();
+    EXPECT_FALSE(is_safe);
+
+    engine->step(0); // Take action "a"
+    State target_next_state;
+    target_next_state.setVariable("x", std::make_unique<IntVariable>(0, "x", 0, 10, 4)); // x = 4
+    target_next_state.setVariable("y", std::make_unique<IntVariable>(1, "y", 0, 10, 6)); // y = 6
+    State engine_next_state = oracle->getEngineCurrentState();
+    EXPECT_TRUE(engine_next_state == target_next_state);
+    is_safe = oracle->isEngineStateSafe();
+    EXPECT_FALSE(is_safe);
+}

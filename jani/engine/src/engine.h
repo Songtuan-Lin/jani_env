@@ -316,6 +316,9 @@ public:
     std::vector<double> reset() {
         // Generate a new initial state
         current_state = *(init_state_generator->generateInitialState(rng));
+        #ifndef NDEBUG
+        std::cout << "DEBUG: Reset to initial state: " << current_state.toString() << std::endl;
+        #endif
         return current_state.toRealVector();
     }
 
@@ -323,6 +326,9 @@ public:
         if (action_id < 0 || action_id >= actions.size()) {
             throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
         }
+        #ifndef NDEBUG
+        std::cout << "DEBUG: Taking step with action id: " << action_id << std::endl;
+        #endif
         std::string action_label = actions[action_id]->getLabel();
         const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
         int num_enabled = 0;
@@ -331,14 +337,20 @@ public:
                 if (num_enabled > 0) {
                     throw std::runtime_error("More than one transition enabled for the same action");
                 }
+                num_enabled++;
                 // Apply the transition
                 State new_state = it->apply(current_state, rng);
                 // Update current state
                 current_state = new_state;
-                return current_state.toRealVector();
             }
         }
-        throw std::runtime_error("No enabled transition found for action: " + action_label);
+        if (num_enabled == 0) {
+            throw std::runtime_error("No enabled transition found for action id: " + std::to_string(action_id));
+        }
+        #ifndef NDEBUG
+        std::cout << "DEBUG: New state after step: " << current_state.toString() << std::endl;
+        #endif
+        return current_state.toRealVector();
     }
 
     void set_current_state(const State& s) {
