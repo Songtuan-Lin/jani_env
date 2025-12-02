@@ -360,6 +360,10 @@ public:
         current_state = s;
     }
 
+    const State& get_current_state() const {
+        return current_state;
+    }
+
     std::vector<double> get_lower_bounds() {
         std::vector<double> lower_bounds;
         for (const auto& c : constants) {

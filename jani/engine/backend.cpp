@@ -4,6 +4,7 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/filesystem.h>
 #include "engine.h"
+#include "oracle.h"
 
 
 namespace nb = nanobind;
@@ -34,4 +35,9 @@ NB_MODULE(backend, m) {
         .def("get_upper_bounds", &JANIEngine::get_upper_bounds)
         .def("reset", &JANIEngine::reset)
         .def("step", &JANIEngine::step);
+
+    nb::class<TarjanOracle>(m, "TarjanOracle")
+        .def(nb::init<JANIEngine*>(), nb::arg("engine"))
+        .def("is_engine_state_safe", &TarjanOracle::isEngineStateSafe)
+        .def("is_state_safe_from_vector", &TarjanOracle::isStateSafeFromVector);
 }

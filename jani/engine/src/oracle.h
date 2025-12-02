@@ -20,7 +20,7 @@ class TarjanOracle {
                     std::unordered_map<State, TarjanNode*, StateHasher>& on_stack_map);
 public:
     TarjanOracle(JANIEngine* eng) : engine(eng) {}
-    int isStateSafe(const State& state) {
+    bool isStateSafe(const State& state) {
         // Perform Tarjan's algorithm starting from this state
         std::vector<State> stack;
         // Check if a state is on the stack
@@ -30,5 +30,18 @@ public:
         // int result = safe ? 1 : 0;
         cache[state] = safe;
         return safe;
+    }
+
+    bool isStateSafeFromVector(const std::vector<double>& state_vector) {
+        // Convert vector to State
+        State state;
+        state = engine->create_state_from_vector(state_vector);
+        // Perform Tarjan's algorithm
+        return isStateSafe(state);
+    }
+
+    bool isEngineStateSafe() {
+        const State& state = engine->get_current_state();
+        return isStateSafe(state);
     }
 };
