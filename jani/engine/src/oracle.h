@@ -32,6 +32,9 @@ public:
         bool safe = tarjan_dfs(node, 0, stack, on_stack_map);
         // int result = safe ? 1 : 0;
         cache[state] = safe;
+        #ifndef NDEBUG
+        std::cout << "DEBUG: State is marked " << (safe ? "safe." : "unsafe.") << std::endl;
+        #endif
         return safe;
     }
 

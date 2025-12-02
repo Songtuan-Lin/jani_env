@@ -56,7 +56,7 @@ public:
         throw std::runtime_error("Guard expression did not evaluate to a boolean");
     }
 
-    State apply(State& ctx_state, std::mt19937& rng) const {
+    State apply(const State& ctx_state, std::mt19937& rng) const {
         if (!isEnabled(ctx_state)) {
             throw std::runtime_error("Transition guard is not satisfied in the current state");
         }
@@ -332,22 +332,34 @@ public:
         std::string action_label = actions[action_id]->getLabel();
         const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
         int num_enabled = 0;
+        State new_state;
         for (const auto it: *transitions) {
             if (it->isEnabled(current_state)) {
+                #ifndef NDEBUG
+                std::cout << "DEBUG: Transition with guard " << it->getGuard()->toString() << " is enabled" << std::endl;
+                #endif
                 if (num_enabled > 0) {
+                    #ifdef NDEBUG
                     throw std::runtime_error("More than one transition enabled for the same action");
+                    #endif
+                    #ifndef NDEBUG
+                    it->getGuard()->debugPrintEval(current_state);
+                    #endif
                 }
                 num_enabled++;
                 // Apply the transition
-                State new_state = it->apply(current_state, rng);
-                // Update current state
-                current_state = new_state;
+                new_state = it->apply(current_state, rng);
             }
         }
         if (num_enabled == 0) {
             throw std::runtime_error("No enabled transition found for action id: " + std::to_string(action_id));
         }
+        // Update the current state
+        current_state = new_state;
         #ifndef NDEBUG
+        if (num_enabled > 1) {
+            throw std::runtime_error("More than one transition enabled for the same action");
+        }
         std::cout << "DEBUG: New state after step: " << current_state.toString() << std::endl;
         #endif
         return current_state.toRealVector();

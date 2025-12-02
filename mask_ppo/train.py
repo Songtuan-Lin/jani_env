@@ -49,6 +49,7 @@ def create_env(file_args, n_envs = 1, monitor = False, time_limited = True):
             failure_property_path=file_args["failure_property"],
             seed=file_args["seed"],
             goal_reward=file_args["goal_reward"],
+            use_oracle=file_args.get("use_oracle", False),
             failure_reward=file_args["failure_reward"]
         )
         if time_limited:
@@ -151,6 +152,7 @@ def main():
     parser.add_argument('--failure_property', type=str, default="", help="Path to the failure property file.")
     parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument('--use_oracle', action='store_true', help="Use Tarjan oracle for unsafe state detection.")
     parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
     parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
@@ -175,6 +177,7 @@ def main():
         'goal_reward': args.goal_reward,
         'failure_reward': args.failure_reward,
         'seed': args.seed,
+        'use_oracle': args.use_oracle,
         'max_steps': args.max_steps
     }
 

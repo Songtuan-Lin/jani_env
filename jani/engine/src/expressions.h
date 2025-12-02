@@ -14,6 +14,8 @@ public:
     virtual std::variant<int, double, bool> eval(const State& ctx_state) const = 0;
     // TODO: Change to returning unique_ptr later
     static Expression* construct(const nlohmann::json& json_obj);
+    // Functions for debugging
+    virtual void debugPrintEval(const State& ctx_state) const = 0;
 };
 
 class VariableExpression : public Expression {
@@ -31,17 +33,31 @@ public:
         }
         return var->getValue();
     }
+
+    void debugPrintEval(const State& ctx_state) const override {
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Variable " << name << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
 };
 
 class IntConstantExpression : public Expression {
     int value;
 public:
     IntConstantExpression(int value) : value(value) {}
+
     std::string toString() const override {
         return std::to_string(value);
     }
+
     std::variant<int, double, bool> eval(const State& ctx_state) const override {
         return value;
+    }
+
+    void debugPrintEval(const State& ctx_state) const override {
+        std::cout << "DEBUG: Int constant " << value << " evaluated to " << value 
+                  << " in state " << ctx_state.toString() << std::endl;
     }
 };
 
@@ -55,6 +71,10 @@ public:
     std::variant<int, double, bool> eval(const State& ctx_state) const override {
         return value;
     }
+    void debugPrintEval(const State& ctx_state) const override {
+        std::cout << "DEBUG: Float constant " << value << " evaluated to " << value 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
 };
 
 class BooleanConstantExpression : public Expression {
@@ -66,6 +86,10 @@ public:
     }
     std::variant<int, double, bool> eval(const State& ctx_state) const override {
         return value;
+    }
+    void debugPrintEval(const State& ctx_state) const override {
+        std::cout << "DEBUG: Boolean constant " << (value ? "true" : "false") << " evaluated to " 
+                  << (value ? "true" : "false") << " in state " << ctx_state.toString() << std::endl;
     }
 };
 
@@ -95,6 +119,14 @@ public:
         }
         throw std::runtime_error("Type mismatch in addition");
     }
+    void debugPrintEval(const State& ctx_state) const override {
+        left->debugPrintEval(ctx_state);
+        right->debugPrintEval(ctx_state);
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Addition expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
 };
 
 class SubtractionExpression : public Expression {
@@ -123,6 +155,14 @@ public:
         }
         throw std::runtime_error("Type mismatch in subtraction");
     }
+    void debugPrintEval(const State& ctx_state) const override {
+        left->debugPrintEval(ctx_state);
+        right->debugPrintEval(ctx_state);
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Subtraction expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
 };
 
 class MultiplicationExpression : public Expression {
@@ -150,6 +190,12 @@ public:
             return std::get<double>(left_val) * static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in multiplication");
+    }
+    void debugPrintEval(const State& ctx_state) const override {
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Multiplication expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
     }
 };
 
@@ -191,6 +237,12 @@ public:
         }
         throw std::runtime_error("Type mismatch in division");
     }
+    void debugPrintEval(const State& ctx_state) const override {
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Division expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
 };
 
 class LessThanExpression : public Expression {
@@ -218,6 +270,12 @@ public:
             return std::get<double>(left_val) < static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Type mismatch in less than comparison");
+    }
+    void debugPrintEval(const State& ctx_state) const override {
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Less than expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
     }
 };
 
@@ -247,6 +305,12 @@ public:
         }
         throw std::runtime_error("Type mismatch in less than or equal comparison");
     }
+    void debugPrintEval(const State& ctx_state) const override {
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Less than or equal expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
 };
 
 class EqualityExpression : public Expression {
@@ -264,6 +328,7 @@ public:
     std::variant<int, double, bool> eval(const State& ctx_state) const override {
         auto left_val = left->eval(ctx_state);
         auto right_val = right->eval(ctx_state);
+        
         if (left_val.index() != right_val.index()) {
             throw std::runtime_error("Type mismatch in equality comparison");
         }
@@ -279,6 +344,14 @@ public:
             return std::get<double>(left_val) == static_cast<double>(std::get<int>(right_val));
         }
         throw std::runtime_error("Unsupported type in equality comparison");
+    }
+    void debugPrintEval(const State& ctx_state) const override {
+        left->debugPrintEval(ctx_state);
+        right->debugPrintEval(ctx_state);
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: Equality expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
     }
 };
 
@@ -297,10 +370,19 @@ public:
     std::variant<int, double, bool> eval(const State& ctx_state) const override {
         auto left_val = left->eval(ctx_state);
         auto right_val = right->eval(ctx_state);
+        
         if (std::holds_alternative<bool>(left_val) && std::holds_alternative<bool>(right_val)) {
             return std::get<bool>(left_val) && std::get<bool>(right_val);
         }
         throw std::runtime_error("Type mismatch in logical AND");
+    }
+    void debugPrintEval(const State& ctx_state) const override {
+        left->debugPrintEval(ctx_state);
+        right->debugPrintEval(ctx_state);
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: AND expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
     }
 };
 
@@ -323,6 +405,14 @@ public:
             return std::get<bool>(left_val) || std::get<bool>(right_val);
         }
         throw std::runtime_error("Type mismatch in logical OR");
+    }
+    void debugPrintEval(const State& ctx_state) const override {
+        left->debugPrintEval(ctx_state);
+        right->debugPrintEval(ctx_state);
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: OR expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
     }
 };
 #endif // JANI_ENGINE_EXPRESSIONS_H
