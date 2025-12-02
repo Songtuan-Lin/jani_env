@@ -36,7 +36,7 @@ NB_MODULE(backend, m) {
         .def("reset", &JANIEngine::reset)
         .def("step", &JANIEngine::step);
 
-    nb::class<TarjanOracle>(m, "TarjanOracle")
+    nb::class_<TarjanOracle>(m, "TarjanOracle")
         .def(nb::init<JANIEngine*>(), nb::arg("engine"))
         .def("is_engine_state_safe", &TarjanOracle::isEngineStateSafe)
         .def("is_state_safe_from_vector", &TarjanOracle::isStateSafeFromVector);
