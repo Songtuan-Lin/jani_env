@@ -5,15 +5,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from .callbacks import EvalCallback
+from callbacks import EvalCallback
 from jani.env import JANIEnv
-from gymnasium.wrappers import TimeLimit
+from utils import create_env, create_eval_file_args, mask_fn
 
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import VecMonitor
-
-from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 
@@ -38,52 +33,6 @@ except ImportError:
     WANDB_AVAILABLE = False
     print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
 
-
-def create_env(file_args, n_envs = 1, monitor = False, time_limited = True):
-    """Create JANI environment with specified parameters."""
-    def make_env():
-        env = JANIEnv(
-            jani_model_path=file_args["jani_model"],
-            jani_property_path=file_args["jani_property"],
-            start_states_path=file_args["start_states"],
-            objective_path=file_args["objective"],
-            failure_property_path=file_args["failure_property"],
-            seed=file_args["seed"],
-            goal_reward=file_args["goal_reward"],
-            use_oracle=file_args.get("use_oracle", False),
-            failure_reward=file_args["failure_reward"]
-        ) 
-
-        if time_limited:
-            env = TimeLimit(env, max_episode_steps=file_args["max_steps"])
-        # Apply action masking
-        env = ActionMasker(env, mask_fn)
-        if monitor:
-            env = Monitor(env)
-        return env
-    
-    print(f"DEBUG: File arguments: {file_args}")
-    env = None
-    if n_envs == 1:
-        env = make_env()
-    else:
-        env = make_vec_env(make_env, n_envs=n_envs)
-        if monitor:
-            env = VecMonitor(env)
-
-    return env
-
-def create_eval_file_args(file_args: Dict[str, Any]) -> Dict[str, Any]:
-    """Create file arguments for evaluation environment."""
-    eval_file_args = file_args.copy()
-    # Modify any parameters specific to evaluation if needed
-    eval_file_args["seed"] += 1000  # offset seed for evaluation
-    eval_file_args["use_oracle"] = False  # disable oracle during evaluation
-    return eval_file_args
-
-def mask_fn(env) -> np.ndarray:
-    """Action masking function for the environment."""
-    return env.unwrapped.action_mask()
 
 def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str, Any]] = None):
     """Train the model with given hyperparameters."""
