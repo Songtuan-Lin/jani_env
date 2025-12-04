@@ -1,0 +1,146 @@
+import sys
+import torch
+import numpy as np
+
+from typing import Optional
+from pathlib import Path
+
+from tensordict import TensorDict, TensorDictBase
+from torchrl.data import Bounded, Binary, Categorical, Composite
+from torchrl.envs import EnvBase
+
+# Dynamically add the JANI engine binding directory to sys.path
+current_dir = Path(__file__).resolve().parent
+binding_dir = current_dir / "engine" / "build"
+sys.path.append(str(binding_dir))
+
+from backend import JANIEngine, TarjanOracle
+
+
+class JANIEnv(EnvBase):
+    def __init__(self, 
+                 jani_model_path: str, 
+                 jani_property_path: str = "",
+                 start_states_path: str = "",
+                 objective_path: str = "",
+                 failure_property_path: str = "",
+                 seed: int = 42,
+                 goal_reward: float = 1.0,
+                 failure_reward: float = -1.0,
+                 use_oracle: bool = False,
+                 unsafe_reward: float = -0.01) -> None:
+        super().__init__()
+        self._engine = JANIEngine(jani_model_path, 
+                                  jani_property_path, 
+                                  start_states_path, 
+                                  objective_path, 
+                                  failure_property_path, 
+                                  seed)
+        self._goal_reward: float = goal_reward
+        self._failure_reward: float = failure_reward
+        self._oracle: Optional[TarjanOracle] = None
+        if use_oracle:
+            self._oracle = TarjanOracle(self._engine)
+        self._unsafe_reward: Optional[float] = None
+        if self._oracle is not None:
+            self._unsafe_reward = unsafe_reward
+        
+        self.n_actions = self._engine.get_num_actions()
+        self.obs_dim = self._engine.get_num_constants() + self._engine.get_num_variables()
+
+        # Define action and observation space
+        lower_bounds = self._engine.get_lower_bounds()
+        upper_bounds = self._engine.get_upper_bounds()
+        assert len(lower_bounds) == self.obs_dim, "Lower bounds dimension mismatch"
+        assert len(upper_bounds) == self.obs_dim, "Upper bounds dimension mismatch"
+        self.observation_spec = Composite({
+            "observation": Bounded(
+                low=np.array(lower_bounds), 
+                high=np.array(upper_bounds),
+                shape=(self.obs_dim,), 
+                dtype=torch.float32
+            ), 
+            "action_mask": Binary(
+                n = self.n_actions,
+                shape=(self.n_actions,),
+                dtype = torch.bool
+            )
+        })
+
+        # Action specification
+        self.action_spec = Categorical(self.n_actions)
+
+        # Reward specification
+        self.reward_spec = Bounded(
+            low=self._failure_reward, 
+            high=self._goal_reward,
+            shape=(1,), 
+            dtype=torch.float32
+        )
+
+        # Done specification
+        self.done_spec = Binary(
+            n=1,
+            shape=(1,),
+        )
+
+        # Initialize reset flag
+        self._reseted = False
+
+
+    def action_mask(self) -> torch.Tensor:
+        if not self._reseted:
+            raise RuntimeError("Environment must be reset before getting action mask.")
+        return torch.tensor(self._engine.get_current_action_mask(), dtype=torch.bool)
+
+    def _reset(self, td: TensorDictBase) -> TensorDictBase:
+        state_vec = self._engine.reset()
+        self._reseted = True
+        assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
+        obs = {
+            "observation": torch.tensor(state_vec, dtype=torch.float32),
+            "action_mask": self.action_mask()
+        }
+        return TensorDict(obs, batch_size=())
+    
+    def _step(self, td: TensorDictBase) -> TensorDictBase:
+        if not self._reseted:
+            raise RuntimeError("Environment must be reset before stepping.")
+        action = td.get("action").item()
+        next_state_vec = self._engine.step(action) # The current state should be automatically updated in the engine
+        if self._oracle is not None:
+            assert self._unsafe_reward is not None
+            is_next_state_safe = self._oracle.is_engine_state_safe()
+        
+        # Compute reward and done flag
+        reward = None
+        done = None
+        if self._engine.reach_goal_current():
+            reward = self._goal_reward
+            done = True
+        elif self._engine.reach_failure_current():
+            reward = self._failure_reward
+            done = True
+        elif torch.sum(self.action_mask()) == 0:
+            reward = 0.0
+            done = True
+        else:
+            if self._oracle is not None and not is_next_state_safe:
+                reward = self._unsafe_reward
+            else:
+                reward = 0.0
+            done = False
+
+        # Construct the next tensordict
+        next_td = TensorDict({
+            "observation": torch.tensor(next_state_vec, dtype=torch.float32),
+            "action_mask": self.action_mask(),
+            "done": torch.tensor(done, dtype=torch.bool),
+            "reward": torch.tensor(reward, dtype=torch.float32)
+        }, batch_size=())
+
+        return next_td
+    
+    def _set_seed(self, seed: int | None) -> None:
+        rng = torch.manual_seed(torch.seed)
+        self.rng = rng
