@@ -25,11 +25,13 @@ from utils import create_eval_file_args
 def create_actor(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule:
     """Create the actor network for the policy."""
     n_actions = env.n_actions
+    input_size = env.observation_spec["observation"].shape[0]
     hidden_sizes = hyperparams.get("actor_hidden_sizes", [64, 128])
     dropout = hyperparams.get("actor_dropout", 0.2)
     activation_fn = hyperparams.get("activation_fn", nn.Tanh)
     # Build the actor network
     actor_backbone = MLP(
+        in_features=input_size,
         out_features=n_actions,
         num_cells=hidden_sizes,
         dropout=dropout,
@@ -51,13 +53,15 @@ def create_actor(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule:
     )
     return actor
 
-def create_critic(hyperparams: Dict[str, Any]) -> TensorDictModule:
+def create_critic(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule:
     """Create the critic network for value estimation."""
+    input_size = env.observation_spec["observation"].shape[0]
     hidden_sizes = hyperparams.get("critic_hidden_sizes", [64, 128])
     dropout = hyperparams.get("critic_dropout", 0.2)
     activation_fn = hyperparams.get("activation_fn", nn.Tanh)
     # Build the critic network
     critic_backbone = MLP(
+        in_features=input_size,
         out_features=1,
         num_cells=hidden_sizes,
         dropout=dropout,
@@ -144,19 +148,24 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
     n_eval_episodes = hyperparams.get("n_eval_episodes", 100)
 
     # Create actor and critic
+    print("Creating actor and critic networks...")
     actor = create_actor(hyperparams, env)
-    critic = create_critic(hyperparams)
-
+    critic = create_critic(hyperparams, env)
+    
     # Create loss module
+    print("Creating loss module...")
     loss_module = create_loss_module(hyperparams, actor, critic)
 
     # Create advantage module
+    print("Creating advantage module...")
     advantage_module = create_advantage_module(hyperparams, critic)
 
     # Create data collector
+    print("Creating data collector...")
     collector = create_data_collector(hyperparams, env, actor)
 
     # Create replay buffer
+    print("Creating replay buffer...")
     replay_buffer = create_replay_buffer(hyperparams)
 
     # Create optimizer
@@ -180,12 +189,19 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
         task = progress.add_task("Training PPO Agent", total=hyperparams.get("total_timesteps", 1024000))
 
         for i, td_data in enumerate(collector):
-            for _ in range(n_epochs):
-                # Compute advantages
+            # Compute advantages
+            with torch.no_grad():
                 advantage_module(td_data)
-                # Store in replay buffer
-                date_view = td_data.reshape(-1)
-                replay_buffer.extend(date_view)
+            # Store in replay buffer
+            date_view = td_data.reshape(-1)
+            replay_buffer.empty()
+            replay_buffer.extend(date_view)
+            for _ in range(n_epochs):
+                # # Compute advantages
+                # advantage_module(td_data)
+                # # Store in replay buffer
+                # date_view = td_data.reshape(-1)
+                # replay_buffer.extend(date_view)
                 # Sample from replay buffer
                 for _ in range(n_steps // batch_size):
                     batch_data = replay_buffer.sample(batch_size)
@@ -204,7 +220,7 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
             logs["loss"].append(loss_value.item())
             logs["reward"].append(td_data["next", "reward"].mean().item())
             training_reward_str = f"📊 Average training reward={logs['reward'][-1]: 4.4f} (Init={logs['reward'][0]: 4.4f})"
-            if (i + 1) % 100 == 0:
+            if i % 100 == 0:
                 # Evaluation
                 eval_rewards = []
                 for _ in range(n_eval_episodes):
@@ -213,7 +229,7 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
                         eval_reward = eval_rollout["next", "reward"].sum().item()
                         eval_rewards.append(eval_reward)
                 mean_eval_reward = sum(eval_rewards) / n_eval_episodes
-                eval_reward_str += f" | 🧪 Eval reward={mean_eval_reward: 4.4f}"
+                eval_reward_str = f" | 🧪 Eval reward={mean_eval_reward: 4.4f}"
                 progress.console.print(f"{training_reward_str}{eval_reward_str}")
 
             progress.update(task, advance=td_data.numel())
