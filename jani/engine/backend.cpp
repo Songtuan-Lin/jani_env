@@ -27,6 +27,7 @@ NB_MODULE(backend, m) {
         .def("get_num_variables", &JANIEngine::get_num_variables)
         .def("get_num_constants", &JANIEngine::get_num_constants)
         .def("get_current_action_mask", &JANIEngine::get_current_action_mask)
+        .def("get_action_mask_for_obs", &JANIEngine::get_action_mask_for_obs)
         .def("test_guards_for_action", &JANIEngine::testGuardsForAction)
         .def("test_destinations_for_action", &JANIEngine::testDestinationsForAction)
         .def("reach_goal_current", &JANIEngine::reach_goal_current)

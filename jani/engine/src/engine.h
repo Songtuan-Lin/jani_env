@@ -249,6 +249,11 @@ public:
         return reach_failure(current_state);
     }
 
+    std::vector<bool> get_action_mask_for_obs(const std::vector<double>& obs) {
+        State s = create_state_from_vector(obs);
+        return get_action_mask(s);
+    }
+
     std::vector<bool> get_action_mask(const State &s) {
         std::vector<bool> action_mask;
         for (int action_idx = 0; action_idx < actions.size(); action_idx++) {
@@ -278,8 +283,19 @@ public:
         State new_state;
         // Add constants
         for (size_t i = 0; i < constants.size(); i++) {
-            if (values[i] != std::get<double>(constants[i]->getValue())) {
-                throw std::runtime_error("Constant variable " + constants[i]->getName() + " value mismatch");
+            auto actual_val = constants[i]->getValue();
+            double constant_val;
+            if (std::holds_alternative<int>(actual_val)) {
+                constant_val = static_cast<double>(std::get<int>(actual_val));
+            } else if (std::holds_alternative<double>(actual_val)) {
+                constant_val = std::get<double>(actual_val);
+            } else if (std::holds_alternative<bool>(actual_val)) {
+                constant_val = std::get<bool>(actual_val) ? 1.0 : 0.0;
+            } else {
+                throw std::runtime_error("Unsupported constant variable type");
+            }
+            if (std::abs(values[i] - constant_val) > 1e-6) {
+                throw std::runtime_error("Constant variable " + constants[i]->getName() + " value mismatch: expected " + std::to_string(constant_val) + ", got " + std::to_string(values[i]));
             }
             new_state.setVariable(constants[i]->getName(), constants[i]->clone());
         }

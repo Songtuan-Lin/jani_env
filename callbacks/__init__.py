@@ -44,6 +44,7 @@ class EvalCallback(BaseCallback):
                 episode_rewards = 0.0
                 while not done and not truncated:
                     action_masks = get_action_masks(self.eval_env)
+                    action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
                     action, _ = self.model.predict(obs, action_masks=action_masks)
                     obs, reward, done, truncated, _ = self.eval_env.step(action)
                     episode_rewards += reward

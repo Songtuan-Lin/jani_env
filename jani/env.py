@@ -92,3 +92,8 @@ class JANIEnv(gym.Env):
             raise RuntimeError("Environment must be reset before getting action mask.")
         mask = self._engine.get_current_action_mask()
         return np.array(mask, dtype=np.float32)
+
+    def action_mask_for_obs(self, obs: np.ndarray):
+        # print(f"DEBUG: Getting action mask for obs: {obs}")
+        # print(f"DEBUG: Obs shape: {obs.shape}, Obs dtype: {obs.dtype}")
+        return [self._engine.get_action_mask_for_obs(single_obs.tolist()) for single_obs in obs]
