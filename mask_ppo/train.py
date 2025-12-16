@@ -1,4 +1,5 @@
 import argparse
+import torch
 import numpy as np
 
 from pathlib import Path
@@ -140,6 +141,19 @@ def main():
     parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
 
     args = parser.parse_args()
+
+    # Set seeds for reproducibility
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    
+    # Additional PyTorch seeding for full reproducibility
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+    
+    # Make PyTorch deterministic (may impact performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     file_args = {
         'jani_model': args.jani_model,
