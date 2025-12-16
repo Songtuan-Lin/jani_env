@@ -65,6 +65,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         policy="MlpPolicy",
         env=train_env,
         gradient_steps=10,
+        use_mask=args.use_mask,
         verbose=1
     )
 
@@ -109,6 +110,7 @@ def main():
     parser.add_argument('--n_eval_episodes', type=int, default=50, help="Number of episodes for each evaluation.")
     parser.add_argument('--experiment_name', type=str, default="", help="Name of the experiment.")
     parser.add_argument('--verbose', type=int, default=1, help="Verbosity level.")
+    parser.add_argument('--use_mask', action='store_true', help="Use action masking during training.")
     parser.add_argument('--device', type=str, default='auto', help="Device to use for training (cpu or cuda).")
     parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
     parser.add_argument('--wandb_project', type=str, default="jani_rl", help="Weights & Biases project name.")
