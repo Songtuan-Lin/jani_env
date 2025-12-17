@@ -53,7 +53,10 @@ class JANIEnv(gym.Env):
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
-        state_vec = self._engine.reset()
+        if "idx" in options:
+            state_vec = self._engine.reset_with_index(options["idx"])
+        else:
+            state_vec = self._engine.reset()
         self._reseted = True
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         return np.array(state_vec, dtype=np.float32), {}
@@ -97,3 +100,6 @@ class JANIEnv(gym.Env):
         # print(f"DEBUG: Getting action mask for obs: {obs}")
         # print(f"DEBUG: Obs shape: {obs.shape}, Obs dtype: {obs.dtype}")
         return [self._engine.get_action_mask_for_obs(single_obs.tolist()) for single_obs in obs]
+    
+    def get_init_state_pool_size(self) -> int:
+        return self._engine.get_init_state_pool_size()

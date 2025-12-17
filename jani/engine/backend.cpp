@@ -34,7 +34,9 @@ NB_MODULE(backend, m) {
         .def("reach_failure_current", &JANIEngine::reach_failure_current)
         .def("get_lower_bounds", &JANIEngine::get_lower_bounds)
         .def("get_upper_bounds", &JANIEngine::get_upper_bounds)
+        .def("get_init_state_pool_size", &JANIEngine::get_init_state_pool_size)
         .def("reset", &JANIEngine::reset)
+        .def("reset_with_index", &JANIEngine::reset_with_index)
         .def("step", &JANIEngine::step);
 
     nb::class_<TarjanOracle>(m, "TarjanOracle")

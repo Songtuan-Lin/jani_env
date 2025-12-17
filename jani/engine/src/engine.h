@@ -135,7 +135,8 @@ public:
 class InitStateGenerator {
     // Placeholder for initial state generation logic
     public:
-    virtual State* generateInitialState(std::mt19937& rng) const = 0;
+    virtual const State* generateInitialState(std::mt19937& rng) const = 0;
+    virtual const State* getState(int index) const = 0;
     virtual void addInitialState(std::unique_ptr<State> state) = 0;
     virtual const std::vector<std::unique_ptr<State>>& getInitialStatePool() const = 0;
 };
@@ -152,13 +153,20 @@ public:
         initial_states_pool.push_back(std::move(state));
     }
 
-    State* generateInitialState(std::mt19937& rng) const override {
+    const State* generateInitialState(std::mt19937& rng) const override {
         if (initial_states_pool.empty()) {
             throw std::runtime_error("No initial states available");
         }
         // Randomly select an initial state from the pool
         std::uniform_int_distribution<> dist(0, initial_states_pool.size() - 1);
         return initial_states_pool[dist(rng)].get();
+    }
+
+    const State* getState(int index) const override {
+        if (index < 0 || index >= initial_states_pool.size()) {
+            throw std::runtime_error("Initial state index out of bounds");
+        }
+        return initial_states_pool[index].get();
     }
 
     const std::vector<std::unique_ptr<State>>& getInitialStatePool() const override {
@@ -331,9 +339,22 @@ public:
 
     std::vector<double> reset() {
         // Generate a new initial state
-        current_state = *(init_state_generator->generateInitialState(rng));
+        const State* init_state = init_state_generator->generateInitialState(rng);
+        current_state = *init_state;
         #ifndef NDEBUG
         std::cout << "DEBUG: Reset to initial state: " << current_state.toString() << std::endl;
+        #endif
+        return current_state.toRealVector();
+    }
+
+    std::vector<double> reset_with_index(int index) {
+        const State* init_state = init_state_generator->getState(index);
+        if (init_state == nullptr) {
+            throw std::runtime_error("Initial state index out of bounds: " + std::to_string(index));
+        }
+        current_state = *init_state;
+        #ifndef NDEBUG
+        std::cout << "DEBUG: Reset to initial state (index " << index << "): " << current_state.toString() << std::endl;
         #endif
         return current_state.toRealVector();
     }
@@ -456,6 +477,10 @@ public:
             upper_bounds.push_back(v->getUpperBound());
         }
         return upper_bounds;
+    }
+
+    int get_init_state_pool_size() const {
+        return init_state_generator->getInitialStatePool().size();
     }
 
     // For testing purposes

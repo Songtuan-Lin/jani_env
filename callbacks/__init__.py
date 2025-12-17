@@ -67,6 +67,46 @@ class EvalCallback(BaseCallback):
         return True
 
 
+class SafetyEvalCallback(BaseCallback):
+    """Custom safety evaluation callback."""
+
+    def __init__(self, safety_eval_env, eval_freq: int):
+        super().__init__()
+        self.safety_eval_env = safety_eval_env
+        self.eval_freq = eval_freq
+
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            init_pool_size = self.safety_eval_env.get_init_state_pool_size()
+            safety_rates = []
+            for idx in range(init_pool_size):
+                obs, _ = self.safety_eval_env.reset(options={"idx": idx})
+                done = False
+                truncated = False
+                unsafe_steps = 0
+                total_steps = 0
+                while not done and not truncated:
+                    action_masks = get_action_masks(self.safety_eval_env)
+                    action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
+                    action, _ = self.model.predict(obs, action_masks=action_masks)
+                    obs, reward, done, truncated, info = self.safety_eval_env.step(action)
+                    if reward == -0.01:
+                        # reward -0.01 indicates an unsafe step
+                        unsafe_steps += 1
+                    total_steps += 1
+                safety_rate = 1.0 - (unsafe_steps / total_steps) if total_steps > 0 else 1.0
+                safety_rates.append(safety_rate)
+            safety_rate = np.mean(safety_rates)
+            if WANDB_AVAILABLE and wandb.run is not None:
+                wandb.log({
+                    'safety_eval/safety_rate': safety_rate,
+                    'safety_eval/timesteps': self.n_calls
+                })
+            self.logger.record('safety_eval/safety_rate', safety_rate)
+            self.logger.record('safety_eval/timesteps', self.n_calls)
+        return True
+
+
 class WandbCallback(BaseCallback):
     """Custom callback for Weights & Biases logging."""
     
