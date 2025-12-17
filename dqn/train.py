@@ -67,10 +67,12 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         env=train_env,
         gradient_steps=10,
         use_mask=args.use_mask,
-        verbose=1
+        seed=args.seed,
+        verbose=args.verbose
     )
 
     callbacks = []
+    
     # Create evaluation environment
     eval_file_args = create_eval_file_args(file_args)
     print("Creating evaluation environment...")
@@ -82,6 +84,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         best_model_save_path=str(model_save_dir / "best_model")
     )
     callbacks.append(eval_callback)
+
     # Create safety evaluation environment and callback
     safety_eval_file_args = create_safety_eval_file_args(file_args)
     safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
