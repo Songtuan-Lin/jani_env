@@ -75,9 +75,24 @@ class SafetyEvalCallback(BaseCallback):
         self.safety_eval_env = safety_eval_env
         self.eval_freq = eval_freq
 
+    def _unwrap_to_jani_env(self, env):
+        """Helper method to unwrap environment to get JaniEnv."""
+        unwrapped_env = env
+        while hasattr(unwrapped_env, 'env'):
+            unwrapped_env = unwrapped_env.env
+        if hasattr(unwrapped_env, 'unwrapped'):
+            unwrapped_env = unwrapped_env.unwrapped
+        return unwrapped_env
+
     def _on_step(self) -> bool:
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
-            init_pool_size = self.safety_eval_env.get_init_state_pool_size()
+            if hasattr(self.safety_eval_env, 'envs'):
+                # Vectorized environment - get first individual environment
+                unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env.envs[0])
+            else:
+                # Single environment
+                unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env)
+            init_pool_size = unwrapped_env.get_init_state_pool_size()
             safety_rates = []
             for idx in range(init_pool_size):
                 obs, _ = self.safety_eval_env.reset(options={"idx": idx})
@@ -89,8 +104,8 @@ class SafetyEvalCallback(BaseCallback):
                     action_masks = get_action_masks(self.safety_eval_env)
                     action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
                     action, _ = self.model.predict(obs, action_masks=action_masks)
-                    obs, reward, done, truncated, info = self.safety_eval_env.step(action)
-                    if reward == -0.01:
+                    obs, reward, done, truncated, _ = self.safety_eval_env.step(action)
+                    if reward == unwrapped_env.get_unsafe_reward():
                         # reward -0.01 indicates an unsafe step
                         unsafe_steps += 1
                     total_steps += 1

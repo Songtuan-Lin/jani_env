@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from callbacks import EvalCallback
+from callbacks import EvalCallback, SafetyEvalCallback
 from jani.env import JANIEnv
-from utils import create_env, create_eval_file_args, mask_fn
+from utils import create_env, create_eval_file_args, create_safety_eval_file_args
 
 from .model import MaskedDQN
 
@@ -82,6 +82,14 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         best_model_save_path=str(model_save_dir / "best_model")
     )
     callbacks.append(eval_callback)
+    # Create safety evaluation environment and callback
+    safety_eval_file_args = create_safety_eval_file_args(file_args)
+    safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
+    safety_eval_callback = SafetyEvalCallback(
+        safety_eval_env=safety_eval_env,
+        eval_freq=args.eval_freq
+    )
+    callbacks.append(safety_eval_callback)
 
     # Start training
     model.learn(

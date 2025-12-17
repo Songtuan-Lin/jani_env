@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from callbacks import EvalCallback
+from callbacks import EvalCallback, SafetyEvalCallback
 from jani.env import JANIEnv
-from utils import create_env, create_eval_file_args, mask_fn
+from utils import create_env, create_eval_file_args, create_safety_eval_file_args
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
@@ -107,6 +107,15 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     )
     callbacks.append(eval_callback)
 
+    # Create safety evaluation environment and callback
+    safety_eval_file_args = create_safety_eval_file_args(file_args)
+    safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
+    safety_eval_callback = SafetyEvalCallback(
+        safety_eval_env=safety_eval_env,
+        eval_freq=args.eval_freq
+    )
+    callbacks.append(safety_eval_callback)
+
     # Start training
     model.learn(
         total_timesteps=args.total_timesteps,
@@ -114,6 +123,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         tb_log_name="PPO",
         reset_num_timesteps=reset_timesteps
     )
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")

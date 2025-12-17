@@ -103,3 +103,7 @@ class JANIEnv(gym.Env):
     
     def get_init_state_pool_size(self) -> int:
         return self._engine.get_init_state_pool_size()
+    
+    def get_unsafe_reward(self) -> Optional[float]:
+        assert self._unsafe_reward is not None, "Unsafe reward is not defined."
+        return self._unsafe_reward
