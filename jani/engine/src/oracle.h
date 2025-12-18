@@ -17,7 +17,7 @@ class TarjanOracle {
     std::unordered_map<State, bool, StateHasher> cache;
     bool tarjan_dfs(TarjanNode* node, int index,
                     std::vector<State>& stack,
-                    std::unordered_map<State, TarjanNode*, StateHasher>& on_stack_map);
+                    std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher>& on_stack_map);
 public:
     TarjanOracle(JANIEngine* eng) : engine(eng) {}
     bool isStateSafe(const State& state) {
@@ -27,9 +27,9 @@ public:
         // Perform Tarjan's algorithm starting from this state
         std::vector<State> stack;
         // Check if a state is on the stack
-        std::unordered_map<State, TarjanNode*, StateHasher> on_stack_map;
-        TarjanNode *node = new TarjanNode(state);
-        bool safe = tarjan_dfs(node, 0, stack, on_stack_map);
+        std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> on_stack_map;
+        std::unique_ptr<TarjanNode> node = std::make_unique<TarjanNode>(state);
+        bool safe = tarjan_dfs(node.get(), 0, stack, on_stack_map);
         // int result = safe ? 1 : 0;
         cache[state] = safe;
         #ifndef NDEBUG
