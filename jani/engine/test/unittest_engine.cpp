@@ -292,7 +292,7 @@ TEST_F(EngineTest, InitialStateGeneration) {
     const int num_samples = 100;
     std::unordered_set<State, StateHasher> samples;
     for (int i = 0; i < num_samples; ++i) {
-        State *state = init_generator->generateInitialState(rng);
+        const State *state = init_generator->generateInitialState(rng);
         samples.insert(*state);
     }
     // Check that all samples are among the defined initial states

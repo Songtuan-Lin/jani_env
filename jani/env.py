@@ -53,7 +53,7 @@ class JANIEnv(gym.Env):
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
-        if "idx" in options:
+        if options is not None and "idx" in options:
             state_vec = self._engine.reset_with_index(options["idx"])
         else:
             state_vec = self._engine.reset()

@@ -49,11 +49,12 @@ bool TarjanOracle::tarjan_dfs(
                     // std::cout << "  DEBUG: Successor state is on stack: " << succ_state.toString() << std::endl;
                     // Successor is on stack, update lowlink
                     TarjanNode* succ_node = on_stack_map[succ_state];
-                    node->lowlink = std::min(node->lowlink, succ_node->lowlink);
+                    node->lowlink = std::min(node->lowlink, succ_node->index);
                 } else {
                     // Successor not on stack
                     TarjanNode* succ_node = new TarjanNode(succ_state);
                     bool succ_safe = tarjan_dfs(succ_node, index + 1, stack, on_stack_map);
+                    node->lowlink = std::min(node->lowlink, succ_node->lowlink);
                     if (!succ_safe) {
                         is_safe_action = false;
                         break; // No need to check other successors for this action

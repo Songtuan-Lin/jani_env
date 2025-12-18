@@ -57,10 +57,11 @@ def create_eval_file_args(file_args: Dict[str, Any]) -> Dict[str, Any]:
     eval_file_args["use_oracle"] = False  # disable oracle during evaluation
     return eval_file_args
 
-def create_safety_eval_file_args(file_args: Dict[str, Any]) -> Dict[str, Any]:
+def create_safety_eval_file_args(file_args: Dict[str, Any], args: Dict[str, Any]) -> Dict[str, Any]:
     """Create file arguments for safety evaluation environment."""
     safety_eval_file_args = file_args.copy()
     # Modify any parameters specific to safety evaluation if needed
+    safety_eval_file_args["start_states"] = args.eval_start_states # use different start states for safety evaluation
     safety_eval_file_args["seed"] += 2000  # offset seed for safety evaluation
     safety_eval_file_args["use_oracle"] = True  # enable oracle during safety evaluation
     return safety_eval_file_args

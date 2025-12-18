@@ -86,6 +86,7 @@ class SafetyEvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            print("Starting safety evaluation...")
             if hasattr(self.safety_eval_env, 'envs'):
                 # Vectorized environment - get first individual environment
                 unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env.envs[0])
@@ -95,6 +96,7 @@ class SafetyEvalCallback(BaseCallback):
             init_pool_size = unwrapped_env.get_init_state_pool_size()
             safety_rates = []
             for idx in range(init_pool_size):
+                print(f"    Evaluating safety from initial state index: {idx}")
                 obs, _ = self.safety_eval_env.reset(options={"idx": idx})
                 done = False
                 truncated = False
@@ -107,7 +109,10 @@ class SafetyEvalCallback(BaseCallback):
                     obs, reward, done, truncated, _ = self.safety_eval_env.step(action)
                     if reward == unwrapped_env.get_unsafe_reward():
                         # reward -0.01 indicates an unsafe step
+                        print(f"        Step {total_steps}: Unsafe step taken.")
                         unsafe_steps += 1
+                    else:
+                        print(f"        Step {total_steps}: Safe step.")
                     total_steps += 1
                 safety_rate = 1.0 - (unsafe_steps / total_steps) if total_steps > 0 else 1.0
                 safety_rates.append(safety_rate)

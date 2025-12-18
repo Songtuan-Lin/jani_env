@@ -108,7 +108,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     callbacks.append(eval_callback)
 
     # Create safety evaluation environment and callback
-    safety_eval_file_args = create_safety_eval_file_args(file_args)
+    safety_eval_file_args = create_safety_eval_file_args(file_args, args)
     safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
     safety_eval_callback = SafetyEvalCallback(
         safety_eval_env=safety_eval_env,
@@ -132,6 +132,7 @@ def main():
     parser.add_argument('--start_states', type=str, default="", help="Path to the start states file.")
     parser.add_argument('--objective', type=str, default="", help="Path to the objective file.")
     parser.add_argument('--failure_property', type=str, default="", help="Path to the failure property file.")
+    parser.add_argument('--eval_start_states', type=str, default="", help="Path to the evaluation start states file.")
     parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
     parser.add_argument('--use_oracle', action='store_true', help="Use Tarjan oracle for unsafe state detection.")
