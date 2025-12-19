@@ -97,7 +97,7 @@ class SafetyEvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
-            print("Starting safety evaluation...")
+            print(f"Starting safety evaluation... (Timesteps: {self.n_calls})")
             if hasattr(self.safety_eval_env, 'envs'):
                 # Vectorized environment - get first individual environment
                 unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env.envs[0])
