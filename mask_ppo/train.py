@@ -68,7 +68,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     if hyperparams is None:
         hyperparams = {
             'learning_rate': 3e-4,
-            'n_steps': 2048,
+            'n_steps': args.n_steps,
             'batch_size': 64,
             'n_epochs': 10,
             'gamma': 0.99,
@@ -108,13 +108,15 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     callbacks.append(eval_callback)
 
     # Create safety evaluation environment and callback
-    safety_eval_file_args = create_safety_eval_file_args(file_args, args)
-    safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
-    safety_eval_callback = SafetyEvalCallback(
-        safety_eval_env=safety_eval_env,
-        eval_freq=args.eval_freq
-    )
-    callbacks.append(safety_eval_callback)
+    if args.eval_safety:
+        assert args.eval_start_states != "", "Evaluation start states file must be provided for safety evaluation."
+        safety_eval_file_args = create_safety_eval_file_args(file_args, args)
+        safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
+        safety_eval_callback = SafetyEvalCallback(
+            safety_eval_env=safety_eval_env,
+            eval_freq=args.eval_freq
+        )
+        callbacks.append(safety_eval_callback)
 
     # Start training
     model.learn(
@@ -140,6 +142,7 @@ def main():
     parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
     parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
     parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
+    parser.add_argument('--n_steps', type=int, default=256, help="Number of steps per update.")
     parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
     parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save models.")
     parser.add_argument('--eval_freq', type=int, default=2048, help="Evaluation frequency in timesteps.")
@@ -148,6 +151,7 @@ def main():
     parser.add_argument('--verbose', type=int, default=1, help="Verbosity level.")
     parser.add_argument('--device', type=str, default='auto', help="Device to use for training (cpu or cuda).")
     parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
+    parser.add_argument('--eval_safety', action='store_true', help="Enable safety evaluation during training.")
     parser.add_argument('--wandb_project', type=str, default="jani_rl", help="Weights & Biases project name.")
     parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
 
