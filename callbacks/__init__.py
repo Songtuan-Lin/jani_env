@@ -106,7 +106,7 @@ class SafetyEvalCallback(BaseCallback):
                 unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env)
             init_pool_size = unwrapped_env.get_init_state_pool_size()
             safety_rates = []
-            snap(" Before safety eval ")
+            # snap(" Before safety eval ")
             for idx in range(init_pool_size):  
                 # print(f"    Evaluating safety from initial state index: {idx}")
                 # snap("   Before eval initial state ")
@@ -139,7 +139,7 @@ class SafetyEvalCallback(BaseCallback):
                 safety_rate = 1.0 - (unsafe_steps / total_steps) if total_steps > 0 else 1.0
                 safety_rates.append(safety_rate)
                 # snap(" After eval initial state ")
-            snap(" After safety eval ")
+            # snap(" After safety eval ")
             safety_rate = np.mean(safety_rates)
             if WANDB_AVAILABLE and wandb.run is not None:
                 wandb.log({
