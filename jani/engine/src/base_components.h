@@ -9,6 +9,16 @@
 #include <boost/container_hash/hash.hpp>
 
 
+struct Condition {
+    enum Operator { LESS_THAN, LESS_EQUAL, EQUAL, GREATER_EQUAL, GREATER_THAN };
+    Operator op;
+    std::string variable_name;
+    // Always cast this value to double as it will be used as an input to NNs
+    double value;
+    Condition(Operator t, const std::string& var_name, double v) : op(t), variable_name(var_name), value(v) {}
+};
+
+
 class Action {
     int id;
     std::string label;
