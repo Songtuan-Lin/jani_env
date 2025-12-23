@@ -15,7 +15,7 @@ public:
     virtual std::variant<int, double, bool> eval(const State& ctx_state) const = 0;
     // TODO: Change to returning unique_ptr later
     static Expression* construct(const nlohmann::json& json_obj);
-    std::vector<Condition> extractConditions() const = 0;
+    virtual std::vector<Condition> extractConditions() const = 0;
     // Functions for debugging
     virtual void debugPrintEval(const State& ctx_state) const = 0;
 };

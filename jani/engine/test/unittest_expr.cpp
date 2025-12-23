@@ -201,3 +201,280 @@ TEST(ExpressionEvalTest, LogicalExpressionEval) {
     EXPECT_EQ(std::get<bool>(val), false); // false AND false = false
     delete expr;
 }
+
+TEST(ExpressionConditionsExtractTest, EqualityTest) {
+    nlohmann::json equality_expr = {
+        {"left", "x"},
+        {"right", 5},
+        {"op", "="}
+    };
+    Expression* expr = Expression::construct(equality_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 1);
+    EXPECT_EQ(conditions[0].op, Condition::EQUAL);
+    EXPECT_EQ(conditions[0].variable_name, "x");
+    EXPECT_EQ(conditions[0].value, 5.0);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, EqualityTestBoolConst) {
+    nlohmann::json equality_expr = {
+        {"left", "flag"},
+        {"right", true},
+        {"op", "="}
+    };
+    Expression* expr = Expression::construct(equality_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 1);
+    EXPECT_EQ(conditions[0].op, Condition::EQUAL);
+    EXPECT_EQ(conditions[0].variable_name, "flag");
+    EXPECT_EQ(conditions[0].value, 1.0);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, LessThanTest) {
+    nlohmann::json less_than_expr = {
+        {"left", "y"},
+        {"right", 10},
+        {"op", "<"}
+    };
+    Expression* expr = Expression::construct(less_than_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 1);
+    EXPECT_EQ(conditions[0].op, Condition::LESS_THAN);
+    EXPECT_EQ(conditions[0].variable_name, "y");
+    EXPECT_EQ(conditions[0].value, 10.0);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, LessThanOrEqualTest) {
+    nlohmann::json less_equal_expr = {
+        {"left", "z"},
+        {"right", 20.5},
+        {"op", "≤"}
+    };
+    Expression* expr = Expression::construct(less_equal_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 1);
+    EXPECT_EQ(conditions[0].op, Condition::LESS_EQUAL);
+    EXPECT_EQ(conditions[0].variable_name, "z");
+    EXPECT_EQ(conditions[0].value, 20.5);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, GreaterThanTest) {
+    nlohmann::json greater_than_expr = {
+        {"left", 15},
+        {"right", "a"},
+        {"op", "<"}
+    };
+    Expression* expr = Expression::construct(greater_than_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 1);
+    EXPECT_EQ(conditions[0].op, Condition::GREATER_THAN);
+    EXPECT_EQ(conditions[0].variable_name, "a");
+    EXPECT_EQ(conditions[0].value, 15.0);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, GreaterThanOrEqualTest) {
+    nlohmann::json greater_equal_expr = {
+        {"left", 7.5},
+        {"right", "b"},
+        {"op", "≤"}
+    };
+    Expression* expr = Expression::construct(greater_equal_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 1);
+    EXPECT_EQ(conditions[0].op, Condition::GREATER_EQUAL);
+    EXPECT_EQ(conditions[0].variable_name, "b");
+    EXPECT_EQ(conditions[0].value, 7.5);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, AndExpressionTest) {
+    nlohmann::json and_expr = {
+        {
+            "left", {
+                {"left", "x"},
+                {"right", 5},
+                {"op", "="}
+            }
+        },
+        {
+            "right", {
+                {"left", "y"},
+                {"right", 10},
+                {"op", "<"}
+            }
+        },
+        {"op", "∧"}
+    };
+    Expression* expr = Expression::construct(and_expr);
+    auto conditions = expr->extractConditions();
+    // Add assertions to check the extracted conditions
+    ASSERT_EQ(conditions.size(), 2);
+    EXPECT_EQ(conditions[0].op, Condition::EQUAL);
+    EXPECT_EQ(conditions[0].variable_name, "x");
+    EXPECT_EQ(conditions[0].value, 5.0);
+    EXPECT_EQ(conditions[1].op, Condition::LESS_THAN);
+    EXPECT_EQ(conditions[1].variable_name, "y");
+    EXPECT_EQ(conditions[1].value, 10.0);
+    delete expr;
+}
+
+TEST(ExpressionConditionsExtractTest, NestedAndExpressionTest) {
+    nlohmann::json nested_and_expr = nlohmann::json::parse(R"({
+        "left": {
+            "left": {
+                "left": {
+                    "left": {
+                        "left": "location_load_0",
+                        "op": "=",
+                        "right": 0
+                    },
+                    "op": "∧",
+                    "right": {
+                        "left": "location_load_1",
+                        "op": "=",
+                        "right": 0
+                    }
+                },
+                "op": "∧",
+                "right": {
+                    "left": {
+                        "left": "location_load_2",
+                        "op": "=",
+                        "right": 0
+                    },
+                    "op": "∧",
+                    "right": {
+                        "left": {
+                            "left": "location_load_3",
+                            "op": "=",
+                            "right": 0
+                        },
+                        "op": "∧",
+                        "right": {
+                            "left": "location_load_4",
+                            "op": "=",
+                            "right": 0
+                        }
+                    }
+                }
+            },
+            "op": "∧",
+            "right": {
+                "left": {
+                    "left": {
+                        "left": "location_load_5",
+                        "op": "=",
+                        "right": 0
+                    },
+                    "op": "∧",
+                    "right": {
+                        "left": {
+                            "left": "location_load_6",
+                            "op": "=",
+                            "right": 0
+                        },
+                        "op": "∧",
+                        "right": {
+                            "left": "location_load_7",
+                            "op": "=",
+                            "right": 0
+                        }
+                    }
+                },
+                "op": "∧",
+                "right": {
+                    "left": {
+                        "left": "location_load_8",
+                        "op": "=",
+                        "right": 0
+                    },
+                    "op": "∧",
+                    "right": {
+                        "left": {
+                            "left": "location_load_9",
+                            "op": "=",
+                            "right": 17
+                        },
+                        "op": "∧",
+                        "right": {
+                            "left": "truck_0",
+                            "op": "=",
+                            "right": 9
+                        }
+                    }
+                }
+            }
+        },
+        "op": "∧",
+        "right": {
+            "left": 0,
+            "op": "≤",
+            "right": "aux_vel"
+        }
+    })");
+    Expression* expr = Expression::construct(nested_and_expr);
+    auto conditions = expr->extractConditions();
+    EXPECT_EQ(conditions.size(), 12);
+    // Add assertions to check the extracted conditions
+    for (auto cond = conditions.begin(); cond != conditions.end(); ++cond) {
+        if (cond->variable_name == "location_load_0") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_1") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_2") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_3") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_4") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_5") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_6") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_7") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_8") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        } else if (cond->variable_name == "location_load_9") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 17.0);
+        } else if (cond->variable_name == "truck_0") {
+            EXPECT_EQ(cond->op, Condition::EQUAL);
+            EXPECT_EQ(cond->value, 9.0);
+        } else if (cond->variable_name == "aux_vel") {
+            EXPECT_EQ(cond->op, Condition::GREATER_EQUAL);
+            EXPECT_EQ(cond->value, 0.0);
+        }
+    }
+    std::vector<std::string> expected_var_names = {
+        "location_load_0", "location_load_1", "location_load_2", "location_load_3",
+        "location_load_4", "location_load_5", "location_load_6", "location_load_7",
+        "location_load_8", "location_load_9", "truck_0", "aux_vel"
+    };
+    for (const auto& var_name : expected_var_names) {
+        auto it = std::find_if(conditions.begin(), conditions.end(),
+            [&var_name](const Condition& cond) { return cond.variable_name == var_name; });
+        EXPECT_NE(it, conditions.end()) << "Condition for variable " << var_name << " not found.";
+    }
+    delete expr;
+}
