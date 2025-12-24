@@ -7,6 +7,7 @@
 #include <random>
 #include <filesystem>
 #include <memory>
+#include <cmath>
 #include "nlohmann/json.hpp"
 #include "base_components.h"
 #include "expressions.h"
@@ -481,6 +482,133 @@ public:
 
     int get_init_state_pool_size() const {
         return init_state_generator->getInitialStatePool().size();
+    }
+
+    std::vector<double> extract_goal_condition() {
+        std::vector<Condition> conditions = goal_expression->extractConditions();
+        std::vector<double> condition_values;
+        // Create a mapping from variable names to conditions (to make lookup easier)
+        std::unordered_map<std::string, Condition> condition_map;
+        for (const auto& cond : conditions) {
+            condition_map[cond.variable_name] = cond;
+        }
+        // Push all condition values in the order of variables
+        for (const auto& var : variables) {
+            if (condition_map.find(var->getName()) == condition_map.end())
+                continue; // No condition on this variable
+            Condition& cond = condition_map[var->getName()];
+            condition_values.push_back(cond.value);
+        }
+        return condition_values;
+    }
+
+    std::vector<double> extract_condition_from_state_vector(const std::vector<double>& state_vector) {
+        std::vector<Condition> conditions = goal_expression->extractConditions();
+        // Create a mapping from variable names to conditions (to make lookup easier)
+        std::unordered_map<std::string, Condition> condition_map;
+        for (const auto& cond : conditions) {
+            condition_map[cond.variable_name] = cond;
+        }
+        std::vector<double> condition_values;
+        size_t num_visited_var = 0; // Used to track number of variables processed
+        for (const auto& var : variables) {
+            if (condition_map.find(var->getName()) == condition_map.end())
+                continue; // No condition on this variable
+            num_visited_var++;
+            double upper_bound = var->getUpperBound();
+            double lower_bound = var->getLowerBound();
+            Condition& cond = condition_map[var->getName()];
+            double current_var_value = state_vector[var->getId()];
+            switch (cond.op) {
+                case Condition::LESS_THAN:
+                    if (current_var_value > upper_bound) {
+                        throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is greater than variable " + var->getName() + " upper bound " + std::to_string(upper_bound));
+                    }
+                    // Randomly sample a value greater than the current variable's value
+                    std::uniform_real_distribution<double> dist_le(
+                        std::nextafter(current_var_value, std::numeric_limits<double>::infinity()), 
+                        upper_bound
+                    );
+                    condition_values.push_back(dist_le(rng));
+                    break;
+                case Condition::LESS_EQUAL:
+                    if (current_var_value > upper_bound) {
+                        throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is greater than variable " + var->getName() + " upper bound " + std::to_string(upper_bound));
+                    }
+                    // Randomly sample a value greater than or equal to the current variable's value
+                    std::uniform_real_distribution<double> dist_leq(current_var_value, upper_bound);
+                    condition_values.push_back(dist_leq(rng));
+                    break;
+                case Condition::EQUAL:
+                    if (current_var_value < lower_bound || current_var_value > upper_bound) {
+                        throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is out of bounds for variable " + var->getName());
+                    }
+                    // Use the current variable's value
+                    condition_values.push_back(current_var_value);
+                    break;
+                case Condition::GREATER_EQUAL:
+                    if (current_var_value < lower_bound) {
+                        throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is less than variable " + var->getName() + " lower bound " + std::to_string(lower_bound));
+                    }
+                    // Randomly sample a value less than or equal to the current variable's value
+                    std::uniform_real_distribution<double> dist_geq(
+                        lower_bound, 
+                        std::nextafter(current_var_value, std::numeric_limits<double>::infinity())
+                    );
+                    condition_values.push_back(dist_geq(rng));
+                    break;
+                case Condition::GREATER_THAN:
+                    if (current_var_value < lower_bound) {
+                        throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is less than variable " + var->getName() + " lower bound " + std::to_string(lower_bound));
+                    }
+                    // Randomly sample a value less than the current variable's value
+                    std::uniform_real_distribution<double> dist_gt(lower_bound, current_var_value);
+                    condition_values.push_back(dist_gt(rng));
+                    break;
+                default:
+                    throw std::runtime_error("Unknown condition operator");
+            };
+            if (num_visited_var != conditions.size())
+                throw std::runtime_error("Not all condition variables were found in the state vector");
+            return condition_values;
+        }
+        // Resize to hold all condition values
+        condition_values.resize(conditions.size());
+        for (auto it = conditions.begin(); it != conditions.end(); ++it) {
+            const Variable *var = s.getSingleVariable(it->variable_name);
+            std::variant<int, double, bool> val = var->getValue();
+            double real_val;
+            if (std::holds_alternative<int>(val)) {
+                real_val = static_cast<double>(std::get<int>(val));
+            } else if (std::holds_alternative<double>(val)) {
+                real_val = std::get<double>(val);
+            } else if (std::holds_alternative<bool>(val)) {
+                real_val = std::get<bool>(val) ? 1.0 : 0.0;
+            } else {
+                throw std::runtime_error("Variable type cannot be converted to real number");
+            }
+            Condition::Operator op = it->op;
+            switch (op) {
+                case Condition::LESS_THAN:
+                    condition_values[it - conditions.begin()] = real_val - it->value;
+                    break;
+                case Condition::LESS_EQUAL:
+                    condition_values[it - conditions.begin()] = real_val - it->value;
+                    break;
+                case Condition::EQUAL:
+                    condition_values[it - conditions.begin()] = std::abs(real_val - it->value);
+                    break;
+                case Condition::GREATER_EQUAL:
+                    condition_values[it - conditions.begin()] = it->value - real_val;
+                    break;
+                case Condition::GREATER_THAN:
+                    condition_values[it - conditions.begin()] = it->value - real_val;
+                    break;
+                default:
+                    throw std::runtime_error("Unknown condition operator");
+            }
+        }
+        return condition_values;
     }
 
     // For testing purposes
