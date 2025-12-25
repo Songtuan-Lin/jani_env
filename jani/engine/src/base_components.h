@@ -15,7 +15,17 @@ struct Condition {
     std::string variable_name;
     // Always cast this value to double as it will be used as an input to NNs
     double value;
+    Condition() = default;
     Condition(Operator t, const std::string& var_name, double v) : op(t), variable_name(var_name), value(v) {}
+    Condition(const Condition& other) : op(other.op), variable_name(other.variable_name), value(other.value) {}
+    Condition& operator=(const Condition& other) {
+        if (this != &other) {
+            op = other.op;
+            variable_name = other.variable_name;
+            value = other.value;
+        }
+        return *this;
+    }
 };
 
 

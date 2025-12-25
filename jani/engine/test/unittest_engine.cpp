@@ -284,6 +284,22 @@ protected:
         // Add an action
         std::unique_ptr<Action> action = engine.testConstructAction("push", 0);
         engine.testAddAction(std::move(action));
+        // Set objective expression
+        nlohmann::json objective_json = nlohmann::json::parse(R"(
+        {
+            "goal": {
+                "exp": {
+                    "left": 1000,
+                    "op": "≤",
+                    "right": "episode"
+                },
+                "op": "state-condition"
+            },
+            "op": "objective"
+        }
+        )");
+        std::unique_ptr<Expression> objective_expr = engine.testConstructObjectiveExpression(objective_json);
+        engine.testSetObjectiveExpression(std::move(objective_expr));
     }
 };
 
@@ -472,7 +488,8 @@ TEST_F(EngineTest, StepTest) {
         (3.0 + (-9.8067 * 0.3 - 4)) + (-9.8067 * 0.3 - 4)};
     next_state_vector = engine.step(0); // Action index 0 corresponds to "push"
     for (size_t i = 0; i < next_state_vector.size(); ++i) {
-        EXPECT_NEAR(next_state_vector[i], next_target_state_vector[i], 1e-10) << "Mismatch at index " << i << ": expected " << next_target_state_vector[i] << ", got " << next_state_vector[i];
+        EXPECT_DOUBLE_EQ(next_state_vector[i], next_target_state_vector[i]) << "Mismatch at index " << i << ": expected " << next_target_state_vector[i] << ", got " << next_state_vector[i];
+        // EXPECT_NEAR(next_state_vector[i], next_target_state_vector[i], 1e-10) << "Mismatch at index " << i << ": expected " << next_target_state_vector[i] << ", got " << next_state_vector[i];
     }
 }
 
@@ -487,6 +504,68 @@ TEST_F(EngineTest, ConstructionTest) {
     EXPECT_EQ(engine_from_file.get_num_variables(), 3);
     EXPECT_EQ(engine_from_file.get_num_constants(), 8);
     EXPECT_EQ(engine_from_file.get_num_actions(), 2);
+}
+
+TEST_F(EngineTest, GoalConditionTest) {
+    std::vector<double> goal_conditions = engine.extract_goal_condition();
+    EXPECT_EQ(goal_conditions.size(), 1);
+    EXPECT_DOUBLE_EQ(goal_conditions[0], 1000.0);
+}
+
+TEST_F(EngineTest, ConditionFromStateTest) {
+    State s;
+    s.setVariable("episode", std::make_unique<IntVariable>(2, "episode", 0, 4000, 10));
+    s.setVariable("height", std::make_unique<RealVariable>(3, "height", 0, 1000, 7.0));
+    s.setVariable("velocity", std::make_unique<RealVariable>(4, "velocity", -100, 100, 3.0));
+    s.setVariable("gravity", std::make_unique<RealConstant>(0, "gravity", -9.8067));
+    s.setVariable("timestep", std::make_unique<RealConstant>(1, "timestep", 0.3));
+
+    std::vector<double> state_vector = s.toRealVector();
+    std::vector<double> conditions = engine.extract_condition_from_state_vector(state_vector);
+    EXPECT_EQ(conditions.size(), 1);
+    EXPECT_LE(conditions[0], 10.0);
+}
+
+TEST_F(EngineTest, ComplexConditionsTest) {
+    nlohmann::json objective_json = nlohmann::json::parse(R"(
+    {
+        "goal": {
+            "exp": {
+                "left": {
+                    "left": 1000,
+                    "op": "≤",
+                    "right": "episode"
+                },
+                "op": "∧",
+                "right": {
+                    "left": "height",
+                    "op": "=",
+                    "right": 500
+                }
+            },
+            "op": "state-condition"
+        },
+        "op": "objective"
+    }
+    )");
+    std::unique_ptr<Expression> objective_expr = engine.testConstructObjectiveExpression(objective_json);
+    engine.testSetObjectiveExpression(std::move(objective_expr));
+    std::vector<double> goal_conditions = engine.extract_goal_condition();
+    EXPECT_EQ(goal_conditions.size(), 2);
+    EXPECT_DOUBLE_EQ(goal_conditions[0], 1000.0);
+    EXPECT_DOUBLE_EQ(goal_conditions[1], 500.0);
+
+    State s;
+    s.setVariable("episode", std::make_unique<IntVariable>(2, "episode", 0, 4000, 10));
+    s.setVariable("height", std::make_unique<RealVariable>(3, "height", 0, 1000, 7.0));
+    s.setVariable("velocity", std::make_unique<RealVariable>(4, "velocity", -100, 100, 3.0));
+    s.setVariable("gravity", std::make_unique<RealConstant>(0, "gravity", -9.8067));
+    s.setVariable("timestep", std::make_unique<RealConstant>(1, "timestep", 0.3));
+    std::vector<double> state_vector = s.toRealVector();
+    std::vector<double> conditions = engine.extract_condition_from_state_vector(state_vector);
+    EXPECT_EQ(conditions.size(), 2);
+    EXPECT_LE(conditions[0], 10.0);
+    EXPECT_DOUBLE_EQ(conditions[1], 7.0);
 }
 
 class EngineSimpleAutomatonTest : public ::testing::Test {
