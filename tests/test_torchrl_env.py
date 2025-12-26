@@ -2,7 +2,7 @@ import pytest
 
 import torch
 
-from torchrl.envs import EnvBase
+from torchrl.envs import EnvBase, SerialEnv, ParallelEnv
 from torchrl.data import Bounded, Binary, Categorical, Composite
 from tensordict import TensorDict, TensorDictBase
 
@@ -96,3 +96,60 @@ class TestTorchRLEnvSuite:
             [0.0, 1.0]
         ])
         assert torch.allclose(td["next"]["observation"], expected_obs)
+
+
+class TestTorchRLVectorEnvSuite:
+    @pytest.fixture
+    def serial_env(self):
+        base_env = TestTorchRLEnv
+        return SerialEnv(num_workers=8, create_env_fn=lambda: base_env())
+
+    @pytest.fixture
+    def parallel_env(self):
+        base_env = TestTorchRLEnv
+        return ParallelEnv(num_workers=8, create_env_fn=lambda: base_env())
+
+    def test_serial_env_reset(self, serial_env):
+        td = serial_env.reset()
+        assert td.batch_size == torch.Size([8])
+        assert "observation" in td
+        assert "action_mask" in td
+
+    def test_parallel_env_reset(self, parallel_env):
+        td = parallel_env.reset()
+        assert td.batch_size == torch.Size([8])
+        assert "observation" in td
+        assert "action_mask" in td
+
+    def test_serial_env_step(self, serial_env):
+        serial_env.reset()
+        action = torch.tensor([1, 1, 1, 1, 1, 1, 1, 1])  # Valid actions based on action mask
+        td = TensorDict({"action": action}, batch_size=[8])
+        next_td = serial_env.step(td)
+        assert next_td.batch_size == torch.Size([8])
+        assert "observation" in next_td["next"]
+        assert next_td["next"]["observation"].shape == (8, 2)
+        assert "reward" in next_td["next"]
+        assert "done" in next_td["next"]
+
+    def test_parallel_env_step(self, parallel_env):
+        parallel_env.reset()
+        action = torch.tensor([1, 1, 1, 1, 1, 1, 1, 1])  # Valid actions based on action mask
+        td = TensorDict({"action": action}, batch_size=[8])
+        next_td = parallel_env.step(td)
+        assert next_td.batch_size == torch.Size([8])
+        assert "observation" in next_td["next"]
+        assert "reward" in next_td["next"]
+        assert "done" in next_td["next"]
+    
+    def test_serial_env_rollout(self, serial_env):
+        td = serial_env.rollout(max_steps=5)
+        assert td.batch_size == torch.Size([8, 5])
+        assert "observation" in td["next"]
+        assert td["next"]["observation"].shape == (8, 5, 2)
+
+    def test_parallel_env_rollout(self, parallel_env):
+        td = parallel_env.rollout(max_steps=5)
+        assert td.batch_size == torch.Size([8, 5])
+        assert "observation" in td["next"]
+        assert td["next"]["observation"].shape == (8, 5, 2)
