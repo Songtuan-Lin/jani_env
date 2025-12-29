@@ -30,7 +30,7 @@ class GCSLReplayBuffer:
             x["current_obs"] = x["observation"][torch.arange(batch_size), start_idxs, :]
             # Extract the goal condition based on the reached state at end_idx
             reached_state = x["observation"][torch.arange(batch_size), end_idxs, :]
-            x['goal_conditions'] = self.env.compute_goal_condition(reached_state)
+            x['reached_conditions'] = self.env.extract_reached_conditions(reached_state)
             return x
 
     def __init__(self, buffer_size: int, env, max_horizon: int = 2048):

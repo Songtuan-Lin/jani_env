@@ -7,6 +7,7 @@
 #include <random>
 #include <filesystem>
 #include <memory>
+#include <typeinfo>
 #include <cmath>
 #include "nlohmann/json.hpp"
 #include "base_components.h"
@@ -525,11 +526,25 @@ public:
                         throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is greater than variable " + var->getName() + " upper bound " + std::to_string(upper_bound));
                     }
                     // Randomly sample a value greater than the current variable's value
-                    std::uniform_real_distribution<double> dist_le(
-                        std::nextafter(current_var_value, std::numeric_limits<double>::infinity()), 
-                        upper_bound
-                    );
-                    condition_values.push_back(dist_le(rng));
+                    if (typeid(*var) == typeid(IntVariable)) {
+                        std::uniform_int_distribution<int> dist_le(
+                            static_cast<int>(current_var_value) + 1,
+                            // Don't sample a value that is too far from the current value 
+                            std::min(
+                                static_cast<int>(upper_bound), 
+                                static_cast<int>(current_var_value) + 10
+                            )
+                        );
+                        condition_values.push_back(static_cast<double>(dist_le(rng)));
+                    } else if (typeid(*var) == typeid(RealVariable)) {
+                        std::uniform_real_distribution<double> dist_le(
+                            std::nextafter(current_var_value, std::numeric_limits<double>::infinity()), 
+                            std::min(upper_bound, current_var_value + 10.0)
+                        );  
+                        condition_values.push_back(dist_le(rng));
+                    } else {
+                        throw std::runtime_error("Unsupported variable type for LESS_THAN condition sampling");
+                    }
                     break;
                 }
                 case Condition::LESS_EQUAL: {
@@ -537,8 +552,25 @@ public:
                         throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is greater than variable " + var->getName() + " upper bound " + std::to_string(upper_bound));
                     }
                     // Randomly sample a value greater than or equal to the current variable's value
-                    std::uniform_real_distribution<double> dist_leq(current_var_value, upper_bound);
-                    condition_values.push_back(dist_leq(rng));
+                    if (typeid(*var) == typeid(IntVariable)) {
+                        std::uniform_int_distribution<int> dist_leq(
+                            static_cast<int>(current_var_value),
+                            // Don't sample a value that is too far from the current value 
+                            std::min(
+                                static_cast<int>(upper_bound), 
+                                static_cast<int>(current_var_value) + 10
+                            )
+                        );
+                        condition_values.push_back(static_cast<double>(dist_leq(rng)));
+                    } else if (typeid(*var) == typeid(RealVariable)) {
+                        std::uniform_real_distribution<double> dist_leq(
+                            current_var_value, 
+                            std::min(upper_bound, current_var_value + 10.0)
+                        );  
+                        condition_values.push_back(dist_leq(rng));
+                    } else {
+                        throw std::runtime_error("Unsupported variable type for LESS_EQUAL condition sampling");
+                    }
                     break;
                 }
                 case Condition::EQUAL: {
@@ -554,11 +586,25 @@ public:
                         throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is less than variable " + var->getName() + " lower bound " + std::to_string(lower_bound));
                     }
                     // Randomly sample a value less than or equal to the current variable's value
-                    std::uniform_real_distribution<double> dist_geq(
-                        lower_bound, 
-                        std::nextafter(current_var_value, std::numeric_limits<double>::infinity())
-                    );
-                    condition_values.push_back(dist_geq(rng));
+                    if (typeid(*var) == typeid(IntVariable)) {
+                        std::uniform_int_distribution<int> dist_geq(
+                            // Don't sample a value that is too far from the current value 
+                            std::max(
+                                static_cast<int>(lower_bound), 
+                                static_cast<int>(current_var_value) - 10
+                            ),
+                            static_cast<int>(current_var_value)
+                        );
+                        condition_values.push_back(static_cast<double>(dist_geq(rng)));
+                    } else if (typeid(*var) == typeid(RealVariable)) {
+                        std::uniform_real_distribution<double> dist_geq(
+                            std::max(lower_bound, current_var_value - 10.0), 
+                            std::nextafter(current_var_value, std::numeric_limits<double>::infinity())
+                        );  
+                        condition_values.push_back(dist_geq(rng));
+                    } else {
+                        throw std::runtime_error("Unsupported variable type for GREATER_EQUAL condition sampling");
+                    }
                     break;
                 }
                 case Condition::GREATER_THAN: {
@@ -566,8 +612,25 @@ public:
                         throw std::runtime_error("Variable value " + std::to_string(current_var_value) + " is less than variable " + var->getName() + " lower bound " + std::to_string(lower_bound));
                     }
                     // Randomly sample a value less than the current variable's value
-                    std::uniform_real_distribution<double> dist_gt(lower_bound, current_var_value);
-                    condition_values.push_back(dist_gt(rng));
+                    if (typeid(*var) == typeid(IntVariable)) {
+                        std::uniform_int_distribution<int> dist_gt(
+                            // Don't sample a value that is too far from the current value 
+                            std::max(
+                                static_cast<int>(lower_bound), 
+                                static_cast<int>(current_var_value) - 10
+                            ),
+                            static_cast<int>(current_var_value) - 1
+                        );
+                        condition_values.push_back(static_cast<double>(dist_gt(rng)));
+                    } else if (typeid(*var) == typeid(RealVariable)) {
+                        std::uniform_real_distribution<double> dist_gt(
+                            std::max(lower_bound, current_var_value - 10.0), 
+                            current_var_value
+                        );  
+                        condition_values.push_back(dist_gt(rng));
+                    } else {
+                        throw std::runtime_error("Unsupported variable type for GREATER_THAN condition sampling");
+                    }
                     break;
                 }
                 default:
@@ -576,6 +639,8 @@ public:
         }
         if (num_visited_var != conditions.size())
             throw std::runtime_error("Not all condition variables were found in the state vector");
+        if (num_visited_var != condition_values.size())
+            throw std::runtime_error("Condition values size does not match number of visited condition variables");
         return condition_values;
     }
 
