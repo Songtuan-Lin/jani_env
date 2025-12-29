@@ -8,7 +8,7 @@ from tensordict import TensorDict, TensorDictBase
 
 
 class TestTorchRLEnv (EnvBase):
-    def __init__(self):
+    def __init__(self, seed=None):
         super().__init__()
         self.obs_dim = 2
         self.n_actions = 2
@@ -28,6 +28,11 @@ class TestTorchRLEnv (EnvBase):
         self.reward_spec = Bounded(low=-1.0, high=1.0, shape=(1,))
         self.done_spec = Binary(n=1, shape=(1,))
         self.current_obs = None
+        if seed is not None:
+            self.seed = seed
+
+    def get_seed(self) -> int:
+        return self.seed
 
     def action_mask(self) -> torch.Tensor:
         return torch.tensor([0, 1], dtype=torch.bool)
@@ -211,8 +216,31 @@ class TestTorchRLVectorEnvSuite:
         assert "action" in td
         assert td["action"].shape == (8, 5)
 
-    
 
+class TestTorchRLVectorEnvSeed:
+    @pytest.fixture
+    def serial_env(self):
+        return SerialEnv(
+            num_workers=4, 
+            create_env_fn=[TestTorchRLEnv for _ in range(4)], 
+            create_env_kwargs=[{"seed": i} for i in range(4)]
+        )
+
+    @pytest.fixture
+    def parallel_env(self):
+        return ParallelEnv(
+            num_workers=4, 
+            create_env_fn=[TestTorchRLEnv for _ in range(4)], 
+            create_env_kwargs=[{"seed": i} for i in range(4)]
+        )
+    
+    def test_serial_env_seeds(self, serial_env):
+        target_seeds = [0, 1, 2, 3]
+        _ = serial_env.reset()
+        env_seeds = serial_env.seed
+        assert env_seeds == target_seeds
+        assert target_seeds == serial_env.get_seed()
+    
 
 class TestTensorDictModule:
     @pytest.fixture
