@@ -108,6 +108,47 @@ class TestTorchRLVectorEnvSuite:
     def parallel_env(self):
         base_env = TestTorchRLEnv
         return ParallelEnv(num_workers=8, create_env_fn=lambda: base_env())
+    
+    @pytest.fixture
+    def policy(self):
+        class SimpleModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                hidden_sizes = [128, 128]
+                self.layers = torch.nn.ModuleList()
+                prev_size = 2
+                for hidden_size in hidden_sizes:
+                    self.layers.append(torch.nn.Linear(prev_size, hidden_size))
+                    self.layers.append(torch.nn.ReLU())
+                    prev_size = hidden_size
+                self.linear = torch.nn.Linear(prev_size, 2)
+
+            def forward(self, x):
+                for layer in self.layers:
+                    x = layer(x)
+                raw_logits = self.linear(x)
+                faked_mask = torch.tensor([[1, 0]], dtype=torch.bool).expand_as(raw_logits)
+                # Force valid action to have huge negative logit to test masking
+                output_logits = torch.where(faked_mask, raw_logits, torch.tensor(-1e8))
+                return output_logits
+            
+        from tensordict.nn import TensorDictModule
+        from torchrl.modules import ProbabilisticActor
+        from torchrl.modules import MaskedCategorical
+
+        module = TensorDictModule(
+            module=SimpleModule(),
+            in_keys=["observation"],
+            out_keys=["logits"]
+        )
+        actor = ProbabilisticActor(
+            module=module, 
+            in_keys={"logits": "logits", "mask": "action_mask"}, 
+            out_keys=["action"], 
+            distribution_class=MaskedCategorical, 
+        )
+        
+        return actor
 
     def test_serial_env_reset(self, serial_env):
         td = serial_env.reset()
@@ -153,3 +194,172 @@ class TestTorchRLVectorEnvSuite:
         assert td.batch_size == torch.Size([8, 5])
         assert "observation" in td["next"]
         assert td["next"]["observation"].shape == (8, 5, 2)
+
+    def test_serial_env_with_policy(self, serial_env, policy):
+        td = serial_env.rollout(max_steps=5, policy=policy)
+        assert td.batch_size == torch.Size([8, 5])
+        assert "observation" in td["next"]
+        assert td["next"]["observation"].shape == (8, 5, 2)
+        assert "action" in td
+        assert td["action"].shape == (8, 5)
+
+    def test_parallel_env_with_policy(self, parallel_env, policy):
+        td = parallel_env.rollout(max_steps=5, policy=policy)
+        assert td.batch_size == torch.Size([8, 5])
+        assert "observation" in td["next"]
+        assert td["next"]["observation"].shape == (8, 5, 2)
+        assert "action" in td
+        assert td["action"].shape == (8, 5)
+
+    
+
+
+class TestTensorDictModule:
+    @pytest.fixture
+    def serial_env(self):
+        base_env = TestTorchRLEnv
+        return SerialEnv(num_workers=8, create_env_fn=lambda: base_env())
+
+    @pytest.fixture
+    def parallel_env(self):
+        base_env = TestTorchRLEnv
+        return ParallelEnv(num_workers=8, create_env_fn=lambda: base_env())
+    
+    @pytest.fixture
+    def backbone(self):
+        class SimpleModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                hidden_sizes = [256, 256]
+                self.layers = torch.nn.ModuleList()
+                prev_size = 2
+                for hidden_size in hidden_sizes:
+                    self.layers.append(torch.nn.Linear(prev_size, hidden_size))
+                    self.layers.append(torch.nn.ReLU())
+                    prev_size = hidden_size
+                self.linear = torch.nn.Linear(prev_size, 2)
+
+            def forward(self, x):
+                for layer in self.layers:
+                    x = layer(x)
+                return self.linear(x)
+        return SimpleModule()
+    
+    def test_tensordict_module(self, backbone):
+        from tensordict.nn import TensorDictModule
+
+        module = TensorDictModule(
+            module=backbone,
+            in_keys=["observation"],
+            out_keys=["logits"]
+        )
+
+        raw_input = torch.randn(3, 2)
+
+        input_td = TensorDict({"observation": raw_input}, batch_size=[3])
+        output_td = module(input_td)
+
+        assert "logits" in output_td
+        assert output_td["logits"].shape == (3, 2)
+        assert torch.allclose(
+            output_td["logits"],
+            backbone(raw_input)
+        ) 
+
+    def test_tensordict_module_training(self, backbone):
+        from tensordict.nn import TensorDictModule
+        
+        module = TensorDictModule(
+            module=backbone,
+            in_keys=["observation"],
+            out_keys=["logits"]
+        )
+
+        optimizer = torch.optim.Adam(backbone.parameters(), lr=1e-3)
+
+        raw_input = torch.randn(5, 2)
+        target = torch.randint(0, 2, (5,))
+
+        prev_loss = torch.tensor(float('inf'))
+        for _ in range(3):
+            loss = torch.nn.functional.cross_entropy(backbone(raw_input), target)
+            assert loss.item() < prev_loss.item()
+            prev_loss = loss
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                input_td = TensorDict({"observation": raw_input}, batch_size=[5])
+                output_td = module(input_td)
+                assert torch.allclose(
+                    output_td["logits"],
+                    backbone(raw_input)
+                )
+
+    def test_traning_in_serial_env(self, serial_env, backbone):
+        from tensordict.nn import TensorDictModule
+        from torchrl.modules import ProbabilisticActor
+        from torchrl.modules import MaskedCategorical
+
+        module = TensorDictModule(
+            module=backbone,
+            in_keys=["observation"],
+            out_keys=["logits"]
+        )
+        actor = ProbabilisticActor(
+            module=module, 
+            in_keys={"logits": "logits", "mask": "action_mask"}, 
+            out_keys=["action"], 
+            distribution_class=MaskedCategorical, 
+        )
+
+        optimizer = torch.optim.Adam(backbone.parameters(), lr=1e-3)
+
+        raw_input = torch.randn(5, 2)
+        target = torch.randint(0, 2, (5,))
+
+        for _ in range(3):
+            loss = torch.nn.functional.cross_entropy(backbone(raw_input), target)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                td = serial_env.rollout(max_steps=5, policy=actor)
+                assert td["next"]["observation"].shape == torch.Size([8, 5, 2])
+
+    def test_traning_in_parallel_env(self, parallel_env, backbone):
+        from tensordict.nn import TensorDictModule
+        from torchrl.modules import ProbabilisticActor
+        from torchrl.modules import MaskedCategorical
+
+        module = TensorDictModule(
+            module=backbone,
+            in_keys=["observation"],
+            out_keys=["logits"]
+        )
+        actor = ProbabilisticActor(
+            module=module, 
+            in_keys={"logits": "logits", "mask": "action_mask"}, 
+            out_keys=["action"], 
+            distribution_class=MaskedCategorical, 
+        )
+
+        optimizer = torch.optim.Adam(backbone.parameters(), lr=1e-3)
+
+        raw_input = torch.randn(5, 2)
+        target = torch.randint(0, 2, (5,))
+
+        for _ in range(3):
+            loss = torch.nn.functional.cross_entropy(backbone(raw_input), target)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                td = parallel_env.rollout(max_steps=5, policy=actor)
+                assert td["next"]["observation"].shape == torch.Size([8, 5, 2])
