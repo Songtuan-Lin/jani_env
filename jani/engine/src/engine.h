@@ -644,6 +644,10 @@ public:
         return condition_values;
     }
 
+    std::vector<double> extract_condition_from_current_state_vector() {
+        return extract_condition_from_state_vector(current_state.toRealVector());
+    }
+
     // For testing purposes
     std::vector<std::string> testGuardsForAction(int action_id) {
         if (action_id < 0 || action_id >= actions.size()) {

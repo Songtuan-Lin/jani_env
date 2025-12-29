@@ -6,6 +6,8 @@ from torchrl.envs import EnvBase, SerialEnv, ParallelEnv
 from torchrl.data import Bounded, Binary, Categorical, Composite
 from tensordict import TensorDict, TensorDictBase
 
+from gcsl import GCSLReplayBuffer
+
 
 class TestTorchRLEnv (EnvBase):
     def __init__(self, seed=None):
@@ -46,14 +48,16 @@ class TestTorchRLEnv (EnvBase):
         obs = self.current_obs + torch.tensor([0.0, 0.1])
         self.current_obs = obs
         reward = torch.tensor([0.01])
+        conditions = torch.tensor([0.0]) # Faked conditions
         # done = torch.tensor([torch.rand(1).item() > 0.95], dtype=torch.bool)  # 5% chance of being done
         done = torch.tensor([False], dtype=torch.bool)
         return TensorDict({
             "observation": obs,
             "reward": reward,
             "action_mask": self.action_mask(),
-            "done": done
-        }, batch_size=[])
+            "done": done,
+            "reached_conditions": conditions
+        }, batch_size=())
     
     def _set_seed(self, seed: int | None) -> None:
         rng = torch.manual_seed(seed)
@@ -79,14 +83,18 @@ class TestTorchRLEnvSuite:
         assert "observation" in next_td["next"]
         assert "reward" in next_td["next"]
         assert "done" in next_td["next"]
+        assert "reached_conditions" in next_td["next"]
         assert next_td["next"]["observation"].shape == (2,)
         assert next_td["next"]["reward"].shape == (1,)
         assert next_td["next"]["done"].shape == (1,)
+        assert next_td["next"]["reached_conditions"].shape == (1,)
         assert (next_td["next"]["observation"] == torch.tensor([0.0, 0.1])).all()
 
     def test_rollout(self, env):
         td = env.rollout(max_steps=10)
+        assert "next" in td
         assert "observation" in td["next"]
+        assert "reached_conditions" in td["next"]
         assert td["next"]["observation"].shape == (10, 2)  # 10 steps lead to 9 next observations
         expected_obs = torch.tensor([
             [0.0, 0.1],
@@ -174,6 +182,7 @@ class TestTorchRLVectorEnvSuite:
         next_td = serial_env.step(td)
         assert next_td.batch_size == torch.Size([8])
         assert "observation" in next_td["next"]
+        assert "reached_conditions" in next_td["next"]
         assert next_td["next"]["observation"].shape == (8, 2)
         assert "reward" in next_td["next"]
         assert "done" in next_td["next"]
@@ -185,6 +194,7 @@ class TestTorchRLVectorEnvSuite:
         next_td = parallel_env.step(td)
         assert next_td.batch_size == torch.Size([8])
         assert "observation" in next_td["next"]
+        assert "reached_conditions" in next_td["next"]
         assert "reward" in next_td["next"]
         assert "done" in next_td["next"]
     
@@ -192,12 +202,14 @@ class TestTorchRLVectorEnvSuite:
         td = serial_env.rollout(max_steps=5)
         assert td.batch_size == torch.Size([8, 5])
         assert "observation" in td["next"]
+        assert "reached_conditions" in td["next"]
         assert td["next"]["observation"].shape == (8, 5, 2)
 
     def test_parallel_env_rollout(self, parallel_env):
         td = parallel_env.rollout(max_steps=5)
         assert td.batch_size == torch.Size([8, 5])
         assert "observation" in td["next"]
+        assert "reached_conditions" in td["next"]
         assert td["next"]["observation"].shape == (8, 5, 2)
 
     def test_serial_env_with_policy(self, serial_env, policy):
@@ -240,6 +252,36 @@ class TestTorchRLVectorEnvSeed:
         env_seeds = serial_env.seed
         assert env_seeds == target_seeds
         assert target_seeds == serial_env.get_seed()
+
+
+class TestGCSLReplayBuffer:
+    @pytest.fixture
+    def serial_env(self):
+        base_env = TestTorchRLEnv
+        return SerialEnv(num_workers=10, create_env_fn=lambda: base_env())
+
+    @pytest.fixture
+    def replay_buffer(self):
+        buffer_size = 50
+        return GCSLReplayBuffer(buffer_size=buffer_size)
+
+    def test_add_and_sample(self, serial_env, replay_buffer):
+        serial_env.reset()
+        td = serial_env.rollout(max_steps=10)
+        replay_buffer.extend_trajectories(td)
+        serial_env.reset()
+        next_td = serial_env.rollout(max_steps=10)
+        replay_buffer.extend_trajectories(next_td)
+        sampled_batch = replay_buffer.sample_batch(batch_size=5)
+        print(sampled_batch)
+        assert "next" in sampled_batch
+        assert "observation" in sampled_batch["next"]
+        assert "reached_conditions" in sampled_batch["next"]
+        assert sampled_batch["next"]["observation"].shape == (5, 2)
+        assert sampled_batch["next"]["reached_conditions"].shape == (5, 1)
+        
+
+        
     
 
 class TestTensorDictModule:

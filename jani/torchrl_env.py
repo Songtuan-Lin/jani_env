@@ -93,13 +93,23 @@ class JANIEnv(EnvBase):
             raise RuntimeError("Environment must be reset before getting action mask.")
         return torch.tensor(self._engine.get_current_action_mask(), dtype=torch.bool)
 
+    def extract_reached_conditions(self, state_vec: torch.Tensor) -> torch.Tensor:
+        state_vec_list = state_vec.tolist() # Convert tensor to list (assuming 1D tensor)
+        condition_values = self._engine.extract_condition_from_state_vector(state_vec_list)
+        return torch.tensor(condition_values, dtype=torch.float32)
+    
+    def extract_current_conditions(self) -> torch.Tensor:
+        condition_values = self._engine.extract_condition_from_current_state_vector()
+        return torch.tensor(condition_values, dtype=torch.float32)
+
     def _reset(self, td: TensorDictBase) -> TensorDictBase:
         state_vec = self._engine.reset()
         self._reseted = True
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         obs = {
             "observation": torch.tensor(state_vec, dtype=torch.float32),
-            "action_mask": self.action_mask()
+            "action_mask": self.action_mask(),
+            "reached_conditions": self.extract_current_conditions()
         }
         return TensorDict(obs, batch_size=())
     
@@ -132,12 +142,23 @@ class JANIEnv(EnvBase):
             done = False
 
         # Construct the next tensordict
-        next_td = TensorDict({
-            "observation": torch.tensor(next_state_vec, dtype=torch.float32),
-            "action_mask": self.action_mask(),
-            "done": torch.tensor(done, dtype=torch.bool),
-            "reward": torch.tensor(reward, dtype=torch.float32)
-        }, batch_size=())
+        if self._oracle is None:
+            next_td = TensorDict({
+                "observation": torch.tensor(next_state_vec, dtype=torch.float32),
+                "action_mask": self.action_mask(),
+                "done": torch.tensor(done, dtype=torch.bool),
+                "reward": torch.tensor(reward, dtype=torch.float32),
+                "reached_conditions": self.extract_current_conditions()
+            }, batch_size=())
+        else:
+            next_td = TensorDict({
+                "observation": torch.tensor(next_state_vec, dtype=torch.float32),
+                "action_mask": self.action_mask(),
+                "done": torch.tensor(done, dtype=torch.bool),
+                "reward": torch.tensor(reward, dtype=torch.float32),
+                "is_safe": torch.tensor(is_next_state_safe, dtype=torch.bool),
+                "reached_conditions": self.extract_current_conditions()
+            }, batch_size=())
 
         return next_td
     

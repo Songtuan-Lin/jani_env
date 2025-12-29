@@ -52,3 +52,7 @@ class GCSLReplayBuffer:
     def add_trajectory(self, trajectory: TensorDict):
         """Add a trajectory to the replay buffer."""
         self.replay_buffer.add(trajectory)
+
+    def extend_trajectories(self, trajectories: TensorDict):
+        """Extend the replay buffer with multiple trajectories."""
+        self.replay_buffer.extend(trajectories)
