@@ -35,6 +35,7 @@ NB_MODULE(backend, m) {
         .def("get_lower_bounds", &JANIEngine::get_lower_bounds)
         .def("get_upper_bounds", &JANIEngine::get_upper_bounds)
         .def("get_init_state_pool_size", &JANIEngine::get_init_state_pool_size)
+        .def("get_goal_condition_size", &JANIEngine::get_goal_condition_size)
         .def("extract_goal_condition", &JANIEngine::extract_goal_condition)
         .def("extract_condition_from_state_vector", &JANIEngine::extract_condition_from_state_vector)
         .def("extract_condition_from_current_state_vector", &JANIEngine::extract_condition_from_current_state_vector)

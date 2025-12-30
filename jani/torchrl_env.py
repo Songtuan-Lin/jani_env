@@ -64,6 +64,12 @@ class JANIEnv(EnvBase):
                 n = self.n_actions,
                 shape=(self.n_actions,),
                 dtype = torch.bool
+            ),
+            "reached_conditions": Bounded(
+                low=-1e9, # need to be change in the future
+                high=1e9, # need to be change in the future
+                shape=(self._engine.get_goal_condition_size(),),
+                dtype=torch.float32
             )
         })
 

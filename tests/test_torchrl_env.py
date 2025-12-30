@@ -24,6 +24,11 @@ class TestTorchRLEnv (EnvBase):
                 n=self.n_actions,
                 shape=(self.n_actions,),
                 dtype=torch.bool
+            ),
+            "reached_conditions": Bounded(
+                low=torch.tensor([-1.0]),
+                high=torch.tensor([1.0]),
+                shape=(1,)
             )
         })
         self.action_spec = Categorical(n=self.n_actions)
@@ -42,7 +47,7 @@ class TestTorchRLEnv (EnvBase):
     def _reset(self, td: TensorDictBase) -> TensorDictBase:
         obs = torch.tensor([0.0] * self.obs_dim)
         self.current_obs = obs
-        return TensorDict({"observation": obs, "action_mask": self.action_mask()}, batch_size=[])
+        return TensorDict({"observation": obs, "action_mask": self.action_mask(), "reached_conditions": torch.tensor([0.0])}, batch_size=[])
 
     def _step(self, td: TensorDictBase) -> TensorDictBase:
         obs = self.current_obs + torch.tensor([0.0, 0.1])
@@ -93,6 +98,7 @@ class TestTorchRLEnvSuite:
     def test_rollout(self, env):
         td = env.rollout(max_steps=10)
         assert "next" in td
+        # assert "reached_conditions" in td
         assert "observation" in td["next"]
         assert "reached_conditions" in td["next"]
         assert td["next"]["observation"].shape == (10, 2)  # 10 steps lead to 9 next observations
@@ -168,12 +174,14 @@ class TestTorchRLVectorEnvSuite:
         assert td.batch_size == torch.Size([8])
         assert "observation" in td
         assert "action_mask" in td
+        assert "reached_conditions" in td
 
     def test_parallel_env_reset(self, parallel_env):
         td = parallel_env.reset()
         assert td.batch_size == torch.Size([8])
         assert "observation" in td
         assert "action_mask" in td
+        assert "reached_conditions" in td
 
     def test_serial_env_step(self, serial_env):
         serial_env.reset()
@@ -181,6 +189,7 @@ class TestTorchRLVectorEnvSuite:
         td = TensorDict({"action": action}, batch_size=[8])
         next_td = serial_env.step(td)
         assert next_td.batch_size == torch.Size([8])
+        # assert "reached_conditions" in next_td
         assert "observation" in next_td["next"]
         assert "reached_conditions" in next_td["next"]
         assert next_td["next"]["observation"].shape == (8, 2)
@@ -193,6 +202,7 @@ class TestTorchRLVectorEnvSuite:
         td = TensorDict({"action": action}, batch_size=[8])
         next_td = parallel_env.step(td)
         assert next_td.batch_size == torch.Size([8])
+        # assert "reached_conditions" in next_td
         assert "observation" in next_td["next"]
         assert "reached_conditions" in next_td["next"]
         assert "reward" in next_td["next"]
@@ -201,6 +211,7 @@ class TestTorchRLVectorEnvSuite:
     def test_serial_env_rollout(self, serial_env):
         td = serial_env.rollout(max_steps=5)
         assert td.batch_size == torch.Size([8, 5])
+        # assert "reached_conditions" in td
         assert "observation" in td["next"]
         assert "reached_conditions" in td["next"]
         assert td["next"]["observation"].shape == (8, 5, 2)
@@ -208,6 +219,7 @@ class TestTorchRLVectorEnvSuite:
     def test_parallel_env_rollout(self, parallel_env):
         td = parallel_env.rollout(max_steps=5)
         assert td.batch_size == torch.Size([8, 5])
+        # assert "reached_conditions" in td
         assert "observation" in td["next"]
         assert "reached_conditions" in td["next"]
         assert td["next"]["observation"].shape == (8, 5, 2)
@@ -275,10 +287,11 @@ class TestGCSLReplayBuffer:
         sampled_batch = replay_buffer.sample_batch(batch_size=5)
         print(sampled_batch)
         assert "next" in sampled_batch
+        assert "reached_conditions" in sampled_batch
         assert "observation" in sampled_batch["next"]
         assert "reached_conditions" in sampled_batch["next"]
-        assert sampled_batch["next"]["observation"].shape == (5, 2)
-        assert sampled_batch["next"]["reached_conditions"].shape == (5, 1)
+        assert sampled_batch["next"]["observation"].shape == (5, 10, 2)
+        assert sampled_batch["next"]["reached_conditions"].shape == (5, 10, 1)
         
 
         
