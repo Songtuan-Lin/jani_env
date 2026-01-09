@@ -8,5 +8,6 @@ This module provides:
 """
 
 from .env import JANIEnv
+from .torchrl_env import JANIEnv as TorchRLJANIEnv
 
-__all__ = ['JANIEnv']
+__all__ = ['JANIEnv', 'TorchRLJANIEnv']

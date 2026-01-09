@@ -65,7 +65,7 @@ class JANIEnv(EnvBase):
                 shape=(self.n_actions,),
                 dtype = torch.bool
             ),
-            "reached_conditions": Bounded(
+            "condition": Bounded(
                 low=-1e9, # need to be change in the future
                 high=1e9, # need to be change in the future
                 shape=(self._engine.get_goal_condition_size(),),
@@ -115,7 +115,7 @@ class JANIEnv(EnvBase):
         obs = {
             "observation": torch.tensor(state_vec, dtype=torch.float32),
             "action_mask": self.action_mask(),
-            "reached_conditions": self.extract_current_conditions()
+            "condition": self.extract_current_conditions()
         }
         return TensorDict(obs, batch_size=())
     
@@ -154,7 +154,7 @@ class JANIEnv(EnvBase):
                 "action_mask": self.action_mask(),
                 "done": torch.tensor(done, dtype=torch.bool),
                 "reward": torch.tensor(reward, dtype=torch.float32),
-                "reached_conditions": self.extract_current_conditions()
+                "condition": self.extract_current_conditions()
             }, batch_size=())
         else:
             next_td = TensorDict({
@@ -163,7 +163,7 @@ class JANIEnv(EnvBase):
                 "done": torch.tensor(done, dtype=torch.bool),
                 "reward": torch.tensor(reward, dtype=torch.float32),
                 "is_safe": torch.tensor(is_next_state_safe, dtype=torch.bool),
-                "reached_conditions": self.extract_current_conditions()
+                "condition": self.extract_current_conditions()
             }, batch_size=())
 
         return next_td
