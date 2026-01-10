@@ -14,7 +14,7 @@ class GCSLReplayBuffer:
         """Transform for sampling start and end indices for GCSL."""
 
         def __init__(self):
-            super().__init__(in_keys=["observation", "episode_length", "condition"], out_keys=['current_observation', 'reached_condition'])
+            super().__init__(in_keys=["observation", "episode_length", "condition"], out_keys=['current_observation', 'reached_condition', 'selected_action', 'valid_actions'])
 
         def forward(self, x: TensorDict) -> TensorDict:
             batch_size = x.batch_size[0] 
@@ -66,7 +66,7 @@ class GCSLReplayBuffer:
                     trajectory[key],
                     (0, 0, 0, self.max_horizon - trajectory_len),
                     mode='constant',
-                    value=-torch.inf
+                    value=torch.nan
                 )
         # Set the episode length
         trajectory["episode_length"] = torch.tensor([trajectory_len])

@@ -4,12 +4,12 @@ import numpy as np
 
 
 class BaseActor(nn.Module):
-    def __init__(self, input_size, output_size, hidden_sizes=[256, 256], dropout=None):
+    def __init__(self, input_size, output_size, hidden_sizes=[256, 256]):
         super(BaseActor, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.hidden_sizes = hidden_sizes
-        self.dropout = dropout
+        # self.dropout = dropout
         # Build layers
         self.layers = self.build_layers()
         self.output_layer = nn.Linear(self.hidden_sizes[-1], self.output_size)
@@ -33,6 +33,11 @@ class BaseActor(nn.Module):
         logits = self.output_layer(embedding)
         return embedding, logits
 
+    def forward(self, x):
+        embedding = self.get_embedding(x)
+        logits = self.output_layer(embedding)
+        return logits
+
 
 class GoalConditionedActor(nn.Module):
     def __init__(self, 
@@ -41,14 +46,12 @@ class GoalConditionedActor(nn.Module):
                  action_size,
                  use_teacher=False, 
                  student_hidden_sizes=[256, 256], 
-                 teacher_hidden_sizes=[256, 256],
-                 dropout=None):
+                 teacher_hidden_sizes=[256, 256]):
         super(GoalConditionedActor, self).__init__()
         self.student_actor = BaseActor(
             input_size=obs_size + condition_size,
             output_size=action_size,
             hidden_sizes=student_hidden_sizes,
-            dropout=dropout
         )
 
         self.teacher_actor = None # Optional teacher actor
@@ -57,7 +60,6 @@ class GoalConditionedActor(nn.Module):
                 input_size=2*obs_size + condition_size, # teacher knows the exact state to be reached
                 output_size=action_size,
                 hidden_sizes=teacher_hidden_sizes,
-                dropout=dropout
             )
 
     def get_student_embedding_and_logits(self, obs, condition):
@@ -70,3 +72,7 @@ class GoalConditionedActor(nn.Module):
             return self.teacher_actor.get_embedding_and_logits(x)
         else:
             raise ValueError("Teacher actor is not available.")
+        
+    def forward(self, x):
+        # When deploying in the environment, only the student actor is used
+        return self.student_actor(x)
