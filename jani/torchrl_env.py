@@ -60,6 +60,12 @@ class JANIEnv(EnvBase):
                 shape=(self.obs_dim,), 
                 dtype=torch.float32
             ), 
+            "observation_with_goal": Bounded(
+                low=np.array(lower_bounds + [-1e9] * self._engine.get_goal_condition_size()), 
+                high=np.array(upper_bounds + [1e9] * self._engine.get_goal_condition_size()),
+                shape=(self.obs_dim + self._engine.get_goal_condition_size(),), 
+                dtype=torch.float32
+            ),
             "action_mask": Binary(
                 n = self.n_actions,
                 shape=(self.n_actions,),
@@ -114,6 +120,7 @@ class JANIEnv(EnvBase):
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         obs = {
             "observation": torch.tensor(state_vec, dtype=torch.float32),
+            "observation_with_goal": torch.tensor(state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
             "action_mask": self.action_mask(),
             "condition": self.extract_current_conditions()
         }
@@ -151,6 +158,7 @@ class JANIEnv(EnvBase):
         if self._oracle is None:
             next_td = TensorDict({
                 "observation": torch.tensor(next_state_vec, dtype=torch.float32),
+                "observation_with_goal": torch.tensor(next_state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
                 "action_mask": self.action_mask(),
                 "done": torch.tensor(done, dtype=torch.bool),
                 "reward": torch.tensor(reward, dtype=torch.float32),
@@ -159,6 +167,7 @@ class JANIEnv(EnvBase):
         else:
             next_td = TensorDict({
                 "observation": torch.tensor(next_state_vec, dtype=torch.float32),
+                "observation_with_goal": torch.tensor(next_state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
                 "action_mask": self.action_mask(),
                 "done": torch.tensor(done, dtype=torch.bool),
                 "reward": torch.tensor(reward, dtype=torch.float32),

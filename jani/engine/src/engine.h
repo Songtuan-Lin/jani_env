@@ -485,7 +485,7 @@ public:
         return init_state_generator->getInitialStatePool().size();
     }
 
-    double get_goal_condition_size() {
+    int get_goal_condition_size() {
         std::vector<Condition> conditions = goal_expression->extractConditions();
         return conditions.size();
     }

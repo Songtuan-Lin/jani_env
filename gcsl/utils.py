@@ -17,7 +17,7 @@ def collect_trajectory(env: EnvBase, policy: GoalConditionedActor | None = None,
         # Use the policy as the backbone for the actor
         actor_module = TensorDictModule(
             module=policy,
-            in_keys=["observation"],
+            in_keys=["observation_with_goal"],
             out_keys=["logits"]
         )
         # Construct the actor
@@ -37,10 +37,15 @@ def collect_trajectory(env: EnvBase, policy: GoalConditionedActor | None = None,
         td = env.rollout(max_steps=max_horizon)
     # Fetch the relevant keys and construct the trajectory tensordict
     trajectory_td = TensorDict({
-        "observation": td["observation"].unsqueeze(0),
-        "action": td["action"].unsqueeze(0),
-        "condition": td["next"]["condition"].unsqueeze(0),
-        "next_observation": td["next"]["observation"].unsqueeze(0),
-        "action_mask": td["action_mask"].unsqueeze(0)
-    }, batch_size=()) # TODO: check batch size
+        "observation": td["observation"],
+        "action": td["action"],
+        "condition": td["next"]["condition"],
+        "next_observation": td["next"]["observation"],
+        "action_mask": td["action_mask"]
+    }, batch_size=())
+    # print(f"Observation shape in collected trajectory: {trajectory_td['observation'].shape}")
+    # print(f"Action shape in collected trajectory: {trajectory_td['action'].shape}")
+    # print(f"Condition shape in collected trajectory: {trajectory_td['condition'].shape}")
+    # print(f"Next observation shape in collected trajectory: {trajectory_td['next_observation'].shape}")
+    # print(f"Action mask shape in collected trajectory: {trajectory_td['action_mask'].shape}")
     return trajectory_td

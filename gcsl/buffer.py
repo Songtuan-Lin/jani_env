@@ -57,19 +57,38 @@ class GCSLReplayBuffer:
     def add_trajectory(self, trajectory: TensorDict):
         """Add a trajectory to the replay buffer."""
         # Padding the trajectory to max_horizon if necessary
-        trajectory_len = trajectory["observation"].shape[1] # observation is expected to be of shape (1, trajectory_length, obs_dim)
+        trajectory_len = trajectory["observation"].shape[0] # observation is expected to be of shape (trajectory_length, obs_dim)
         if trajectory_len < self.max_horizon:
-            target_keys = ["observation", "action", "condition", "next_observation", "action_mask"]
-            # Pad each key in the trajectory, all keys are expected to have shape (1, trajectory_length, dim)
-            for key in target_keys:
+            # Pad each key in the trajectory, 
+            # Observation-related keys are expected to have shape (trajectory_length, dim)
+            for key in ["observation", "next_observation", "condition"]:
+                # Keys with float values are padded with -inf
                 trajectory[key] = torch.nn.functional.pad(
                     trajectory[key],
                     (0, 0, 0, self.max_horizon - trajectory_len),
                     mode='constant',
-                    value=torch.nan
+                    value=-torch.inf
                 )
+            assert "action" in trajectory.keys(), "Action key not found in trajectory."
+            # Keys with integer values are padded with -1
+            # Action is expected to have shape (trajectory_length,)
+            trajectory["action"] = torch.nn.functional.pad(
+                trajectory["action"],
+                (0, self.max_horizon - trajectory_len),
+                mode='constant',
+                value=-1
+            )
+            assert "action_mask" in trajectory.keys(), "Action mask key not found in trajectory."
+            # Key with boolean values are padded with False
+            # Action mask is expected to have shape (trajectory_length, n_actions)
+            trajectory["action_mask"] = torch.nn.functional.pad(
+                trajectory["action_mask"],
+                (0, 0, 0, self.max_horizon - trajectory_len),
+                mode='constant',
+                value=False
+            )
         # Set the episode length
-        trajectory["episode_length"] = torch.tensor([trajectory_len])
+        trajectory["episode_length"] = torch.tensor(trajectory_len, dtype=torch.long)
         self.replay_buffer.add(trajectory)
 
     # def extend_trajectories(self, trajectories: TensorDict):

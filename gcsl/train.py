@@ -29,9 +29,12 @@ def train_one_step(
     model.train()
     batch = rb.sample_batch(batch_size=batch_size)  # Sample a batch of transitions
     obs = batch["current_observation"].to(device)
+    # print(f"Observation shape in training batch: {obs.shape}")
     condition = batch["reached_condition"].to(device)
+    # print(f"Condition shape in training batch: {condition.shape}")
     actions = batch["selected_action"].to(device)
     valid_actions = batch["valid_actions"].to(device)
+    # print(f"Valid actions shape in training batch: {valid_actions.shape}")
     # Forward pass through the student actor
     embedding, logits = model.get_student_embedding_and_logits(obs, condition)
     # set logits of invalid actions to large negative value
@@ -53,7 +56,10 @@ def train_model(
         device: torch.device):
     """Train the GCSL model."""
     # Warm up the replay buffer with random trajectories
+    print("Warming up the replay buffer...")
     warm_up(env, rb, num_trajectories=hyperparams.get("warmup_trajectories", 10))
+    for k, v in rb.replay_buffer.storage._storage.items():
+        print(f"Buffer key: {k}, shape: {v.shape}")
 
     model.to(device)
     criterion = nn.CrossEntropyLoss()
@@ -87,7 +93,7 @@ def evaluate_model(env: TorchRLJANIEnv, model: GoalConditionedActor, max_steps: 
     model.eval()
     actor_module = TensorDictModule(
         module=model,
-        in_keys=["observation"],
+        in_keys=["observation_with_goal"],
         out_keys=["logits"]
     )
     # Construct the actor
@@ -103,7 +109,7 @@ def evaluate_model(env: TorchRLJANIEnv, model: GoalConditionedActor, max_steps: 
     with torch.no_grad():
         for _ in range(num_episodes):
             td = env.rollout(max_steps=max_steps, policy=actor)
-            rewards.append(td.get("next", "reward").sum().item())
+            rewards.append(td["next"]["reward"].sum().item())
     avg_reward = np.mean(rewards)
     return avg_reward
 
@@ -142,10 +148,10 @@ def main():
     # Define hyperparameters
     hyperparams = {
         "learning_rate": 1e-3,
-        "batch_size": 64,
+        "batch_size": 32,
         "num_steps": 10000,
         "max_horizon": 2048,
-        "warmup_trajectories": 100,
+        "warmup_trajectories": 50,
         "hidden_sizes": [256, 256],
     }
     # Initialize model and replay buffer
@@ -159,7 +165,7 @@ def main():
         use_teacher=False,
         student_hidden_sizes=hyperparams["hidden_sizes"]
     )
-    rb = GCSLReplayBuffer(buffer_size=1000000, max_horizon=hyperparams.get("max_horizon", 2048))
+    rb = GCSLReplayBuffer(buffer_size=5000, max_horizon=hyperparams.get("max_horizon", 2048))
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     # Train the model
     train_model(env, model, rb, hyperparams, device)
