@@ -67,6 +67,10 @@ def train_model(
     
     num_steps = hyperparams.get("num_steps", 1000)
     for step in range(num_steps):
+        if step % 500 == 0:
+            avg_reward = evaluate_model(env, model, max_steps=hyperparams.get("max_horizon", 2048), num_episodes=100, device=device)
+            print(f"Step [{step}/{num_steps}], Average Reward: {avg_reward:.4f}")
+        # Perform one training step
         loss = train_one_step(model, rb, criterion, optimizer, batch_size=hyperparams.get("batch_size", 64), device=device)
         # Collect new trajectory and add to replay buffer
         trajectory = collect_trajectory(env, model, max_horizon=hyperparams.get("max_horizon", 2048))
@@ -74,10 +78,6 @@ def train_model(
 
         if (step + 1) % 100 == 0:
             print(f"Step [{step + 1}/{num_steps}], Loss: {loss:.4f}")
-        
-        if step % 500 == 0:
-            avg_reward = evaluate_model(env, model, max_steps=hyperparams.get("max_horizon", 2048), num_episodes=10, device=device)
-            print(f"Step [{step}/{num_steps}], Average Reward: {avg_reward:.4f}")
 
 
 def warm_up(env: TorchRLJANIEnv, rb: GCSLReplayBuffer, num_trajectories: int, max_horizon: int = 2048):
@@ -148,10 +148,10 @@ def main():
     # Define hyperparameters
     hyperparams = {
         "learning_rate": 1e-3,
-        "batch_size": 32,
-        "num_steps": 10000,
+        "batch_size": 256, # larger batch size works clearly better
+        "num_steps": 200000,
         "max_horizon": 2048,
-        "warmup_trajectories": 50,
+        "warmup_trajectories": 300,
         "hidden_sizes": [256, 256],
     }
     # Initialize model and replay buffer
