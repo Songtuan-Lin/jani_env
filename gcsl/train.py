@@ -27,6 +27,7 @@ def train_one_step(
         device: torch.device):
     """Perform one training step for GCSL."""
     model.train()
+    model.to(device)
     batch = rb.sample_batch(batch_size=batch_size)  # Sample a batch of transitions
     obs = batch["current_observation"].to(device)
     # print(f"Observation shape in training batch: {obs.shape}")
@@ -53,31 +54,76 @@ def train_model(
         model: GoalConditionedActor,
         rb: GCSLReplayBuffer,
         hyperparams: dict,
-        device: torch.device):
+        device: torch.device,
+        verbose: bool = True):
     """Train the GCSL model."""
     # Warm up the replay buffer with random trajectories
-    print("Warming up the replay buffer...")
+    if verbose:
+        print("Warming up the replay buffer...")
     warm_up(env, rb, num_trajectories=hyperparams.get("warmup_trajectories", 10))
-    for k, v in rb.replay_buffer.storage._storage.items():
-        print(f"Buffer key: {k}, shape: {v.shape}")
+    # for k, v in rb.replay_buffer.storage._storage.items():
+    #     print(f"Buffer key: {k}, shape: {v.shape}")
 
-    model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams.get("learning_rate", 1e-3))
     
     num_steps = hyperparams.get("num_steps", 1000)
     for step in range(num_steps):
-        if step % 500 == 0:
-            avg_reward = evaluate_model(env, model, max_steps=hyperparams.get("max_horizon", 2048), num_episodes=100, device=device)
+        if verbose and step % 1 == 0:
+            avg_reward = evaluate_model(env, model, max_steps=hyperparams.get("max_horizon", 2048), num_episodes=100)
             print(f"Step [{step}/{num_steps}], Average Reward: {avg_reward:.4f}")
         # Perform one training step
         loss = train_one_step(model, rb, criterion, optimizer, batch_size=hyperparams.get("batch_size", 64), device=device)
         # Collect new trajectory and add to replay buffer
-        trajectory = collect_trajectory(env, model, max_horizon=hyperparams.get("max_horizon", 2048))
-        rb.add_trajectory(trajectory)
+        for _ in range(10):  # collect multiple trajectories per step
+            trajectory = collect_trajectory(env, model, max_horizon=hyperparams.get("max_horizon", 2048))
+            rb.add_trajectory(trajectory)
 
-        if (step + 1) % 100 == 0:
+        if verbose and (step + 1) % 100 == 0:
             print(f"Step [{step + 1}/{num_steps}], Loss: {loss:.4f}")
+
+
+def objective(trial, env: TorchRLJANIEnv, device: torch.device):
+    """Optuna objective function for hyperparameter tuning of GCSL."""
+    # Suggest hyperparameters
+    n_layers = trial.suggest_int('n_layers', 2, 5)
+    hidden_sizes = []
+    for i in range(n_layers):
+        size = trial.suggest_int(f'hidden_size_{i}', 256, 512)
+        hidden_sizes.append(size)
+    
+    learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
+    batch_size = trial.suggest_int('batch_size', 256, 2048)
+    # num_steps = trial.suggest_int('num_steps', 10000, 200000)
+    # warmup_trajectories = trial.suggest_int('warmup_trajectories', 100, 2000)
+
+    # Initialize model and replay buffer
+    obs_size = env.observation_spec["observation"].shape[0]
+    condition_size = env.observation_spec["condition"].shape[0]
+    action_size = env.n_actions 
+    rb = GCSLReplayBuffer(buffer_size=5000, max_horizon=2048)
+    model = GoalConditionedActor(
+        obs_size=obs_size,
+        condition_size=condition_size,
+        action_size=action_size,
+        use_teacher=False,
+        student_hidden_sizes=hidden_sizes
+    ).to(device)
+
+    hyperparams = {
+        "learning_rate": learning_rate,
+        "batch_size": batch_size,
+        "num_steps": 500,
+        "warmup_trajectories": 2 * batch_size,  # ensure enough data for initial training
+        "hidden_sizes": hidden_sizes,
+    }
+
+    # Train the model
+    train_model(env, model, rb, hyperparams, device, verbose=False)
+
+    # Evaluate the model
+    avg_reward = evaluate_model(env, model, max_steps=2048, num_episodes=100)
+    return avg_reward  # Optuna maximizes the objective
 
 
 def warm_up(env: TorchRLJANIEnv, rb: GCSLReplayBuffer, num_trajectories: int, max_horizon: int = 2048):
@@ -88,9 +134,10 @@ def warm_up(env: TorchRLJANIEnv, rb: GCSLReplayBuffer, num_trajectories: int, ma
         rb.add_trajectory(trajectory)
 
 
-def evaluate_model(env: TorchRLJANIEnv, model: GoalConditionedActor, max_steps: int, num_episodes: int, device: torch.device):
+def evaluate_model(env: TorchRLJANIEnv, model: GoalConditionedActor, max_steps: int, num_episodes: int):
     """Evaluate the GCSL model."""
     model.eval()
+    model.cpu() # Ensure model is on CPU for evaluation
     actor_module = TensorDictModule(
         module=model,
         in_keys=["observation_with_goal"],
@@ -126,6 +173,7 @@ def main():
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
     parser.add_argument('--use_oracle', action='store_true', help="Use Tarjan oracle for unsafe state detection.")
     parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
+    parser.add_argument('--hyperparams_tuning', action='store_true', help="Enable hyperparameter tuning with Optuna.")
     parser.add_argument('--seed', type=int, default=42, help="Random seed.")
     parser.add_argument('--device', type=str, default='cpu', help="Device to use for training (cpu or cuda).")
 
@@ -144,31 +192,65 @@ def main():
         'unsafe_reward': args.unsafe_reward,
     }
     env = TorchRLJANIEnv(**file_args)
+    if args.device == 'cuda':
+        if torch.cuda.is_available():
+            print("Using GPU for training.")
+            device = torch.device('cuda')
+        elif torch.mps.is_available():
+            print("Using MPS for training.")
+            device = torch.device('mps')
+        else:
+            print("CUDA not available, using CPU.")
+            device = torch.device('cpu')
+    else:
+        device = torch.device('cpu')
 
     # Define hyperparameters
-    hyperparams = {
-        "learning_rate": 1e-3,
-        "batch_size": 256, # larger batch size works clearly better
-        "num_steps": 200000,
-        "max_horizon": 2048,
-        "warmup_trajectories": 300,
-        "hidden_sizes": [256, 256],
-    }
+    if args.hyperparams_tuning:
+        print("Starting hyperparameter tuning with Optuna...")
+
+        import optuna
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(
+            lambda trial: objective(trial, env, device), 
+            n_trials=15
+        )
+
+        print("Best hyperparameters found:")
+        print(study.best_params)
+
+        hyperparams = {
+            "learning_rate": study.best_params['learning_rate'],
+            "batch_size": study.best_params['batch_size'],
+            "num_steps": 50000, # fixed number of steps for final training
+            "warmup_trajectories": 2 * study.best_params['batch_size'],
+            "hidden_sizes": [study.best_params[f'hidden_size_{i}'] for i in range(study.best_params['n_layers'])],
+        }
+    else:
+        hyperparams = {
+            "learning_rate": 3e-4,
+            "batch_size": 256, # larger batch size works clearly better
+            "num_steps": 200000,
+            "max_horizon": 2048,
+            "warmup_trajectories": 300,
+            "hidden_sizes": [256, 256],
+        }
     # Initialize model and replay buffer
     obs_size = env.observation_spec["observation"].shape[0]
     condition_size = env.observation_spec["condition"].shape[0]
-    action_size = env.n_actions
+    action_size = env.n_actions 
+    rb = GCSLReplayBuffer(buffer_size=300, max_horizon=hyperparams.get("max_horizon", 2048))
     model = GoalConditionedActor(
         obs_size=obs_size,
         condition_size=condition_size,
         action_size=action_size,
         use_teacher=False,
         student_hidden_sizes=hyperparams["hidden_sizes"]
-    )
-    rb = GCSLReplayBuffer(buffer_size=5000, max_horizon=hyperparams.get("max_horizon", 2048))
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    ).to(device)
     # Train the model
     train_model(env, model, rb, hyperparams, device)
+    evaluate_model(env, model, max_steps=2048, num_episodes=100, print_actions=True)
 
 
 if __name__ == "__main__":

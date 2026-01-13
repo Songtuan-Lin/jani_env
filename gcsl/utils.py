@@ -14,6 +14,7 @@ from jani import TorchRLJANIEnv
 
 def collect_trajectory(env: EnvBase, policy: GoalConditionedActor | None = None, max_horizon: int = 2048) -> TensorDict:
     if policy is not None:
+        policy.cpu() # Ensure policy is on CPU for rollout
         # Use the policy as the backbone for the actor
         actor_module = TensorDictModule(
             module=policy,
