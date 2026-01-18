@@ -11,7 +11,7 @@ size_t rss_mb() {
 }
 
 
-bool TarjanOracle::tarjan_dfs(
+std::tuple<bool, int>TarjanOracle::tarjan_dfs(
     TarjanNode *node, int index, 
     std::vector<State> &stack, 
     std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> &on_stack_map) {
@@ -28,12 +28,12 @@ bool TarjanOracle::tarjan_dfs(
         if (engine->reach_goal(node->state)) {
             // std::cout << "  DEBUG: State is a goal state, marked safe." << std::endl;
             // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
-            return true; // A goal state is a safe state
+            return std::make_tuple(true, -1); // A goal state is a safe state
         }
         if (engine->reach_failure(node->state)) {
             // std::cout << "  DEBUG: State is a failure state, marked unsafe." << std::endl;
             // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
-            return false; // A failure state is an unsafe state
+            return std::make_tuple(false, -1); // A failure state is an unsafe state
         }
         node->index = index;
         node->lowlink = index;
@@ -47,6 +47,7 @@ bool TarjanOracle::tarjan_dfs(
         int num_actions = engine->get_num_actions();
         std::vector<bool> action_mask = engine->get_action_mask(node->state);
         bool is_safe_state = true; // If no action is applicable, the state is safe
+        int safe_action_id = -1; // To record one safe action id
         for (int action_id = 0; action_id < num_actions; action_id++) {
             // std::cout << "  DEBUG: Checking action id " << action_id;
             if (!action_mask[action_id]) {
@@ -70,7 +71,8 @@ bool TarjanOracle::tarjan_dfs(
                     // Successor not on stack
                     std::unique_ptr<TarjanNode> succ_node = std::make_unique<TarjanNode>(succ_state);
                     // TarjanNode* succ_node = new TarjanNode(succ_state);
-                    bool succ_safe = tarjan_dfs(succ_node.get(), index + 1, stack, on_stack_map);
+                    std::tuple<bool, int> succ_result = tarjan_dfs(succ_node.get(), index + 1, stack, on_stack_map);
+                    bool succ_safe = std::get<0>(succ_result);
                     node->lowlink = std::min(node->lowlink, succ_node->lowlink);
                     // Again, update the copy of on-stack map
                     if (on_stack_map.find(node->state) == on_stack_map.end())
@@ -84,6 +86,7 @@ bool TarjanOracle::tarjan_dfs(
             }
             if (is_safe_action) {
                 is_safe_state = true;
+                safe_action_id = action_id;
                 break; // No need to check other actions if one is safe
             } else {
                 is_safe_state = false;
@@ -93,7 +96,7 @@ bool TarjanOracle::tarjan_dfs(
         if (is_safe_state) {
             if (node->lowlink == node->index) {
                 // std::cout << "            RSS usage before caching: " << rss_mb() << " MB" << std::endl;
-                cache[node->state] = true; // Mark the state as safe in the cache
+                cache[node->state] = std::make_tuple(true, safe_action_id); // Mark the state as safe in the cache
                 // std::cout << "            RSS usage after caching: " << rss_mb() << " MB" << std::endl;
                 State w;
                 do {
@@ -104,12 +107,12 @@ bool TarjanOracle::tarjan_dfs(
             }
             // std::cout << "  DEBUG: State marked safe." << std::endl;
             // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
-            return true;
+            return std::make_tuple(true, safe_action_id);
         } else {
             if (node->lowlink == node->index) {
                 // Mark the state as unsafe in the cache
                 // std::cout << "            RSS usage before caching: " << rss_mb() << " MB" << std::endl;
-                cache[node->state] = false;
+                cache[node->state] = std::make_tuple(false, -1);
                 // std::cout << "            RSS usage after caching: " << rss_mb() << " MB" << std::endl;
                 State w;
                 do {
@@ -120,6 +123,6 @@ bool TarjanOracle::tarjan_dfs(
             }
             // std::cout << "  DEBUG: State marked unsafe." << std::endl;
             // std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
-            return false;
+            return std::make_tuple(false, -1);
         }
     }
