@@ -107,3 +107,6 @@ class JANIEnv(gym.Env):
     def get_unsafe_reward(self) -> Optional[float]:
         assert self._unsafe_reward is not None, "Unsafe reward is not defined."
         return self._unsafe_reward
+
+    def get_failure_reward(self) -> float:
+        return self._failure_reward

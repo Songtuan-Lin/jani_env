@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from callbacks import EvalCallback, SafetyEvalCallback
+from callbacks import EvalCallback, SafetyEvalCallback, WandbCallback
 from jani.env import JANIEnv
 from utils import create_env, create_eval_file_args, create_safety_eval_file_args
 
@@ -46,19 +46,6 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     log_dir.mkdir(parents=True, exist_ok=True)
     model_save_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize wandb if available and not disabled
-    if WANDB_AVAILABLE and not args.disable_wandb:
-        wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=experiment_name,
-            config={
-                **vars(args),
-                **(hyperparams or {}),
-                'file_args': file_args
-            }
-        )
-    
     # Create environments
     print("Creating training environment...")
     print(f"🤖 Oracle enabled: {file_args.get('use_oracle', False)}")
@@ -96,16 +83,32 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     # Placeholder for callbacks
     callbacks = []
 
+    # Initialize wandb if available and not disabled
+    if WANDB_AVAILABLE and not args.disable_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=experiment_name,
+            config={
+                **vars(args),
+                **(hyperparams or {}),
+                'file_args': file_args
+            }
+        )
+        wandb_callback = WandbCallback()
+        callbacks.append(wandb_callback)
+
     # Create evaluation environment and callback
-    eval_file_args = create_eval_file_args(file_args)
-    eval_env = create_env(eval_file_args, 1, monitor=True, time_limited=True)
-    eval_callback = EvalCallback(
-        eval_env=eval_env,
-        eval_freq=args.eval_freq,
-        n_eval_episodes=args.n_eval_episodes,
-        best_model_save_path=str(model_save_dir / "best_model")
-    )
-    callbacks.append(eval_callback)
+    if not args.disable_eval:
+        eval_file_args = create_eval_file_args(file_args)
+        eval_env = create_env(eval_file_args, 1, monitor=True, time_limited=True)
+        eval_callback = EvalCallback(
+            eval_env=eval_env,
+            eval_freq=args.eval_freq,
+            n_eval_episodes=args.n_eval_episodes,
+            best_model_save_path=str(model_save_dir / "best_model")
+        )
+        callbacks.append(eval_callback)
 
     # Create safety evaluation environment and callback
     if args.eval_safety:
@@ -151,6 +154,7 @@ def main():
     parser.add_argument('--verbose', type=int, default=1, help="Verbosity level.")
     parser.add_argument('--device', type=str, default='auto', help="Device to use for training (cpu or cuda).")
     parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
+    parser.add_argument('--disable_eval', action='store_true', help="Disable evaluation during training.")
     parser.add_argument('--eval_safety', action='store_true', help="Enable safety evaluation during training.")
     parser.add_argument('--wandb_project', type=str, default="jani_rl", help="Weights & Biases project name.")
     parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")

@@ -105,11 +105,8 @@ class SafetyEvalCallback(BaseCallback):
                 # Single environment
                 unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env)
             init_pool_size = unwrapped_env.get_init_state_pool_size()
-            safety_rates = []
-            # snap(" Before safety eval ")
+            num_unsafe_episode = 0 # count number of episodes with unsafe steps
             for idx in range(init_pool_size):  
-                # print(f"    Evaluating safety from initial state index: {idx}")
-                # snap("   Before eval initial state ")
                 obs, _ = self.safety_eval_env.reset(options={"idx": idx})
                 done = False
                 truncated = False
@@ -121,32 +118,16 @@ class SafetyEvalCallback(BaseCallback):
                     action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
                     action, _ = self.model.predict(obs, action_masks=action_masks)
                     obs, reward, done, truncated, _ = self.safety_eval_env.step(action)
-                    if reward == unwrapped_env.get_unsafe_reward():
-                        # reward -0.01 indicates an unsafe step
-                        # print(f"        Step {total_steps}: Unsafe step taken.")
-                        unsafe_steps += 1
-                    # else:
-                    #     if reward == -1.0:
-                    #         print(f"        Step {total_steps}: Step to failure state.")
-                    #     elif reward == 1.0:
-                    #         print(f"        Step {total_steps}: Step to goal state.")
-                    #     elif reward == 0.0 and done:
-                    #         print(f"        Step {total_steps}: Dead-end reached.")
-                    #     else:
-                    #         # print(f"        Step {total_steps}: Safe step.")
-                        # snap("        After eval step ")
-                    total_steps += 1
-                safety_rate = 1.0 - (unsafe_steps / total_steps) if total_steps > 0 else 1.0
-                safety_rates.append(safety_rate)
-                # snap(" After eval initial state ")
-            # snap(" After safety eval ")
-            safety_rate = np.mean(safety_rates)
+                    if reward == unwrapped_env.get_unsafe_reward() or reward == unwrapped_env.get_failure_reward():
+                        num_unsafe_episode += 1
+                        break  # Stop evaluation on first unsafe step
+            unsafe_episode_rate = num_unsafe_episode / init_pool_size
             if WANDB_AVAILABLE and wandb.run is not None:
                 wandb.log({
-                    'safety_eval/safety_rate': safety_rate,
+                    'safety_eval/unsafe_episodes_rate': unsafe_episode_rate,
                     'safety_eval/timesteps': self.n_calls
                 })
-            self.logger.record('safety_eval/safety_rate', safety_rate)
+            self.logger.record('safety_eval/unsafe_episodes_rate', unsafe_episode_rate)
             self.logger.record('safety_eval/timesteps', self.n_calls)
         return True
 
