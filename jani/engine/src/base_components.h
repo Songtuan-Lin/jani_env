@@ -379,13 +379,34 @@ public:
         }
         return real_values;
     }
+
+    std::tuple<std::vector<int>, std::vector<double>> toTypedVectors() const {
+        std::vector<int> int_values;
+        std::vector<double> real_values;
+        int_values.resize(state_values.size(), -100000); // Use -100000 as sentinel for uninitialized int values
+        real_values.resize(state_values.size(), -100000.0);
+        for (const auto& pair : state_values) {
+            int var_id = pair.second->getId();
+            std::variant<int, double, bool> var_value = pair.second->getValue();
+            if (std::holds_alternative<int>(var_value)) {
+                int_values[var_id] = std::get<int>(var_value);
+            } else if (std::holds_alternative<double>(var_value)) {
+                real_values[var_id] = std::get<double>(var_value);
+            } else if (std::holds_alternative<bool>(var_value)) {
+                int_values[var_id] = std::get<bool>(var_value) ? 1 : 0;
+            } else {
+                throw std::runtime_error("Variable type cannot be converted to typed vectors");
+            }
+        }
+        return std::make_tuple(int_values, real_values);
+    }
 };
 
 
 struct StateHasher {
     std::size_t operator()(const State& s) const noexcept {
-        boost::hash<std::vector<double>> vector_hasher;
-        return vector_hasher(s.toRealVector());
+        boost::hash<std::tuple<std::vector<int>, std::vector<double>>> tuple_hasher;
+        return tuple_hasher(s.toTypedVectors());
     }
 };
 #endif // JANI_ENGINE_BASE_COMPONENTS_H
