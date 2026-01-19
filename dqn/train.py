@@ -65,7 +65,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     model = MaskedDQN(
         policy="MlpPolicy",
         env=train_env,
-        gradient_steps=10,
+        gradient_steps=5,
         use_mask=args.use_mask,
         seed=args.seed,
         verbose=args.verbose

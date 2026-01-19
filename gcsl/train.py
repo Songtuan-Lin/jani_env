@@ -33,18 +33,32 @@ def train_one_step(
     # print(f"Observation shape in training batch: {obs.shape}")
     condition = batch["reached_condition"].to(device)
     # print(f"Condition shape in training batch: {condition.shape}")
+    print(f"Observation sampled: {obs}")
+    print(f"Condition sampled: {condition}")
     actions = batch["selected_action"].to(device)
     valid_actions = batch["valid_actions"].to(device)
+    assert valid_actions.bool().any(dim=-1).all(), "Some samples have no valid actions"
+    chosen_valid = valid_actions.gather(-1, actions.long().unsqueeze(-1)).squeeze(-1)
+    assert chosen_valid.all(), "Batch contains invalid (action, mask) pairs"
     # print(f"Valid actions shape in training batch: {valid_actions.shape}")
     # Forward pass through the student actor
     embedding, logits = model.get_student_embedding_and_logits(obs, condition)
+    # Suggested by ChatGPT to improve stability
+    masked_logits = logits.masked_fill(~valid_actions.bool(), float("-inf"))
+    logp = torch.log_softmax(masked_logits, dim=-1)
+
+    loss = torch.nn.NLLLoss()(logp, actions.long())
+
     # set logits of invalid actions to large negative value
-    logits = logits.masked_fill(~valid_actions.bool(), -1e9)
+    # logits = logits.masked_fill(~valid_actions.bool(), -1e9)
     # Compute loss
-    loss = criterion(logits, actions.long())
+    # loss = criterion(logits, actions.long())
+
     # Backpropagation and optimization step
     optimizer.zero_grad()
     loss.backward()
+    # Gradient clipping for stability
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     return loss.item()
 

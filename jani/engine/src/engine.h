@@ -286,6 +286,29 @@ public:
         return get_action_mask(current_state);
     }
 
+    std::vector<double> get_constant_vector() {
+        std::vector<double> constant_vector;
+        int expected_id = 0; // To ensure constant IDs are continuous starting from 0
+        for (const auto& c : constants) {
+            if (!(expected_id == c->getId())) {
+                throw std::runtime_error("Constant variable IDs are not continuous starting from 0");
+            }
+            std::variant<int, double, bool> val = c->getValue();
+            if (std::holds_alternative<double>(val)) {
+                constant_vector.push_back(std::get<double>(val));
+            } else if (std::holds_alternative<int>(val)) {
+                constant_vector.push_back(static_cast<double>(std::get<int>(val)));
+            } else if (std::holds_alternative<bool>(val)) {
+                constant_vector.push_back(std::get<bool>(val) ? 1.0 : 0.0);
+            } 
+            else {
+                throw std::runtime_error("Constant variable is not of type double");
+            }
+            expected_id++;
+        }
+        return constant_vector;
+    }
+
     State create_state_from_vector(const std::vector<double>& values) {
         if (values.size() != constants.size() + variables.size()) {
             throw std::runtime_error("Input vector size does not match number of variables");
@@ -391,6 +414,12 @@ public:
             }
         }
         if (num_enabled == 0) {
+            std::cout << "DEBUG: Current action mask: ";
+            std::vector<bool> action_mask = get_current_action_mask();
+            for (size_t i = 0; i < action_mask.size(); i++) {
+                std::cout << action_mask[i] << " ";
+            }
+            std::cout << std::endl;
             throw std::runtime_error("No enabled transition found for action id: " + std::to_string(action_id));
         }
         // Update the current state
