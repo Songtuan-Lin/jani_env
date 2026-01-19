@@ -69,13 +69,13 @@ def train_model(
     
     num_steps = hyperparams.get("num_steps", 1000)
     for step in range(num_steps):
-        if verbose and step % 1 == 0:
+        if verbose and step % 500 == 0:
             avg_reward = evaluate_model(env, model, max_steps=hyperparams.get("max_horizon", 2048), num_episodes=100)
             print(f"Step [{step}/{num_steps}], Average Reward: {avg_reward:.4f}")
         # Perform one training step
         loss = train_one_step(model, rb, criterion, optimizer, batch_size=hyperparams.get("batch_size", 64), device=device)
         # Collect new trajectory and add to replay buffer
-        for _ in range(10):  # collect multiple trajectories per step
+        for _ in range(1):  # collect multiple trajectories per step
             trajectory = collect_trajectory(env, model, max_horizon=hyperparams.get("max_horizon", 2048))
             rb.add_trajectory(trajectory)
 
