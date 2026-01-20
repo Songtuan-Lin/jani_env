@@ -25,6 +25,7 @@ public:
     TarjanOracle(JANIEngine* eng) : engine(eng) {}
     
     std::tuple<bool, int> stateSafetyWithAction(const State& state) {
+        /*Check whether a state is safe. Return the safety result and a safe action starting from the state*/
         #ifndef NDEBUG
         std::cout << "DEBUG: Checking safety for state: " << state.toString() << std::endl;
         #endif
@@ -59,6 +60,11 @@ public:
     bool isEngineStateSafe() {
         const State& state = engine->get_current_state();
         return isStateSafe(state);
+    }
+
+    std::tuple<bool, int> engineStateSafetyWithAction() {
+        const State& state = engine->get_current_state();
+        return stateSafetyWithAction(state);
     }
 
     // For testing purposes

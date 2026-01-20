@@ -59,15 +59,23 @@ class JANIEnv(gym.Env):
             state_vec = self._engine.reset()
         self._reseted = True
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
-        return np.array(state_vec, dtype=np.float32), {}
+        reset_info = {}
+        if self._oracle is not None:
+            is_current_state_safe, current_safe_action = self._oracle.engine_state_safety_with_action()
+            reset_info["current_state_safety"] = is_current_state_safe
+            reset_info["current_safe_action"] = current_safe_action
+        return np.array(state_vec, dtype=np.float32), reset_info
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         if not self._reseted:
             raise RuntimeError("Environment must be reset before stepping.")
         next_state_vec = self._engine.step(action) # The current state should be automatically updated in the engine
+        info = {}
         if self._oracle is not None:
             assert self._unsafe_reward is not None
-            is_next_state_safe = self._oracle.is_engine_state_safe()
+            is_next_state_safe, next_safe_action = self._oracle.engine_state_safety_with_action()
+            info["next_state_safety"] = is_next_state_safe
+            info["next_safe_action"] = next_safe_action
         
         # Compute reward and done flag
         reward = None
@@ -88,7 +96,7 @@ class JANIEnv(gym.Env):
                 reward = 0.0
             done = False
 
-        return np.array(next_state_vec, dtype=np.float32), reward, done, False, {}
+        return np.array(next_state_vec, dtype=np.float32), reward, done, False, info
 
     def action_mask(self) -> np.ndarray:
         if not self._reseted:
