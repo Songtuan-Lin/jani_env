@@ -16,7 +16,7 @@ from stable_baselines3.common.vec_env import VecMonitor
 from sb3_contrib.common.wrappers import ActionMasker
 
 
-def create_env(file_args, n_envs = 1, monitor = False, time_limited = True):
+def create_env(file_args: dict, n_envs: int = 1, monitor: bool = False, time_limited: bool = True) -> JANIEnv:
     """Create JANI environment with specified parameters."""
     def make_env():
         env = JANIEnv(
