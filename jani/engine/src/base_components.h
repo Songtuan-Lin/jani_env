@@ -335,7 +335,12 @@ public:
     std::string toString() const {
         std::vector<std::string> var_strings;
         var_strings.resize(state_values.size());
+        int num_constants = 0;
         for (const auto& pair : state_values) {
+            if (pair.second->isConstant()) {
+                num_constants++;
+                continue; // Skip constants in string representation
+            }
             int var_id = pair.second->getId();
             std::string var_name = pair.first;
             std::variant<int, double, bool> var_value = pair.second->getValue();
@@ -351,7 +356,7 @@ public:
             var_strings[var_id] = var_repr;
         }
         std::string state_repr = "[";
-        for (size_t i = 0; i < var_strings.size(); ++i) {
+        for (size_t i = num_constants; i < var_strings.size(); ++i) {
             state_repr += var_strings[i];
             if (i < var_strings.size() - 1) {
                 state_repr += ", ";

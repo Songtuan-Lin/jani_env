@@ -7,7 +7,7 @@ from tensordict import TensorDict
 from torchrl.modules import MaskedCategorical
 
 from jani import JANIEnv
-from utils import create_env, create_safety_eval_file_args
+from utils import create_env, create_safety_eval_file_args, create_eval_file_args
 
 from .buffer import collect_trajectory, DAggerBuffer
 from .policy import Policy
@@ -83,10 +83,12 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     if not policy_path.exists():
         raise FileNotFoundError(f"Policy file not found: {policy_path}")
     # Load initial policy
+    print(f"Loading initial policy from {policy_path}")
     checkpoint = torch.load(policy_path, map_location=device, weights_only=False)
     input_dim, output_dim, hidden_dims = checkpoint['input_dim'], checkpoint['output_dim'], checkpoint['hidden_dims']
     policy = Policy(input_dim, output_dim, hidden_dims)
     policy.load_state_dict(checkpoint['state_dict'], strict=False)
+    print("Initial policy loaded.")
 
     # Decide whether to use mult-processors
     RAY_AVAILABLE = True
@@ -102,7 +104,8 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     safety_eval_env = create_env(safety_eval_file_args, n_envs=1, monitor=False, time_limited=True)
 
     # Create environment for normal policy evaluation
-    env = create_env(file_args, n_envs=1, monitor=False, time_limited=True)
+    eval_file_args = create_eval_file_args(file_args)
+    env = create_env(eval_file_args, n_envs=1, monitor=False, time_limited=True)
 
     # Initialize optimizer
     learning_rate = hyperparams.get("learning_rate", 1e-3)
@@ -122,6 +125,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         rollouts = []
         init_state_size = safety_eval_env.unwrapped.get_init_state_pool_size()
         if args.get("use_multiprocessors", False) and RAY_AVAILABLE:
+            print(f"Collecting trajectories using {hyperparams.get('num_workers', 200)} Ray workers...")
             # Use Ray workers to collect trajectories in parallel
             network_paras = {
                 'input_dim': input_dim,
@@ -136,6 +140,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 init_size=init_state_size
             )
         else:
+            print("Collecting trajectories sequentially...")
             # Collect trajectories sequentially
             for idx in range(init_state_size):
                 rollout = collect_trajectory(env=safety_eval_env, policy=policy, idx=idx)

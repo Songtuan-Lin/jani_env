@@ -85,7 +85,7 @@ class JANIEnv(gym.Env):
         info = {}
         if self._oracle is not None:
             assert self._unsafe_reward is not None
-            assert self._engine.get_current_state_vector() == self._oracle.get_engine_current_state_vector(), "After step, engine state does not match oracle state. Engine {}, Oracle {}".format(self._engine.get_current_state_vector(), self._oracle.get_engine_current_state_vector())
+            assert self._engine.get_current_state_vector() == self._oracle.get_engine_current_state_vector() == next_state_vec, "After step, engine state does not match oracle state. Engine {}, Oracle {}".format(self._engine.get_current_state_vector(), self._oracle.get_engine_current_state_vector())
             is_next_state_safe, next_safe_action = self._oracle.engine_state_safety_with_action()
             info["next_state_safety"] = is_next_state_safe
             info["next_safe_action"] = next_safe_action
@@ -107,7 +107,7 @@ class JANIEnv(gym.Env):
                 reward = self._unsafe_reward
                 if self._prev_state_safe:
                     # Just transitioned from safe to unsafe
-                    assert action != self._prev_safe_action, f"Obs: {self._prev_obs}: Expect taken action {action} differ from previous safe action {self._prev_safe_action} when transitioning to unsafe state."
+                    assert action != self._prev_safe_action, f"From last obs: {self._prev_obs} to current obs: {next_state_vec}: Expect taken action {action} differ from previous safe action {self._prev_safe_action} when transitioning to unsafe state."
             else:
                 reward = 0.0
             done = False
