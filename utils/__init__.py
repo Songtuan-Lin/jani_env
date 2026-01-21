@@ -28,7 +28,8 @@ def create_env(file_args: dict, n_envs: int = 1, monitor: bool = False, time_lim
             seed=file_args["seed"],
             goal_reward=file_args["goal_reward"],
             use_oracle=file_args.get("use_oracle", False),
-            failure_reward=file_args["failure_reward"]
+            failure_reward=file_args["failure_reward"],
+            unsafe_reward=file_args.get("unsafe_reward", -0.01)
         ) 
 
         if time_limited:
@@ -61,7 +62,10 @@ def create_safety_eval_file_args(file_args: Dict[str, Any], args: Dict[str, Any]
     """Create file arguments for safety evaluation environment."""
     safety_eval_file_args = file_args.copy()
     # Modify any parameters specific to safety evaluation if needed
-    safety_eval_file_args["start_states"] = args.eval_start_states # use different start states for safety evaluation
+    eval_start_states = args.get("eval_start_states", "")
+    if eval_start_states == "":
+        eval_start_states = file_args.get("start_states", "")
+    safety_eval_file_args["start_states"] = eval_start_states # use different start states for safety evaluation
     safety_eval_file_args["seed"] += 2000  # offset seed for safety evaluation
     safety_eval_file_args["use_oracle"] = True  # enable oracle during safety evaluation
     return safety_eval_file_args

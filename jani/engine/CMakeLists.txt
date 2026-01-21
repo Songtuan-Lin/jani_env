@@ -60,6 +60,10 @@ target_compile_definitions(backend
         $<$<CONFIG:Release>:NDEBUG>
 )
 
+# Create debugging executable
+add_executable(oracle_debug debug/oracle_debug.cpp)
+target_link_libraries(oracle_debug PUBLIC ${PROJECT_NAME})
+
 # Link GoogleTest to the project
 enable_testing()
 

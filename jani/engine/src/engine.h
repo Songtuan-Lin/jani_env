@@ -456,6 +456,10 @@ public:
         return current_state;
     }
 
+    const std::vector<double> get_current_state_vector() const {
+        return current_state.toRealVector();
+    }
+
     std::vector<double> get_lower_bounds() {
         std::vector<double> lower_bounds;
         for (const auto& c : constants) {

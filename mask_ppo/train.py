@@ -129,6 +129,18 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         reset_num_timesteps=reset_timesteps
     )
 
+    # Save the final model (actor only)
+    policy = model.policy
+    hidden_dims = policy.net_arch['pi']
+    actor_path = model_save_dir / "final_actor.pth"
+    torch.save({
+        'input_dim': train_env.observation_space.shape[0],
+        'output_dim': train_env.action_space.n,
+        'hidden_dims': hidden_dims,
+        'state_dict': policy.state_dict()
+    }, actor_path)
+    print(f"Final actor model saved to {actor_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")
@@ -140,6 +152,7 @@ def main():
     parser.add_argument('--eval_start_states', type=str, default="", help="Path to the evaluation start states file.")
     parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
     parser.add_argument('--use_oracle', action='store_true', help="Use Tarjan oracle for unsafe state detection.")
     parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
@@ -182,6 +195,7 @@ def main():
         'failure_property': args.failure_property,
         'goal_reward': args.goal_reward,
         'failure_reward': args.failure_reward,
+        'unsafe_reward': args.unsafe_reward,
         'seed': args.seed,
         'use_oracle': args.use_oracle,
         'max_steps': args.max_steps

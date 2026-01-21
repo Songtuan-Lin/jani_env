@@ -51,6 +51,11 @@ class JANIEnv(gym.Env):
         # Initialize reset flag
         self._reseted = False
 
+        # For debugging
+        self._prev_state_safe = False
+        self._prev_safe_action = -1
+        self._prev_obs = None
+
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> tuple[dict, dict]:
         super().reset(seed=seed)
         if options is not None and "idx" in options:
@@ -64,15 +69,23 @@ class JANIEnv(gym.Env):
             is_current_state_safe, current_safe_action = self._oracle.engine_state_safety_with_action()
             reset_info["current_state_safety"] = is_current_state_safe
             reset_info["current_safe_action"] = current_safe_action
+
+            self._prev_state_safe = is_current_state_safe
+            self._prev_safe_action = current_safe_action
+            self._prev_obs = state_vec
         return np.array(state_vec, dtype=np.float32), reset_info
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         if not self._reseted:
             raise RuntimeError("Environment must be reset before stepping.")
+        if self._oracle is not None:
+            assert self._prev_obs == self._engine.get_current_state_vector(), "Current observation does not match engine state. Expected {}, got {}".format(self._prev_obs, self._engine.get_current_state_vector())
+            assert self._engine.get_current_state_vector() == self._oracle.get_engine_current_state_vector(), "Engine state does not match oracle state. Engine {}, Oracle {}".format(self._engine.get_current_state_vector(), self._oracle.get_engine_current_state_vector())
         next_state_vec = self._engine.step(action) # The current state should be automatically updated in the engine
         info = {}
         if self._oracle is not None:
             assert self._unsafe_reward is not None
+            assert self._engine.get_current_state_vector() == self._oracle.get_engine_current_state_vector(), "After step, engine state does not match oracle state. Engine {}, Oracle {}".format(self._engine.get_current_state_vector(), self._oracle.get_engine_current_state_vector())
             is_next_state_safe, next_safe_action = self._oracle.engine_state_safety_with_action()
             info["next_state_safety"] = is_next_state_safe
             info["next_safe_action"] = next_safe_action
@@ -90,11 +103,18 @@ class JANIEnv(gym.Env):
             reward = 0.0
             done = True
         else:
-            if self._oracle is not None and not is_next_state_safe:
+            if (self._oracle is not None) and (not is_next_state_safe):
                 reward = self._unsafe_reward
+                if self._prev_state_safe:
+                    # Just transitioned from safe to unsafe
+                    assert action != self._prev_safe_action, f"Obs: {self._prev_obs}: Expect taken action {action} differ from previous safe action {self._prev_safe_action} when transitioning to unsafe state."
             else:
                 reward = 0.0
             done = False
+        if self._oracle is not None:
+            self._prev_state_safe = is_next_state_safe
+            self._prev_safe_action = next_safe_action
+            self._prev_obs = next_state_vec
 
         return np.array(next_state_vec, dtype=np.float32), reward, done, False, info
 

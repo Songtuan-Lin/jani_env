@@ -1,5 +1,6 @@
 import ray
 import torch
+import torch.nn as nn
 
 from .policy import Policy
 from .buffer import collect_trajectory
@@ -30,7 +31,7 @@ class RolloutWorker:
 def run_rollouts(
         file_args: dict, 
         network_paras: dict, 
-        network_state_dict,
+        policy: nn.Module,
         num_workers: int, 
         init_size: int) -> list:
     """Run multiple rollouts in parallel using Ray."""
@@ -38,8 +39,11 @@ def run_rollouts(
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=False)
 
+    network_state_dict = policy.state_dict()
+    state_dict_ref = ray.put(network_state_dict)
+
     # Create a RolloutWorker actor
-    workers = [RolloutWorker.remote(file_args, network_paras, network_state_dict) for _ in range(num_workers)]
+    workers = [RolloutWorker.remote(file_args, network_paras, state_dict_ref) for _ in range(num_workers)]
 
     # Launch rollouts in parallel
     futures = []

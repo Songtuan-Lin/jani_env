@@ -2,6 +2,7 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/unordered_map.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/filesystem.h>
 #include "engine.h"
 #include "oracle.h"
@@ -29,6 +30,7 @@ NB_MODULE(backend, m) {
         .def("get_current_action_mask", &JANIEngine::get_current_action_mask)
         .def("get_action_mask_for_obs", &JANIEngine::get_action_mask_for_obs)
         .def("get_constant_vector", &JANIEngine::get_constant_vector)
+        .def("get_current_state_vector", &JANIEngine::get_current_state_vector)
         .def("test_guards_for_action", &JANIEngine::testGuardsForAction)
         .def("test_destinations_for_action", &JANIEngine::testDestinationsForAction)
         .def("reach_goal_current", &JANIEngine::reach_goal_current)
@@ -46,6 +48,7 @@ NB_MODULE(backend, m) {
 
     nb::class_<TarjanOracle>(m, "TarjanOracle")
         .def(nb::init<JANIEngine*>(), nb::arg("engine"))
+        .def("get_engine_current_state_vector", &TarjanOracle::getEngineCurrentStateVector) // For debugging
         .def("is_engine_state_safe", &TarjanOracle::isEngineStateSafe)
         .def("is_state_safe_from_vector", &TarjanOracle::isStateSafeFromVector)
         .def("engine_state_safety_with_action", &TarjanOracle::engineStateSafetyWithAction);

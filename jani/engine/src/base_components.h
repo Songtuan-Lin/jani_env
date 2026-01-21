@@ -363,7 +363,7 @@ public:
 
     std::vector<double> toRealVector() const {
         std::vector<double> real_values;
-        real_values.resize(state_values.size());
+        real_values.resize(state_values.size(), -999.0); // Use -999.0 as sentinel for uninitialized values
         for (const auto& pair : state_values) {
             int var_id = pair.second->getId();
             std::variant<int, double, bool> var_value = pair.second->getValue();
@@ -377,6 +377,13 @@ public:
                 throw std::runtime_error("Variable type cannot be converted to real number");
             }
         }
+        #ifndef NDEBUG
+        for (size_t i = 0; i < real_values.size(); ++i) {
+            if (real_values[i] == -999.0) {
+                throw std::runtime_error("Variable with ID " + std::to_string(i) + " was not initialized in state toRealVector conversion");
+            }
+        }
+        #endif
         return real_values;
     }
 

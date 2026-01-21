@@ -71,4 +71,8 @@ public:
     const State getEngineCurrentState() {
         return engine->get_current_state();
     }
+
+    const std::vector<double> getEngineCurrentStateVector() {
+        return engine->get_current_state().toRealVector();
+    }
 };
