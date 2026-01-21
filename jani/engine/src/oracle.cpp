@@ -77,19 +77,6 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
             #endif
             for (State& succ_state : successor_states) {
                 if (on_stack_map.find(succ_state) != on_stack_map.end()) {
-                    if (cache.find(succ_state) != cache.end()) {
-                        bool succ_safe = std::get<0>(cache[succ_state]);
-                        #ifndef NDEBUG
-                        std::cout << "  DEBUG: Successor state " << succ_idx << " found in cache: " << succ_state.toString() << " marked " << (succ_safe ? "safe." : "unsafe.") << std::endl;
-                        succ_idx++;
-                        #endif
-                        if (!succ_safe) {
-                            is_safe_action = false;
-                            break; // No need to check other successors for this action
-                        } else {
-                            continue; // Check the next successor
-                        }
-                    }
                     #ifndef NDEBUG
                     std::cout << "  DEBUG: Successor state " << succ_idx << " is on stack: " << succ_state.toString() << std::endl;
                     succ_idx++;
@@ -125,55 +112,32 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                     }
                 }
             }
+            if (node->lowlink == node->index) {
+                // The successor states have all been processed
+                // We can pop the stack to form an SCC
+                State w;
+                while(true) {
+                    // We might be able to mark all states in the SCC as safe here
+                    // However, we then cannot get the safe action id for other states in the SCC
+                    w = stack.back();
+                    if (w == node->state)
+                        break; // We need the current node to remain on the stack for the next action
+                    stack.pop_back();
+                    on_stack_map.erase(w);
+                }
+            }
             if (is_safe_action) {
-                is_safe_state = true;
-                safe_action_id = action_id;
-                #ifndef NDEBUG
-                std::cout << "  DEBUG: State " << node->state.toString() << " with Action id " << action_id << " is safe." << std::endl;
-                #endif
-                break; // No need to check other actions if one is safe
-            } else {
-                is_safe_state = false;
+                cache[node->state] = std::make_tuple(true, action_id); // Mark the state as safe in the cache
+                return std::make_tuple(true, action_id);
             }
         }
-        // TODO: We might need remove a SCC after investigating *every action* because SCCs cross different actions should be independent of each other
-        // If node is a root node, pop the stack and generate an SCC
-        if (is_safe_state) {
-            if (node->lowlink == node->index) {
-                // std::cout << "            RSS usage before caching: " << rss_mb() << " MB" << std::endl;
-                cache[node->state] = std::make_tuple(true, safe_action_id); // Mark the state as safe in the cache
-                // std::cout << "            RSS usage after caching: " << rss_mb() << " MB" << std::endl;
-                State w;
-                do {
-                    w = stack.back();
-                    stack.pop_back();
-                    on_stack_map.erase(w);
-                } while (w != node->state);
-            }
-            #ifndef NDEBUG
-            std::cout << "  DEBUG: State marked safe." << std::endl;
-            std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
-            #endif
-            return std::make_tuple(true, safe_action_id);
-        } else {
-            // If state is unsafe, we could always mark it immediately
-            cache[node->state] = std::make_tuple(false, -1);
-            if (node->lowlink == node->index) {
-                // Mark the state as unsafe in the cache
-                // std::cout << "            RSS usage before caching: " << rss_mb() << " MB" << std::endl;
-                // cache[node->state] = std::make_tuple(false, -1);
-                // std::cout << "            RSS usage after caching: " << rss_mb() << " MB" << std::endl;
-                State w;
-                do {
-                    w = stack.back();
-                    stack.pop_back();
-                    on_stack_map.erase(w);
-                } while (w != node->state);
-            }
-            #ifndef NDEBUG
-            std::cout << "  DEBUG: State marked unsafe." << std::endl;
-            std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
-            #endif
-            return std::make_tuple(false, -1);
+        // If we reach here, then the state is unsafe
+        cache[node->state] = std::make_tuple(false, -1);
+        State u = stack.back();
+        if (u != node->state) {
+            throw std::runtime_error("Top of stack is not the current node when all actions have been processed");
         }
+        stack.pop_back();
+        on_stack_map.erase(u);
+        return std::make_tuple(false, -1);
     }
