@@ -130,8 +130,8 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     )
 
     # Save the final model (actor only)
-    policy = model.policy
-    hidden_dims = policy.net_arch['pi']
+    policy = model.policy.mlp_extractor.policy_net
+    hidden_dims = model.policy.net_arch['pi']
     actor_path = model_save_dir / "final_actor.pth"
     torch.save({
         'input_dim': train_env.observation_space.shape[0],

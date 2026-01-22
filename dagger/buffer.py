@@ -67,7 +67,7 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
         safety.append(info["next_state_safety"])
         safe_actions.append(info["next_safe_action"])
 
-    assert len(observations) == len(actions) == len(rewards) == len(next_observations) == len(safety) == len(safe_actions), "Mismatch in trajectory lengths"
+    assert len(observations) == len(actions) == len(rewards) == len(next_observations), f"Mismatch in trajectory lengths, get {len(observations)}, {len(actions)}, {len(rewards)}, {len(next_observations)}"
     trajectory = TensorDict({
         "observation": torch.tensor(observations, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "action": torch.tensor(actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
@@ -82,8 +82,12 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
         "kept_action": torch.tensor(kept_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
         "kept_action_mask": torch.tensor(kept_action_masks, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
     }, batch_size=())
+    info = {
+        "is_safe_trajectory": safe_trajectory,
+        "final_reward": rewards[-1]
+    }
 
-    return (trajectory, safe_trajectory)
+    return (trajectory, info)
 
 
 class DAggerBuffer:

@@ -16,7 +16,8 @@ from .policy import Policy
 def evaluate_policy(
         env: JANIEnv, 
         policy: nn.Module, 
-        num_episodes: int = 100, 
+        num_episodes: int = 100,
+        max_steps: int = 1024, 
         device: torch.device = torch.device("cpu")) -> float:
     """Evaluate the policy over a number of episodes and return the average reward."""
     policy.to(device)
@@ -27,8 +28,9 @@ def evaluate_policy(
         obs, _ = env.reset()
         done = False
         episode_reward = 0.0
+        step_count = 0
 
-        while not done:
+        while not done and step_count < max_steps:
             obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
             action_mask = env.unwrapped.action_mask().astype(int)
             action_mask_tensor = torch.tensor(action_mask, dtype=torch.bool).unsqueeze(0)  # Add batch dimension
@@ -37,6 +39,7 @@ def evaluate_policy(
                 action_dist = MaskedCategorical(logits=logits, mask=action_mask_tensor)
                 action = action_dist.sample().squeeze(0).item()  # Sample action and remove batch dimension
             obs, reward, done, _, _ = env.step(action)
+            step_count += 1
         episode_reward += reward # Consider only reward at the end of episode
 
         total_reward += episode_reward
@@ -76,6 +79,27 @@ def train_step(
     return loss.item()
 
 
+
+def load_policy(checkpoint) -> nn.Module:
+    """Load a policy network from a checkpoint."""
+    input_dim = checkpoint['input_dim']
+    output_dim = checkpoint['output_dim']
+    hidden_dims = checkpoint['hidden_dims']
+    policy = Policy(input_dim, output_dim, hidden_dims)
+    # Mapping sb3 state dict to our Policy state dict
+    mapped = {
+        "model.0.weight": checkpoint['state_dict']["mlp_extractor.policy_net.0.weight"],
+        "model.0.bias":   checkpoint['state_dict']["mlp_extractor.policy_net.0.bias"],
+        "model.2.weight": checkpoint['state_dict']["mlp_extractor.policy_net.2.weight"],
+        "model.2.bias":   checkpoint['state_dict']["mlp_extractor.policy_net.2.bias"],
+        "model.4.weight": checkpoint['state_dict']["action_net.weight"],
+        "model.4.bias":   checkpoint['state_dict']["action_net.bias"],
+    }
+    policy.load_state_dict(mapped, strict=True)
+    return policy
+
+
+
 def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device = torch.device("cpu")):
     """Main training loop for DAgger."""
     assert args["policy_path"] is not None, "Initial policy path must be provided for DAgger."
@@ -85,9 +109,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     # Load initial policy
     print(f"Loading initial policy from {policy_path}")
     checkpoint = torch.load(policy_path, map_location=device, weights_only=False)
-    input_dim, output_dim, hidden_dims = checkpoint['input_dim'], checkpoint['output_dim'], checkpoint['hidden_dims']
-    policy = Policy(input_dim, output_dim, hidden_dims)
-    policy.load_state_dict(checkpoint['state_dict'], strict=False)
+    policy = load_policy(checkpoint)
     print("Initial policy loaded.")
 
     # Decide whether to use mult-processors
@@ -124,13 +146,14 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         # Collect new trajectories and add to replay buffer
         rollouts = []
         init_state_size = safety_eval_env.unwrapped.get_init_state_pool_size()
+        init_state_size = min(args.get("num_init_states", 10000), init_state_size)
         if args.get("use_multiprocessors", False) and RAY_AVAILABLE:
             print(f"Collecting trajectories using {hyperparams.get('num_workers', 200)} Ray workers...")
             # Use Ray workers to collect trajectories in parallel
             network_paras = {
-                'input_dim': input_dim,
-                'output_dim': output_dim,
-                'hidden_dims': hidden_dims
+                'input_dim': checkpoint['input_dim'],
+                'output_dim': checkpoint['output_dim'],
+                'hidden_dims': checkpoint['hidden_dims']
             }
             rollouts = ray_worker.run_rollouts(
                 file_args=safety_eval_file_args, # Use safety eval file args
@@ -146,24 +169,26 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 rollout = collect_trajectory(env=safety_eval_env, policy=policy, idx=idx)
                 rollouts.append(rollout)
         # Check whether all trajectories are safe
-        all_safe = all([rollout[1] for rollout in rollouts])
+        all_safe = all([rollout[1]["is_safe_trajectory"] for rollout in rollouts])
+        percentage_safe = sum([rollout[1]["is_safe_trajectory"] for rollout in rollouts]) / len(rollouts) * 100.0
+        avg_reward = sum([rollout[1]["final_reward"] for rollout in rollouts]) / len(rollouts)
+        print(f"Before iteration {iter}: {percentage_safe:.2f}% of collected trajectories are safe with average reward {avg_reward:.2f}.")
         if all_safe:
             avg_reward = evaluate_policy(env, policy, num_episodes=100)
             final_eval_info = {
                 "iteration": iter,
                 "average_reward": avg_reward
             }
-            print(f"All trajectories safe at iteration {iter}. Final evaluation info: {final_eval_info}")
+            print(f"All trajectories safe at iteration {iter}. Final evaluation on domain: {final_eval_info["average_reward"]:.2f}")
             return
         # Process and add rollouts to replay buffer
         rb.add_rollouts(rollouts)
 
-        # Perform a training step
-        batch_size = hyperparams.get("batch_size", 64)
-        for s in range(5): # Train for multiple steps per iteration
+        # Perform training steps
+        for s in range(hyperparams.get("steps_per_iteration", 5)):
+            batch_size = hyperparams.get("batch_size", 256)
             loss = train_step(rb, policy, optimizer, batch_size, device)
-            print(f"Iteration {iter} Step {s}: Loss = {loss:.4f}")
-        print(f"Average Reward after iteration {iter}: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
+            print(f"Iteration {iter} step {s}: Loss = {loss:.4f}")
 
 
 def main():
@@ -178,6 +203,7 @@ def main():
     parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
     parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
+    parser.add_argument('--num_init_states', type=int, default=10000, help="Number of initial states to sample from.")
     parser.add_argument('--use_multiprocessors', action='store_true', help="Use multiprocessors for rollout collection.")
     parser.add_argument('--num_workers', type=int, default=8, help="Number of workers for multiprocessor rollout collection.")
     parser.add_argument('--empty_buffer', action='store_true', help="Empty the replay buffer at each iteration.")
@@ -205,7 +231,7 @@ def main():
         'learning_rate': 1e-3,
         'replay_buffer_capacity': 10000,
         'num_iterations': 10000,
-        'batch_size': 64,
+        'batch_size': 256,
         'num_workers': min(args.num_workers, os.cpu_count() - 2) # Ensure not to exceed available CPUs
     }
 

@@ -37,7 +37,7 @@ def run_rollouts(
     """Run multiple rollouts in parallel using Ray."""
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=False)
+        ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
 
     network_state_dict = policy.state_dict()
     state_dict_ref = ray.put(network_state_dict)
