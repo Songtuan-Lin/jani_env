@@ -172,7 +172,20 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         all_safe = all([rollout[1]["is_safe_trajectory"] for rollout in rollouts])
         percentage_safe = sum([rollout[1]["is_safe_trajectory"] for rollout in rollouts]) / len(rollouts) * 100.0
         avg_reward = sum([rollout[1]["final_reward"] for rollout in rollouts]) / len(rollouts)
+
         print(f"Before iteration {iter}: {percentage_safe:.2f}% of collected trajectories are safe with average reward {avg_reward:.2f}.")
+        try:
+            import wandb
+            WANDB_AVAILABLE = True
+        except ImportError:
+            WANDB_AVAILABLE = False
+        if WANDB_AVAILABLE and (not args.disable_wandb) and wandb.run is not None:
+            wandb.log({
+                'safe_eval/percentage_safe_trajectories': percentage_safe,
+                'safe_eval/average_reward': avg_reward,
+                'safe_eval/iteration': iter
+            }, step=iter)
+
         if all_safe:
             avg_reward = evaluate_policy(env, policy, num_episodes=100)
             final_eval_info = {
@@ -189,6 +202,11 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             batch_size = hyperparams.get("batch_size", 256)
             loss = train_step(rb, policy, optimizer, batch_size, device)
             print(f"Iteration {iter} step {s}: Loss = {loss:.4f}")
+            if WANDB_AVAILABLE and (not args.disable_wandb) and wandb.run is not None:
+                wandb.log({
+                    'train/loss': loss,
+                    'train/iteration': iter,
+                })
 
 
 def main():
@@ -210,6 +228,10 @@ def main():
     parser.add_argument('--device', type=str, default="cpu", help="Device to use for training (cpu or cuda).")
     parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
+    parser.add_argument('--wandb_project', type=str, default="dagger", help="Weights & Biases project name.")
+    parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
+    parser.add_argument('--experiment_name', type=str, default="", help="Name of the experiment.")
+    parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
     args = parser.parse_args()
 
     file_args = {
@@ -234,6 +256,25 @@ def main():
         'batch_size': 256,
         'num_workers': min(args.num_workers, os.cpu_count() - 2) # Ensure not to exceed available CPUs
     }
+
+    try:
+        import wandb
+        WANDB_AVAILABLE = True
+    except ImportError:
+        WANDB_AVAILABLE = False
+        print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
+
+    if WANDB_AVAILABLE and not args.disable_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.experiment_name,
+            config={
+                **vars(args),
+                **(hyperparams or {}),
+                'file_args': file_args
+            }
+        )
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     train(vars(args), file_args, hyperparams, device)

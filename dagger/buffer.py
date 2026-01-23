@@ -114,6 +114,7 @@ class DAggerBuffer:
 
     def sample(self, batch_size: int):
         """Sample a batch of state-action pairs from both buffers."""
+        #  TODO: handle the case when one buffer is empty or smaller than required batch size
         batch_size_neg = min(batch_size // 2, len(self.negative_buffer))
         batch_size_pos = batch_size - batch_size_neg
         pos_batch = self.positive_buffer.sample(batch_size_pos)
