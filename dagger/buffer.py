@@ -53,6 +53,7 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
                 corrected_action_masks.append(action_mask.astype(int))
                 assert len(obs_to_correct) == len(corrected_action_masks) == len(corrected_actions), "Mismatch in correction lengths"
         else: # If the next state is still safe
+            # TODO: Maybe should seperate transitions from an unsafe state to a safe state, it is also important
             obs_to_keep.append(observations[-1]) # Keep the action taken in the previous safe state unchanged
             kept_actions.append(action) # This is to restrict the policy not deviate too much
             kept_action_masks.append(action_mask.astype(int))
@@ -87,6 +88,9 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
         "final_reward": rewards[-1]
     }
 
+    # For debugging
+    print(f"Safety info for trajectory {idx}: {safety}")
+
     return (trajectory, info)
 
 
@@ -115,10 +119,22 @@ class DAggerBuffer:
     def sample(self, batch_size: int):
         """Sample a batch of state-action pairs from both buffers."""
         #  TODO: handle the case when one buffer is empty or smaller than required batch size
-        batch_size_neg = min(batch_size // 2, len(self.negative_buffer))
-        batch_size_pos = batch_size - batch_size_neg
-        pos_batch = self.positive_buffer.sample(batch_size_pos)
-        neg_batch = self.negative_buffer.sample(batch_size_neg)
+        if len(self.positive_buffer) == 0 and len(self.negative_buffer) == 0:
+            print("Both buffers are empty, training terminated.")
+            exit(0)
+        if len(self.positive_buffer) == 0:
+            print("Positive buffer is empty, sampling only from negative buffer.")
+            batch_data = self.negative_buffer.sample(batch_size)
+            return batch_data
+        if len(self.negative_buffer) == 0:
+            print("Negative buffer is empty, sampling only from positive buffer.")
+            batch_data = self.positive_buffer.sample(batch_size)
+            return batch_data
+        # batch_size_neg = min(batch_size // 2, len(self.negative_buffer))
+        # batch_size_pos = batch_size - batch_size_neg
+        sub_batch_size = batch_size // 2
+        pos_batch = self.positive_buffer.sample(sub_batch_size)
+        neg_batch = self.negative_buffer.sample(sub_batch_size)
         # Ususally shuffle is not necessary since we are doing behavior cloning
         batch_data = tensordict.cat([pos_batch, neg_batch], dim=0)
         return batch_data

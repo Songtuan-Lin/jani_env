@@ -179,7 +179,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             WANDB_AVAILABLE = True
         except ImportError:
             WANDB_AVAILABLE = False
-        if WANDB_AVAILABLE and (not args.disable_wandb) and wandb.run is not None:
+        if WANDB_AVAILABLE and (not args.get("disable_wandb", False)) and wandb.run is not None:
             wandb.log({
                 'safe_eval/percentage_safe_trajectories': percentage_safe,
                 'safe_eval/average_reward': avg_reward,
@@ -202,7 +202,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             batch_size = hyperparams.get("batch_size", 256)
             loss = train_step(rb, policy, optimizer, batch_size, device)
             print(f"Iteration {iter} step {s}: Loss = {loss:.4f}")
-            if WANDB_AVAILABLE and (not args.disable_wandb) and wandb.run is not None:
+            if WANDB_AVAILABLE and (not args.get("disable_wandb", False)) and wandb.run is not None:
                 wandb.log({
                     'train/loss': loss,
                     'train/iteration': iter,
