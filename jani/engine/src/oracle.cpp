@@ -12,7 +12,7 @@ size_t rss_mb() {
 
 
 std::tuple<bool, int>TarjanOracle::tarjan_dfs(
-    TarjanNode *node, int index, 
+    TarjanNode *node, 
     std::vector<State> &stack, 
     std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> &on_stack_map) {
         #ifndef NDEBUG
@@ -43,8 +43,8 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
             #endif
             return std::make_tuple(false, -1); // A failure state is an unsafe state
         }
-        node->index = index;
-        node->lowlink = index;
+        node->index = stack.size();
+        node->lowlink = stack.size();
         stack.push_back(node->state);
         // Create a copy of the node for storing in the on-stack map
         on_stack_map[node->state] = std::make_unique<TarjanNode>(node->state);
@@ -95,7 +95,7 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                     // Successor not on stack
                     std::unique_ptr<TarjanNode> succ_node = std::make_unique<TarjanNode>(succ_state);
                     // TarjanNode* succ_node = new TarjanNode(succ_state);
-                    std::tuple<bool, int> succ_result = tarjan_dfs(succ_node.get(), index + 1, stack, on_stack_map);
+                    std::tuple<bool, int> succ_result = tarjan_dfs(succ_node.get(), stack, on_stack_map);
                     bool succ_safe = std::get<0>(succ_result);
                     #ifndef NDEBUG
                     std::cout << "  DEBUG: Successor state " << succ_idx << " returned " << (succ_safe ? "safe." : "unsafe.") << " with action " << std::get<1>(succ_result) << std::endl;
@@ -114,6 +114,10 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
             }
             if (node->lowlink == node->index) {
                 // The successor states have all been processed
+                if (is_safe_action) {
+                    // Mark the state as safe in the cache only for the root of the SCC
+                    cache[node->state] = std::make_tuple(true, action_id);
+                }
                 // We can pop the stack to form an SCC
                 State w;
                 while(true) {
@@ -127,8 +131,7 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                 }
             }
             if (is_safe_action) {
-                cache[node->state] = std::make_tuple(true, action_id); // Mark the state as safe in the cache
-                return std::make_tuple(true, action_id);
+                return std::make_tuple(true, action_id); 
             }
         }
         // If we reach here, then the state is unsafe
