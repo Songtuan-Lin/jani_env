@@ -138,6 +138,13 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     rb = DAggerBuffer(buffer_size=rb_capacity)
 
     print(f"Average Reward before training: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
+    safety_rates = [] # To track safety rates over iterations
+    avg_rewards = []  # To track average rewards over iterations
+    safety_log_file = Path(args.get("log_directory", "./logs")) / "safety_rates.txt"
+    rewards_log_file = Path(args.get("log_directory", "./logs")) / "average_rewards.txt"
+    open(safety_log_file, 'w').close() # Clear existing log file
+    open(rewards_log_file, 'w').close() # Clear existing log file
+
     # Main training loop
     num_iterations = hyperparams.get("num_iterations", 10000)
     for iter in range(num_iterations):
@@ -172,8 +179,15 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         all_safe = all([rollout[1]["is_safe_trajectory"] for rollout in rollouts])
         percentage_safe = sum([rollout[1]["is_safe_trajectory"] for rollout in rollouts]) / len(rollouts) * 100.0
         avg_reward = sum([rollout[1]["final_reward"] for rollout in rollouts]) / len(rollouts)
-
+        # Log safety statistics
+        safety_rates.append(percentage_safe)
+        avg_rewards.append(avg_reward)
+        with open(safety_log_file, 'a') as f:
+            f.write(f"{iter}\t{percentage_safe}\n")
+        with open(rewards_log_file, 'a') as f:
+            f.write(f"{iter}\t{avg_reward}\n")
         print(f"Before iteration {iter}: {percentage_safe:.2f}% of collected trajectories are safe with average reward {avg_reward:.2f}.")
+
         try:
             import wandb
             WANDB_AVAILABLE = True
@@ -192,6 +206,18 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 "iteration": iter,
                 "average_reward": avg_reward
             }
+            # Save final policy
+            model_save_dir = Path(args.get("model_save_dir", "./models"))
+            model_save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = model_save_dir / f"dagger_policy_final_iter_{iter}.pth"
+            torch.save({
+                'input_dim': checkpoint['input_dim'],
+                'output_dim': checkpoint['output_dim'],
+                'hidden_dims': checkpoint['hidden_dims'],
+                'state_dict': policy.state_dict()
+            }, save_path)
+            print(f"Saved final policy to {save_path}")
+            
             print(f"All trajectories safe at iteration {iter}. Final evaluation on domain: {final_eval_info["average_reward"]:.2f}")
             return
         # Process and add rollouts to replay buffer
@@ -208,6 +234,19 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                     'train/iteration': iter,
                 })
 
+        # Save intermediate policy
+        if (iter + 1) % args.get("save_interval", 10) == 0:
+            model_save_dir = Path(args.get("model_save_dir", "./models"))
+            model_save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = model_save_dir / f"dagger_policy_iter_{iter+1}.pth"
+            torch.save({
+                'input_dim': checkpoint['input_dim'],
+                'output_dim': checkpoint['output_dim'],
+                'hidden_dims': checkpoint['hidden_dims'],
+                'state_dict': policy.state_dict()
+            }, save_path)
+            print(f"Saved intermediate policy at iteration {iter+1} to {save_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")
@@ -222,6 +261,7 @@ def main():
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
     parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
     parser.add_argument('--num_init_states', type=int, default=10000, help="Number of initial states to sample from.")
+    parser.add_argument('--num_iterations', type=int, default=200, help="Number of DAgger iterations to perform.")
     parser.add_argument('--use_multiprocessors', action='store_true', help="Use multiprocessors for rollout collection.")
     parser.add_argument('--num_workers', type=int, default=8, help="Number of workers for multiprocessor rollout collection.")
     parser.add_argument('--empty_buffer', action='store_true', help="Empty the replay buffer at each iteration.")
@@ -231,6 +271,8 @@ def main():
     parser.add_argument('--wandb_project', type=str, default="dagger", help="Weights & Biases project name.")
     parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
     parser.add_argument('--experiment_name', type=str, default="", help="Name of the experiment.")
+    parser.add_argument('--log_directory', type=str, default="./logs", help="Directory to save logs and checkpoints.")
+    parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save trained models.")
     parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
     args = parser.parse_args()
 
@@ -277,6 +319,8 @@ def main():
         )
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    log_dir = Path(args.log_directory)
+    log_dir.mkdir(parents=True, exist_ok=True)
     train(vars(args), file_args, hyperparams, device)
 
 
