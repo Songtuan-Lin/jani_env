@@ -18,7 +18,7 @@ class TarjanOracle {
     // The main Tarjan's DFS function
     // Returns a tuple of (is_safe, safe_action_id) 
     // safe_action_id is -1 if no safe actions exist (the state is unsafe), the state is a goal state, or the state is a dead-end
-    std::tuple<bool, int> tarjan_dfs(TarjanNode* node,
+    std::tuple<bool, int> tarjan_dfs(TarjanNode* node, int index,
                     std::vector<State>& stack,
                     std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher>& on_stack_map);
 public:
@@ -34,7 +34,7 @@ public:
         // Check if a state is on the stack
         std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> on_stack_map;
         std::unique_ptr<TarjanNode> node = std::make_unique<TarjanNode>(state);
-        std::tuple<bool, int> result = tarjan_dfs(node.get(), stack, on_stack_map);
+        std::tuple<bool, int> result = tarjan_dfs(node.get(), 0, stack, on_stack_map);
         // int safe = std::get<0>(result) ? 1 : 0;
         cache[state] = result;
         #ifndef NDEBUG
