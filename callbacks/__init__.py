@@ -33,6 +33,68 @@ def snap(tag):
 
 
 
+def compute_mean_reward(eval_env, model, n_eval_episodes=10):
+    rewards = []
+    for i in range(n_eval_episodes):
+        obs, _ = eval_env.reset()
+        done = False
+        truncated = False
+        episode_rewards = 0.0
+        while not done and not truncated:
+            action_masks = get_action_masks(eval_env)
+            action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
+            action, _ = model.predict(obs, action_masks=action_masks)
+            obs, reward, done, truncated, _ = eval_env.step(action)
+            episode_rewards += reward
+        rewards.append(episode_rewards)
+    mean_reward = np.mean(rewards)
+    return mean_reward
+
+class SaveActorCallback(BaseCallback):
+    """Callback for saving the model at regular intervals."""
+    def __init__(self, save_freq: int, save_path: Path, verbose=0):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+        self.save_path.mkdir(parents=True, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        if self.save_freq > 0 and self.n_calls % self.save_freq == 0:
+            policy = self.model.policy
+            hidden_dims = policy.net_arch['pi']
+            actor_path = self.save_path / f"actor_iter_{self.n_calls // self.save_freq}.pth"
+            actor_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save({
+                'input_dim': self.training_env.observation_space.shape[0],
+                'output_dim': self.training_env.action_space.n,
+                'hidden_dims': hidden_dims,
+                'state_dict': policy.state_dict()
+            }, actor_path)
+            if self.verbose > 0:
+                print(f"Saved model checkpoint to {actor_path} at step {self.num_timesteps}")
+        return True
+    
+
+class LoggingCallback(BaseCallback):
+    """Custom logging callback."""
+    def __init__(self, log_dir, log_freq, eval_env, n_eval_episodes=100, verbose=0):
+        super().__init__(verbose)
+        self.log_dir = log_dir
+        self.log_freq = log_freq
+        self.eval_env = eval_env
+        self.n_eval_episodes = n_eval_episodes
+        self.log_file = self.log_dir / "avg_rewards.txt"
+        open(self.log_file, 'w').close()  # Create or clear log file
+
+    def _on_step(self) -> bool:
+        # Custom logging logic can be added here
+        if self.log_freq > 0 and self.n_calls % self.log_freq == 0:
+            mean_reward = compute_mean_reward(self.eval_env, self.model, self.n_eval_episodes)
+            with open(self.log_file, 'a') as f:
+                f.write(f"{self.num_timesteps}\t{mean_reward}\n")
+        return True
+
+
 class EvalCallback(BaseCallback):
     """Custom evaluation callback."""
     def __init__(self, eval_env, eval_freq: int, n_eval_episodes: int, best_model_save_path: Optional[str] = None):
@@ -47,20 +109,7 @@ class EvalCallback(BaseCallback):
     def _on_step(self) -> bool:
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             # mean_reward, _ = evaluate_policy(self.model, self.eval_env, n_eval_episodes=self.n_eval_episodes)
-            rewards = []
-            for i in range(self.n_eval_episodes):
-                obs, _ = self.eval_env.reset()
-                done = False
-                truncated = False
-                episode_rewards = 0.0
-                while not done and not truncated:
-                    action_masks = get_action_masks(self.eval_env)
-                    action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
-                    action, _ = self.model.predict(obs, action_masks=action_masks)
-                    obs, reward, done, truncated, _ = self.eval_env.step(action)
-                    episode_rewards += reward
-                rewards.append(episode_rewards)
-            mean_reward = np.mean(rewards)
+            mean_reward = compute_mean_reward(self.eval_env, self.model, self.n_eval_episodes)
             self.last_mean_reward = mean_reward
             if self.best_model_save_path is not None:
                 if mean_reward > self.best_mean_reward:

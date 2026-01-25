@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
-from callbacks import EvalCallback, SafetyEvalCallback, WandbCallback
+from callbacks import EvalCallback, SafetyEvalCallback, WandbCallback, SaveActorCallback, LoggingCallback
 from jani.env import JANIEnv
 from utils import create_env, create_eval_file_args, create_safety_eval_file_args
 
@@ -110,10 +110,32 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
         )
         callbacks.append(eval_callback)
 
+    # Checkpoint callback to save actor at intervals
+    if args.save_all_checkpoints:
+        save_actor_callback = SaveActorCallback(
+            save_freq=args.eval_freq,
+            save_path=model_save_dir / "actor_checkpoints",
+            verbose=args.verbose
+        )
+        callbacks.append(save_actor_callback)
+
+    # Logging callback for rewards
+    if args.log_reward:
+        safety_eval_file_args = create_safety_eval_file_args(file_args, vars(args), use_oracle=False)
+        safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
+        logging_callback = LoggingCallback(
+            log_dir=log_dir,
+            log_freq=args.eval_freq,
+            eval_env=safety_eval_env,
+            n_eval_episodes=args.n_eval_episodes,
+            verbose=args.verbose
+        )
+        callbacks.append(logging_callback)
+
     # Create safety evaluation environment and callback
     if args.eval_safety:
         assert args.eval_start_states != "", "Evaluation start states file must be provided for safety evaluation."
-        safety_eval_file_args = create_safety_eval_file_args(file_args, args)
+        safety_eval_file_args = create_safety_eval_file_args(file_args, vars(args))
         safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
         safety_eval_callback = SafetyEvalCallback(
             safety_eval_env=safety_eval_env,
@@ -160,6 +182,7 @@ def main():
     parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
     parser.add_argument('--n_steps', type=int, default=256, help="Number of steps per update.")
     parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
+    parser.add_argument('--log_reward', action='store_true', help="Log episode rewards.")
     parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save models.")
     parser.add_argument('--eval_freq', type=int, default=2048, help="Evaluation frequency in timesteps.")
     parser.add_argument('--n_eval_episodes', type=int, default=50, help="Number of episodes for each evaluation.")
@@ -171,6 +194,7 @@ def main():
     parser.add_argument('--eval_safety', action='store_true', help="Enable safety evaluation during training.")
     parser.add_argument('--wandb_project', type=str, default="jani_rl", help="Weights & Biases project name.")
     parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
+    parser.add_argument('--save_all_checkpoints', action='store_true', help="Save model checkpoints at each evaluation.")
 
     args = parser.parse_args()
 
