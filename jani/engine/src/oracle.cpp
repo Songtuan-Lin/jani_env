@@ -28,8 +28,8 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
         print_indent(index);
         std::cout << "DEBUG: Visiting state: " << node->state.toString() << std::endl;
         #endif
-        node->index = index;
-        node->lowlink = index;
+        node->index = stack.size();
+        node->lowlink = stack.size();
         #ifndef NDEBUG
         print_indent(index);
         std::cout << "DEBUG: Assigned index and lowlink: " << index << std::endl;
