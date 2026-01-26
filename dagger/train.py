@@ -140,8 +140,12 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     print(f"Average Reward before training: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
     safety_rates = [] # To track safety rates over iterations
     avg_rewards = []  # To track average rewards over iterations
-    safety_log_file = Path(args.get("log_directory", "./logs")) / "safety_rates.txt"
-    rewards_log_file = Path(args.get("log_directory", "./logs")) / "average_rewards.txt"
+    
+    # Set up logging directory
+    log_dir = Path(args.get("log_directory", "./logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    safety_log_file = log_dir / "safety_rates.txt"
+    rewards_log_file = log_dir / "average_rewards.txt"
     open(safety_log_file, 'w').close() # Clear existing log file
     open(rewards_log_file, 'w').close() # Clear existing log file
 
@@ -294,7 +298,7 @@ def main():
     hyperparams = {
         'learning_rate': 1e-3,
         'replay_buffer_capacity': 10000,
-        'num_iterations': 10000,
+        'num_iterations': args.num_iterations,
         'batch_size': 256,
         'num_workers': min(args.num_workers, os.cpu_count() - 2) # Ensure not to exceed available CPUs
     }

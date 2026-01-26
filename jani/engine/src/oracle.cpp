@@ -1,5 +1,6 @@
 #include <unordered_map>
 #include <fstream>
+#include <random>
 #include "oracle.h"
 
 
@@ -14,6 +15,15 @@ size_t rss_mb() {
 void print_indent(int indent) {
     for (int i = 0; i < indent; i++)
         std::cout << "  ";
+}
+
+std::vector<int> random_permutation(int n) {
+    std::vector<int> perm(n);
+    std::iota(perm.begin(), perm.end(), 0);
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(perm.begin(), perm.end(), g);
+    return perm;
 }
 
 
@@ -75,10 +85,12 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
         
         // Iterate through all applicable actions
         int num_actions = engine->get_num_actions();
+        // Randomly permute the action ids
+        std::vector<int> permuted_action_ids = random_permutation(num_actions);
         std::vector<bool> action_mask = engine->get_action_mask(node->state);
         bool is_safe_state = true; // If no action is applicable, the state is safe
         int safe_action_id = -1; // To record one safe action id
-        for (int action_id = 0; action_id < num_actions; action_id++) {
+        for (int action_id : permuted_action_ids) {
             #ifndef NDEBUG
             print_indent(index);
             std::cout << "DEBUG: Checking action id " << action_id;
