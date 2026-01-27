@@ -126,8 +126,8 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "empty_buffer": True,
             "wandb_project": f"{jani_name}",
             "experiment_name": f"dagger_{variant_name}" if variant_name != "models" else "dagger",
-            "log_directory": shared_args.get("log_directory", "./logs") / domain_name / variant_name / jani_name if variant_name != "models" else shared_args.get("log_directory", "./logs") / domain_name / jani_name,
-            "model_save_dir": shared_args.get("log_directory", "./logs") / domain_name / variant_name / jani_name / "models" if variant_name != "models" else shared_args.get("log_directory", "./logs") / domain_name / jani_name / "models",
+            "log_directory": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name,
+            "model_save_dir": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name / "models" if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name / "models",
             "disable_wandb": False,
             "seed": seed,
         }
