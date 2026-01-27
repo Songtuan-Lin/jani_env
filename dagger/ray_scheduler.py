@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--root", type=str, required=True, help="Path to the benchmark root directory")
     parser.add_argument("--log_directory", type=str, default="./logs", help="Directory to save logs")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of parallel workers")
+    parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
     args = parser.parse_args()
 
     # Load file arguments and hyperparameters
