@@ -53,3 +53,7 @@ def main():
 
     # Wait for all trainings to complete
     ray.get(futures)
+
+
+if __name__ == "__main__":
+    main()
