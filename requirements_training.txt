@@ -26,3 +26,13 @@ pathlib2>=2.3.0  # For older Python versions
 matplotlib>=3.4.0
 seaborn>=0.11.0
 rich>=13.0.0
+
+# z3-solver for symbolic reasoning
+z3-solver
+
+# python bindings for JANI
+nanobind
+psutil
+
+# Ray for distributed training
+ray>=2.0.0
