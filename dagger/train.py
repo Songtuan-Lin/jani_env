@@ -170,6 +170,17 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
 
     # Main training loop
     num_iterations = hyperparams.get("num_iterations", 10000)
+    if RAY_AVAILABLE and args.get("use_multiprocessors", False):
+        rollout_manager = ray_worker.RolloutManager(
+            file_args=safety_eval_file_args,
+            network_paras={
+                'input_dim': checkpoint['input_dim'],
+                'output_dim': checkpoint['output_dim'],
+                'hidden_dims': checkpoint['hidden_dims']
+            },
+            policy=policy,
+            num_workers=hyperparams.get("num_workers", 200)
+        )
     for iter in range(num_iterations):
         if args.get("empty_buffer", False):
             rb.empty() # Optionally empty the buffer at each iteration
@@ -180,18 +191,8 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         if args.get("use_multiprocessors", False) and RAY_AVAILABLE:
             print(f"Collecting trajectories using {hyperparams.get('num_workers', 200)} Ray workers...")
             # Use Ray workers to collect trajectories in parallel
-            network_paras = {
-                'input_dim': checkpoint['input_dim'],
-                'output_dim': checkpoint['output_dim'],
-                'hidden_dims': checkpoint['hidden_dims']
-            }
-            rollouts = ray_worker.run_rollouts(
-                file_args=safety_eval_file_args, # Use safety eval file args
-                network_paras=network_paras, 
-                policy=policy,
-                num_workers=hyperparams.get("num_workers", 200), 
-                init_size=init_state_size
-            )
+            rollout_manager.update_policy(policy)
+            rollouts = rollout_manager.run_rollouts(init_state_size)
         else:
             print("Collecting trajectories sequentially...")
             # Collect trajectories sequentially

@@ -26,6 +26,7 @@ class RolloutWorker:
             hidden_dims=network_paras['hidden_dims']
         )
         self.policy.load_state_dict(network_state_dict)
+        self.policy.eval()
 
     @torch.no_grad()
     def run_one_rollout(self, idx: int):
@@ -33,6 +34,46 @@ class RolloutWorker:
         trajectory = collect_trajectory(self.env, self.policy, idx)
         return trajectory
     
+    def set_weights(self, state_dict):
+        self.policy.load_state_dict(state_dict)
+        self.policy.eval()
+    
+
+
+class RolloutManager:
+    def __init__(self, file_args: dict, network_paras: dict, policy: nn.Module, num_workers: int):
+        """Initialize the RolloutManager with multiple RolloutWorker actors."""
+        # Initialize Ray
+        if not ray.is_initialized():
+            ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
+
+        network_state_dict = to_cpu_state_dict(policy)
+        # state_dict_ref = ray.put(network_state_dict)
+
+        # Create RolloutWorker actors
+        self.workers = [RolloutWorker.remote(file_args, network_paras, network_state_dict) for _ in range(num_workers)]
+        self.num_workers = num_workers
+
+
+    def update_policy(self, policy: nn.Module):
+        """Update the policy weights in all RolloutWorker actors."""
+        network_state_dict = to_cpu_state_dict(policy)
+        state_dict_ref = ray.put(network_state_dict)
+        for w in self.workers:
+            w.set_weights.remote(state_dict_ref)
+
+
+    def run_rollouts(self, init_size: int) -> list:
+        """Run multiple rollouts in parallel using the RolloutWorker actors."""
+        futures = []
+        for idx in range(init_size):
+            worker = self.workers[idx % self.num_workers]
+            futures.append(worker.run_one_rollout.remote(idx))
+
+        # Gather results
+        rollouts = ray.get(futures)
+        return rollouts
+
 
 def run_rollouts(
         file_args: dict, 
