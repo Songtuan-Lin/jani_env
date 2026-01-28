@@ -12,9 +12,9 @@ class BenchmarkTrainer:
     def __init__(self, hyperparams):
         self.hyperparams = hyperparams
 
-    def train_on_benchmark(self, args, file_args):
+    def train_on_benchmark(self, args, file_args, device: torch.device):
         """Train the model on the benchmark dataset."""
-        train(args, file_args, self.hyperparams, torch.device("cuda"))
+        train(args, file_args, self.hyperparams, device)
 
 
 def main():
@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--num_trainers", type=int, default=4, help="Number of policy trainers to run in parallel")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of rollout workers per trainer")
     parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
+    parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
     args = parser.parse_args()
 
     # Load file arguments and hyperparameters
@@ -37,6 +38,7 @@ def main():
         'batch_size': 256,
         'num_workers': args.num_workers # Ensure not to exceed available CPUs
     }
+    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     list_configs = get_all_configs(args.root, shared_args)
 
@@ -50,8 +52,8 @@ def main():
     # Launch training in parallel
     futures = []
     for idx, (benc_args, file_args) in enumerate(list_configs):
-        trainer = trainers[idx % args.num_workers]
-        futures.append(trainer.train_on_benchmark.remote(benc_args, file_args))
+        trainer = trainers[idx % args.num_trainers]
+        futures.append(trainer.train_on_benchmark.remote(benc_args, file_args, device))
 
     # Wait for all trainings to complete
     ray.get(futures)
