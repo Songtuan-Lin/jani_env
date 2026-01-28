@@ -9,6 +9,12 @@ from jani import JANIEnv
 from utils import create_env
 
 
+def to_cpu_state_dict(policy: torch.nn.Module):
+    # Help function to move model state dict to CPU
+    return {k: v.detach().cpu() for k, v in policy.state_dict().items()}
+
+
+
 @ray.remote
 class RolloutWorker:
     def __init__(self, file_args: dict, network_paras: dict, network_state_dict):
@@ -39,11 +45,11 @@ def run_rollouts(
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
 
-    network_state_dict = policy.state_dict()
-    state_dict_ref = ray.put(network_state_dict)
+    network_state_dict = to_cpu_state_dict(policy)
+    # state_dict_ref = ray.put(network_state_dict)
 
     # Create a RolloutWorker actor
-    workers = [RolloutWorker.remote(file_args, network_paras, state_dict_ref) for _ in range(num_workers)]
+    workers = [RolloutWorker.remote(file_args, network_paras, network_state_dict) for _ in range(num_workers)]
 
     # Launch rollouts in parallel
     futures = []
