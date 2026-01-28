@@ -31,9 +31,9 @@ def evaluate_policy(
         step_count = 0
 
         while not done and step_count < max_steps:
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)  # Add batch dimension
             action_mask = env.unwrapped.action_mask().astype(int)
-            action_mask_tensor = torch.tensor(action_mask, dtype=torch.bool).unsqueeze(0)  # Add batch dimension
+            action_mask_tensor = torch.tensor(action_mask, dtype=torch.bool).unsqueeze(0).to(device)  # Add batch dimension
             with torch.no_grad():
                 logits = policy(obs_tensor)
                 action_dist = MaskedCategorical(logits=logits, mask=action_mask_tensor)
