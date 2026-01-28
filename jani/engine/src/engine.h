@@ -395,19 +395,28 @@ public:
         const std::vector<const TransitionEdge*> *transitions = automata[0]->getTransitionsForAction(action_label);
         int num_enabled = 0;
         State new_state;
+        // For inspection only
+        // std::vector<const TransitionEdge*> enabled_transitions;
         for (const auto it: *transitions) {
+            // std::cout << "Check current state: " << current_state.toString() << " for transition with guard " << it->getGuard()->toString() << std::endl;
             if (it->isEnabled(current_state)) {
                 #ifndef NDEBUG
                 std::cout << "DEBUG: Transition with guard " << it->getGuard()->toString() << " is enabled" << std::endl;
                 #endif
                 if (num_enabled > 0) {
                     #ifdef NDEBUG
+                    // std::cout << "ERROR: More than one transition enabled for action " << action_label << std::endl;
+                    // std::cout << "ERROR: Current state: " << current_state.toString() << std::endl;
+                    // std::cout << "ERROR: Previous enabled transition with guard " << enabled_transitions.back()->getGuard()->toString() << " is enabled" << std::endl;
+                    // std::cout << "ERROR: Transition with guard " << it->getGuard()->toString() << " is enabled" << std::endl;
                     throw std::runtime_error("More than one transition enabled for the same action");
                     #endif
                     #ifndef NDEBUG
                     it->getGuard()->debugPrintEval(current_state);
+                    throw std::runtime_error("More than one transition enabled for the same action");
                     #endif
                 }
+                //enabled_transitions.push_back(it);
                 num_enabled++;
                 // Apply the transition
                 new_state = it->apply(current_state, rng);
