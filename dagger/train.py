@@ -121,9 +121,9 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
     if WANDB_AVAILABLE and (not args.get("disable_wandb", False)):
         wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.experiment_name,
+            project=args.get("wandb_project", "dagger"),
+            entity=args.get("wandb_entity", ""),
+            name=args.get("experiment_name", "dagger_experiment"),
             config={
                 **args,
                 **(hyperparams or {}),
