@@ -21,7 +21,8 @@ def main():
     parser = argparse.ArgumentParser(description="Benchmark Trainer with Ray")
     parser.add_argument("--root", type=str, required=True, help="Path to the benchmark root directory")
     parser.add_argument("--log_directory", type=str, default="./logs", help="Directory to save logs")
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of parallel workers")
+    parser.add_argument("--num_trainers", type=int, default=4, help="Number of policy trainers to run in parallel")
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of rollout workers per trainer")
     parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
     args = parser.parse_args()
 
@@ -44,7 +45,7 @@ def main():
         ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
 
     # Create BenchmarkTrainer actors
-    trainers = [BenchmarkTrainer.remote(hyperparams) for _ in range(args.num_workers)]
+    trainers = [BenchmarkTrainer.remote(hyperparams) for _ in range(args.num_trainers)]
 
     # Launch training in parallel
     futures = []

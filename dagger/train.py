@@ -112,6 +112,25 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     policy = load_policy(checkpoint)
     print("Initial policy loaded.")
 
+    # Initialize Weights & Biases logging if available
+    try:
+        import wandb
+        WANDB_AVAILABLE = True
+    except ImportError:
+        WANDB_AVAILABLE = False
+        print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
+    if WANDB_AVAILABLE and (not args.get("disable_wandb", False)):
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.experiment_name,
+            config={
+                **args,
+                **(hyperparams or {}),
+                'file_args': file_args
+            }
+        ) 
+
     # Decide whether to use mult-processors
     RAY_AVAILABLE = True
     try:
@@ -192,11 +211,6 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             f.write(f"{iter}\t{avg_reward}\n")
         print(f"Before iteration {iter}: {percentage_safe:.2f}% of collected trajectories are safe with average reward {avg_reward:.2f}.")
 
-        try:
-            import wandb
-            WANDB_AVAILABLE = True
-        except ImportError:
-            WANDB_AVAILABLE = False
         if WANDB_AVAILABLE and (not args.get("disable_wandb", False)) and wandb.run is not None:
             wandb.log({
                 'safe_eval/percentage_safe_trajectories': percentage_safe,
@@ -302,25 +316,6 @@ def main():
         'batch_size': 256,
         'num_workers': min(args.num_workers, os.cpu_count() - 2) # Ensure not to exceed available CPUs
     }
-
-    try:
-        import wandb
-        WANDB_AVAILABLE = True
-    except ImportError:
-        WANDB_AVAILABLE = False
-        print("Warning: Weights & Biases not available. Advanced logging will be disabled.")
-
-    if WANDB_AVAILABLE and not args.disable_wandb:
-        wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.experiment_name,
-            config={
-                **vars(args),
-                **(hyperparams or {}),
-                'file_args': file_args
-            }
-        )
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     log_dir = Path(args.log_directory)
