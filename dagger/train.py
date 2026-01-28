@@ -217,7 +217,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 'safe_eval/percentage_safe_trajectories': percentage_safe,
                 'safe_eval/average_reward': avg_reward,
                 'safe_eval/iteration': iter
-            }, step=iter)
+            })
 
         if all_safe:
             avg_reward = evaluate_policy(env, policy, num_episodes=100)
