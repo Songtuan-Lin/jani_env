@@ -19,7 +19,7 @@ class RolloutWorker:
             output_dim=network_paras['output_dim'],
             hidden_dims=network_paras['hidden_dims']
         )
-        self.policy.load_state_dict(network_state_dict)
+        self.policy.load_state_dict(network_state_dict, map_location=torch.device("cpu"))
 
     @torch.no_grad()
     def run_one_rollout(self, idx: int):
