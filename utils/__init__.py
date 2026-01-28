@@ -85,6 +85,9 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
 
     list_configs = []
     for model_file in variant_dir.iterdir():
+        # Ignore directories storing policy files
+        if not model_file.is_file():
+            continue
         jani_name = model_file.name.replace(".jani", "")
         if variant_name == "models":
             property_dir = domain_dir / "additional_properties"
