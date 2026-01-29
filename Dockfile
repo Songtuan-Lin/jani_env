@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libbz2-dev \
     libz-dev \
     libicu-dev \
-    libboost-all-dev \
+    libboost-all-dev
 
 # ---- Copy your repo (no git clone needed) ----
 WORKDIR /jani_env
