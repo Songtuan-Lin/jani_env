@@ -163,7 +163,7 @@ def main():
 
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=False)
+        ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
     
     trainers = [BenchmarkTrainer.remote(hyperparams={}) for _ in range(args.num_trainers)]
     
