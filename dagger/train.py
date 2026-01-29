@@ -134,7 +134,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     # Decide whether to use mult-processors
     RAY_AVAILABLE = True
     try:
-        from . import ray_worker
+        from . import rollout_collector
     except Exception:
         RAY_AVAILABLE = False
         if args.get("use_multiprocessors", False):
@@ -171,7 +171,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     # Main training loop
     num_iterations = hyperparams.get("num_iterations", 10000)
     if RAY_AVAILABLE and args.get("use_multiprocessors", False):
-        rollout_manager = ray_worker.RolloutManager(
+        rollout_manager = rollout_collector.RolloutManager(
             file_args=safety_eval_file_args,
             network_paras={
                 'input_dim': checkpoint['input_dim'],

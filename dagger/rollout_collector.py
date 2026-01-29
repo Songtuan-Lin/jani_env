@@ -15,7 +15,7 @@ def to_cpu_state_dict(policy: torch.nn.Module):
 
 
 
-@ray.remote
+@ray.remote(num_cpus=1)
 class RolloutWorker:
     def __init__(self, file_args: dict, network_paras: dict, network_state_dict):
         """Initialize the RolloutWorker with environment and policy network."""
