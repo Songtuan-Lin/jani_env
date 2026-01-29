@@ -100,12 +100,13 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
 
     # Create evaluation environment and callback
     if not args.disable_eval:
-        eval_file_args = create_eval_file_args(file_args)
+        eval_file_args = create_eval_file_args(file_args, args.use_separate_eval_env)
         eval_env = create_env(eval_file_args, 1, monitor=True, time_limited=True)
         eval_callback = EvalCallback(
             eval_env=eval_env,
             eval_freq=args.eval_freq,
             n_eval_episodes=args.n_eval_episodes,
+            enumate_all_init_states=args.enumate_all_init_states,
             best_model_save_path=str(model_save_dir / "best_model")
         )
         callbacks.append(eval_callback)
@@ -128,6 +129,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
             log_freq=args.eval_freq,
             eval_env=safety_eval_env,
             n_eval_episodes=args.n_eval_episodes,
+            enumate_all_init_states=args.enumate_all_init_states,
             verbose=args.verbose
         )
         callbacks.append(logging_callback)
@@ -184,6 +186,8 @@ def main():
     parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
     parser.add_argument('--log_reward', action='store_true', help="Log episode rewards.")
     parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save models.")
+    parser.add_argument('--use_separate_eval_env', action='store_true', help="Use a separate environment for evaluation.")
+    parser.add_argument('--enumate_all_init_states', action='store_true', help="Evaluate on all initial states during evaluation.")
     parser.add_argument('--eval_freq', type=int, default=2048, help="Evaluation frequency in timesteps.")
     parser.add_argument('--n_eval_episodes', type=int, default=50, help="Number of episodes for each evaluation.")
     parser.add_argument('--experiment_name', type=str, default="", help="Name of the experiment.")
@@ -224,6 +228,8 @@ def main():
         'use_oracle': args.use_oracle,
         'max_steps': args.max_steps
     }
+    if args.use_separate_eval_env:
+        assert args.eval_start_states != "", "Evaluation start states file must be provided when using separate eval env."
 
     train_model(args, file_args)
 

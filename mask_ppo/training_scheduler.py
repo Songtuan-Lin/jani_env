@@ -1,14 +1,12 @@
-import argparse
 import ray
-import torch
 
 from pathlib import Path
-from typing import Any, Dict
 
-from .train import train
+from .train import train_model
 
 
-def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: dict[str, Any]) -> list[dict[str, Any]]:
+
+def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: dict[str, any]) -> list[dict[str, any]]:
     """Get file arguments for benchmark environment."""
     variant_dir = Path(variant_dir)
     domain_dir = Path(domain_dir)
@@ -50,21 +48,31 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "objective": "",
             "failure_property": "",
             "eval_start_states": str(eval_property_file),
-            "policy_path": variant_dir / jani_name / "policy.pth",
-            "goal_reward": 1.0,
-            "failure_reward": -1.0,
-            "unsafe_reward": -0.01,
-            "num_init_states": 20000,
-            "num_iterations": 50,
-            "max_steps": 1024,
-            "use_multiprocessors": True,
-            "empty_buffer": True,
+            "goal_reward": shared_args.get("goal_reward", 1.0),
+            "failure_reward": shared_args.get("failure_reward", -1.0),
+            "unsafe_reward": shared_args.get("unsafe_reward", -0.01),
+            "max_steps": shared_args.get("max_steps", 1024),
+            "total_timesteps": 35000,
+            "n_envs": shared_args.get("n_envs", 4),
+            "n_steps": shared_args.get("n_steps", 1024),
+            "n_eval_episodes": 100,
             "wandb_project": f"{jani_name}",
-            "experiment_name": f"dagger_{variant_name}" if variant_name != "models" else "dagger",
-            "log_directory": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name,
+            "wandb_entity": "",
+            "experiment_name": f"{variant_name}_{jani_name}" if variant_name != "models" else f"{jani_name}",
+            "log_dir": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name,
             "model_save_dir": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name / "models" if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name / "models",
-            "disable_wandb": False,
-            "seed": seed,
+            "disable_wandb": True,
+            "disable_eval": False,
+            "use_separate_eval_env": True,
+            "enumate_all_init_states": True,
+            "log_reward": True,
+            "eval_freq": 1025,
+            "eval_safety": False,
+            "save_all_checkpoints": True,
+            "use_oracle": False,
+            "verbose": 1,
+            "device": "cpu",
+            "seed": shared_args.get("seed", 42),
         }
         # Create file arguments
         file_args = {
@@ -77,14 +85,14 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "goal_reward": args.get("goal_reward", 1.0),
             "failure_reward": args.get("failure_reward", -1.0),
             "unsafe_reward": args.get("unsafe_reward", -0.01),
-            "use_oracle": True,
+            "use_oracle": args.get("use_oracle", False),
             "max_steps": args.get("max_steps", 1024)
         }
         list_configs.append((args, file_args))
     return list_configs
 
 
-def get_configs_for_domain(domain_dir: str, shared_args: dict[str, Any]) -> list[dict[str, Any]]:
+def get_configs_for_domain(domain_dir: str, shared_args: dict[str, any]) -> list[dict[str, any]]:
     """Get file arguments for all models in a domain directory."""
     domain_dir = Path(domain_dir)
     model_dir = domain_dir / "models"
@@ -101,7 +109,7 @@ def get_configs_for_domain(domain_dir: str, shared_args: dict[str, Any]) -> list
     return list_configs
 
 
-def get_all_configs(root_dir: str, shared_args: dict[str, Any]) -> list[dict[str, Any]]:
+def get_all_configs(root_dir: str, shared_args: dict[str, any]) -> list[dict[str, any]]:
     """Get file arguments for all domains in the root directory."""
     root_dir = Path(root_dir)
     list_configs = []
@@ -112,61 +120,19 @@ def get_all_configs(root_dir: str, shared_args: dict[str, Any]) -> list[dict[str
     return list_configs
 
 
-@ray.remote(num_gpus=1)
+@ray.remote(num_cpus=1, num_gpus=0)
 class BenchmarkTrainer:
-    def __init__(self, hyperparams):
+    def __init__(self, hyperparams: dict[str, any]):
         self.hyperparams = hyperparams
 
-    def train_on_benchmark(self, args, file_args, device: torch.device):
+    def train_on_benchmark(self, args, file_args):
         """Train the model on the benchmark dataset."""
-        train(args, file_args, self.hyperparams, device)
+        train_model(args, file_args, self.hyperparams) # So far only support CPU training
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark Trainer with Ray")
-    parser.add_argument("--root", type=str, required=True, help="Path to the benchmark root directory")
-    parser.add_argument("--log_directory", type=str, default="./logs", help="Directory to save logs")
-    parser.add_argument("--num_trainers", type=int, default=4, help="Number of policy trainers to run in parallel")
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of rollout workers per trainer")
-    parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
-    parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
+    import argparse
+    parser = argparse.ArgumentParser(description="Distributed Benchmark Trainer")
+    parser.add_argument('--root_dir', type=str, required=True, help="Root directory containing benchmark domains.")
+    parser.add_argument('--num_workers', type=int, default=4, help="Number of parallel workers.")
     args = parser.parse_args()
-
-    # Load file arguments and hyperparameters
-    shared_args = {
-        "log_directory": args.log_directory,
-    }
-    hyperparams = {
-        'learning_rate': 1e-3,
-        'replay_buffer_capacity': 10000,
-        'num_iterations': args.num_iterations,
-        'batch_size': 256,
-        'num_workers': args.num_workers # Ensure not to exceed available CPUs
-    }
-
-    list_configs = get_all_configs(args.root, shared_args)
-
-    # Initialize Ray
-    if not ray.is_initialized():
-        ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
-
-    # Create BenchmarkTrainer actors
-    if args.device == "cuda" and torch.cuda.is_available():
-        num_gpus = 1
-    else:
-        num_gpus = 0
-    trainers = [BenchmarkTrainer.options(num_gpus=num_gpus).remote(hyperparams) for _ in range(args.num_trainers)]
-    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-
-    # Launch training in parallel
-    futures = []
-    for idx, (benc_args, file_args) in enumerate(list_configs):
-        trainer = trainers[idx % args.num_trainers]
-        futures.append(trainer.train_on_benchmark.remote(benc_args, file_args, device))
-
-    # Wait for all trainings to complete
-    ray.get(futures)
-
-
-if __name__ == "__main__":
-    main()

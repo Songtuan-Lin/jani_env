@@ -33,10 +33,26 @@ def snap(tag):
 
 
 
-def compute_mean_reward(eval_env, model, n_eval_episodes=10):
+def compute_mean_reward(eval_env, model, n_eval_episodes=10, enumate_all_init_states=False) -> float:
     rewards = []
-    for i in range(n_eval_episodes):
-        obs, _ = eval_env.reset()
+    num_iter = n_eval_episodes
+
+    # If enumerating all initial states for evaluation, set num_iter accordingly
+    if enumate_all_init_states:
+        # unwrap the environment to get JANIEnv
+        unwrapped_env = eval_env
+        while hasattr(unwrapped_env, 'env'):
+            unwrapped_env = unwrapped_env.env
+        if hasattr(unwrapped_env, 'unwrapped'):
+            unwrapped_env = unwrapped_env.unwrapped
+        # Set the number of iterations to size of initial state pool
+        num_iter = unwrapped_env.get_init_state_pool_size()
+
+    for i in range(num_iter):
+        if enumate_all_init_states:
+            obs, _ = eval_env.reset(options={"idx": i})
+        else:
+            obs, _ = eval_env.reset()
         done = False
         truncated = False
         episode_rewards = 0.0
@@ -49,6 +65,7 @@ def compute_mean_reward(eval_env, model, n_eval_episodes=10):
         rewards.append(episode_rewards)
     mean_reward = np.mean(rewards)
     return mean_reward
+
 
 class SaveActorCallback(BaseCallback):
     """Callback for saving the model at regular intervals."""
@@ -77,19 +94,21 @@ class SaveActorCallback(BaseCallback):
 
 class LoggingCallback(BaseCallback):
     """Custom logging callback."""
-    def __init__(self, log_dir, log_freq, eval_env, n_eval_episodes=100, verbose=0):
+    def __init__(self, log_dir, log_freq, eval_env, enumate_all_init_states=False, n_eval_episodes=100, verbose=0):
         super().__init__(verbose)
         self.log_dir = log_dir
         self.log_freq = log_freq
         self.eval_env = eval_env
+        self.enumate_all_init_states = enumate_all_init_states
         self.n_eval_episodes = n_eval_episodes
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.log_dir / "avg_rewards.txt"
         open(self.log_file, 'w').close()  # Create or clear log file
 
     def _on_step(self) -> bool:
         # Custom logging logic can be added here
         if self.log_freq > 0 and self.n_calls % self.log_freq == 0:
-            mean_reward = compute_mean_reward(self.eval_env, self.model, self.n_eval_episodes)
+            mean_reward = compute_mean_reward(self.eval_env, self.model, self.n_eval_episodes, self.enumate_all_init_states)
             with open(self.log_file, 'a') as f:
                 f.write(f"{self.num_timesteps}\t{mean_reward}\n")
         return True
@@ -97,11 +116,12 @@ class LoggingCallback(BaseCallback):
 
 class EvalCallback(BaseCallback):
     """Custom evaluation callback."""
-    def __init__(self, eval_env, eval_freq: int, n_eval_episodes: int, best_model_save_path: Optional[str] = None):
+    def __init__(self, eval_env, eval_freq: int, n_eval_episodes: int, best_model_save_path: Optional[str] = None, enumate_all_init_states=False):
         super().__init__()
         self.eval_env = eval_env
         self.eval_freq = eval_freq
         self.n_eval_episodes = n_eval_episodes
+        self.enumate_all_init_states = enumate_all_init_states
         self.best_model_save_path = best_model_save_path
         self.best_mean_reward = -float('inf')
         self.last_mean_reward = -float('inf')
@@ -109,7 +129,7 @@ class EvalCallback(BaseCallback):
     def _on_step(self) -> bool:
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             # mean_reward, _ = evaluate_policy(self.model, self.eval_env, n_eval_episodes=self.n_eval_episodes)
-            mean_reward = compute_mean_reward(self.eval_env, self.model, self.n_eval_episodes)
+            mean_reward = compute_mean_reward(self.eval_env, self.model, self.n_eval_episodes, self.enumate_all_init_states)
             self.last_mean_reward = mean_reward
             if self.best_model_save_path is not None:
                 if mean_reward > self.best_mean_reward:
