@@ -1,6 +1,7 @@
 import ray
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from .train import train_model
 
@@ -52,7 +53,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "failure_reward": shared_args.get("failure_reward", -1.0),
             "unsafe_reward": shared_args.get("unsafe_reward", -0.01),
             "max_steps": shared_args.get("max_steps", 1024),
-            "total_timesteps": 35000,
+            "total_timesteps": shared_args.get("total_timesteps", 35000),
             "n_envs": shared_args.get("n_envs", 4),
             "n_steps": shared_args.get("n_steps", 1024),
             "n_eval_episodes": 100,
@@ -79,6 +80,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "jani_model": args.get("jani_model", str(model_file)),
             "jani_property": args.get("jani_property", str(training_property_file)),
             "start_states": args.get("start_states", str(training_property_file)),
+            "eval_start_states": args.get("eval_start_states", str(eval_property_file)),
             "objective": args.get("objective", ""),
             "failure_property": args.get("failure_property", ""),
             "seed": args.get("seed", 42),
@@ -134,5 +136,45 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Distributed Benchmark Trainer")
     parser.add_argument('--root_dir', type=str, required=True, help="Root directory containing benchmark domains.")
-    parser.add_argument('--num_workers', type=int, default=4, help="Number of parallel workers.")
+    parser.add_argument('--num_trainers', type=int, default=4, help="Number of parallel workers.")
+    parser.add_argument('--log_directory', type=str, default="./logs", help="Directory to save logs.")
+    parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
+    parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
+    parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
+    parser.add_argument('--max_steps', type=int, default=1024, help="Max steps per episode.")
+    parser.add_argument('--n_steps', type=int, default=1024, help="Number of steps per update.")
+    parser.add_argument('--total_timesteps', type=int, default=35000, help="Total timesteps for training.")
+    parser.add_argument('--seed', type=int, default=42, help="Random seed for training.")
     args = parser.parse_args()
+
+    shared_args = {
+        "log_directory": args.log_directory,
+        "goal_reward": args.goal_reward,
+        "failure_reward": args.failure_reward,
+        "unsafe_reward": args.unsafe_reward,
+        "n_envs": args.n_envs,
+        "max_steps": args.max_steps,
+        "n_steps": args.n_steps,
+        "total_timesteps": args.total_timesteps,
+        "seed": args.seed
+    }
+    list_configs = get_all_configs(args.root_dir, shared_args)
+
+    # Initialize Ray
+    if not ray.is_initialized():
+        ray.init(ignore_reinit_error=False)
+    
+    trainers = [BenchmarkTrainer.remote(hyperparams={}) for _ in range(args.num_trainers)]
+    
+    futures = []
+    for i, (config_args, config_file_args) in enumerate(list_configs):
+        trainer = trainers[i % args.num_trainers]
+        future = trainer.train_on_benchmark.remote(SimpleNamespace(**config_args), config_file_args)
+        futures.append(future)
+
+    # Wait for all trainers to complete
+    ray.get(futures)
+
+if __name__ == "__main__":
+    main()
