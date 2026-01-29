@@ -54,6 +54,7 @@ public:
     virtual std::variant<int, double, bool> getValue() const = 0;
     virtual double getLowerBound() const = 0;
     virtual double getUpperBound() const = 0;
+    virtual bool validateVariable() const = 0;
 };
 
 class RealVariable: public Variable {
@@ -99,6 +100,10 @@ public:
         // Returns a new RealVariable with the same properties
         return std::make_unique<RealVariable>(getId(), getName(), lower_bound, upper_bound, value);
     }
+
+    bool validateVariable() const override {
+        return (value >= lower_bound && value <= upper_bound);
+    }
 };
 
 class RealConstant: public Variable {
@@ -113,7 +118,6 @@ public:
         throw std::runtime_error("Cannot set value of a constant variable");
     }
 
-
     std::unique_ptr<Variable> update(const std::variant<int, double, bool>& val) {
         throw std::runtime_error("Cannot update a constant variable");
     }
@@ -126,6 +130,10 @@ public:
     double getLowerBound() const { return value; }
 
     double getUpperBound() const { return value; }
+
+    bool validateVariable() const override {
+        return true; // Constant is always valid
+    }
 };
 
 class BooleanVariable: public Variable {
@@ -172,6 +180,10 @@ public:
         // Returns a new BooleanVariable with the same properties
         return std::make_unique<BooleanVariable>(getId(), getName(), value);
     }
+
+    bool validateVariable() const override {
+        return true; // Boolean is always valid
+    }
 };
 
 class BooleanConstant: public Variable {
@@ -198,6 +210,10 @@ public:
     double getLowerBound() const { return value ? 1.0 : 0.0; }
 
     double getUpperBound() const { return value ? 1.0 : 0.0; }
+
+    bool validateVariable() const override {
+        return true; // Constant is always valid
+    }
 };
 
 class IntVariable: public Variable {
@@ -250,6 +266,10 @@ public:
         // Returns a new IntVariable with the same properties
         return std::make_unique<IntVariable>(getId(), getName(), lower_bound, upper_bound, value);
     }
+
+    bool validateVariable() const override {
+        return (value >= lower_bound && value <= upper_bound);
+    }
 };
 
 class IntConstant: public Variable {
@@ -276,6 +296,10 @@ public:
     double getLowerBound() const { return static_cast<double>(value); }
     
     double getUpperBound() const { return static_cast<double>(value); }
+
+    bool validateVariable() const override {
+        return true; // Constant is always valid
+    }
 };
 
 class State {
@@ -299,6 +323,15 @@ public:
             }
         }
         return *this;
+    }
+
+    bool validateState() const {
+        for (const auto& pair : state_values) {
+            if (!pair.second->validateVariable()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     void setVariable(const std::string& name, std::unique_ptr<Variable> var) {

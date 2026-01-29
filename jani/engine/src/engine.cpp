@@ -48,13 +48,88 @@ std::unique_ptr<Variable> JANIEngine::constructVariable(const nlohmann::json& js
     std::string variable_type = json_obj["type"]["base"].get<std::string>();
     int variable_id = constants.size() + variables.size();
     if (variable_type == "int") {
-        int lower_bound = json_obj["type"]["lower-bound"].get<int>();
-        int upper_bound = json_obj["type"]["upper-bound"].get<int>();
+        int lower_bound, upper_bound;
+        nlohmann::json lb_obj = json_obj["type"]["lower-bound"];
+        if (!lb_obj.is_number_integer()) {
+            if (!lb_obj.is_string())
+                throw std::runtime_error("Unsupported lower-bound type for int variable: " + variable_name);
+            // If the lower-bound is not a number, it must be a reference to a constant
+            std::string const_var_name = lb_obj.get<std::string>();
+            // Find the constant variable
+            bool found = false;
+            for (const auto& const_var : constants)
+                if (const_var->getName() == const_var_name) {
+                    lower_bound = std::get<int>(const_var->getValue());
+                    found = true;
+                    break;
+                }
+            if (!found)
+                throw std::runtime_error("Lower-bound constant variable not found for int variable: " + variable_name);
+        } else {
+            lower_bound = lb_obj.get<int>();
+        }
+        nlohmann::json ub_obj = json_obj["type"]["upper-bound"];
+        if (!ub_obj.is_number_integer()) {
+            if (!ub_obj.is_string())
+                throw std::runtime_error("Unsupported upper-bound type for int variable: " + variable_name);
+            // If the upper-bound is not a number, it must be a reference to a constant
+            std::string const_var_name = ub_obj.get<std::string>();
+            // Find the constant variable
+            bool found = false;
+            for (const auto& const_var : constants)
+                if (const_var->getName() == const_var_name) {
+                    upper_bound = std::get<int>(const_var->getValue());
+                    found = true;
+                    break;
+                }
+            if (!found)
+                throw std::runtime_error("Upper-bound constant variable not found for int variable: " + variable_name);
+        } else {
+            upper_bound = ub_obj.get<int>();
+        }
         int initial_value = json_obj["initial-value"].get<int>();
         return std::make_unique<IntVariable>(variable_id, variable_name, lower_bound, upper_bound, initial_value);
     } else if (variable_type == "real") {
-        double lower_bound = json_obj["type"]["lower-bound"].get<double>();
-        double upper_bound = json_obj["type"]["upper-bound"].get<double>();
+        double lower_bound, upper_bound;
+        // Parse lower and upper bounds
+        nlohmann::json lb_obj = json_obj["type"]["lower-bound"];
+        if ((!lb_obj.is_number_float()) && (!lb_obj.is_number_integer())) {
+            if (!lb_obj.is_string())
+                throw std::runtime_error("Unsupported lower-bound type for real variable: " + variable_name);
+            // If the lower-bound is not a number, it must be a reference to a constant
+            std::string const_var_name = lb_obj.get<std::string>();
+            // Find the constant variable
+            bool found = false;
+            for (const auto& const_var : constants)
+                if (const_var->getName() == const_var_name) {
+                    lower_bound = std::get<double>(const_var->getValue());
+                    found = true;
+                    break;
+                }
+            if (!found)
+                throw std::runtime_error("Lower-bound constant variable not found for real variable: " + variable_name);
+        } else {
+            lower_bound = lb_obj.get<double>();
+        }
+        nlohmann::json ub_obj = json_obj["type"]["upper-bound"];
+        if ((!ub_obj.is_number_float()) && (!ub_obj.is_number_integer())) {
+            if (!ub_obj.is_string())
+                throw std::runtime_error("Unsupported upper-bound type for real variable: " + variable_name);
+            // If the upper-bound is not a number, it must be a reference to a constant
+            std::string const_var_name = ub_obj.get<std::string>();
+            // Find the constant variable
+            bool found = false;
+            for (const auto& const_var : constants)
+                if (const_var->getName() == const_var_name) {
+                    upper_bound = std::get<double>(const_var->getValue());
+                    found = true;
+                    break;
+                }
+            if (!found)
+                throw std::runtime_error("Upper-bound constant variable not found for real variable: " + variable_name);
+        } else {
+            upper_bound = ub_obj.get<double>();
+        }
         double initial_value = json_obj["initial-value"].get<double>();
         return std::make_unique<RealVariable>(variable_id, variable_name, lower_bound, upper_bound, initial_value);
     } else if (variable_type == "bool") {
@@ -94,23 +169,27 @@ std::unique_ptr<InitStateGenerator> JANIEngine::constructGeneratorFromValues(con
         for (auto var_it = variables.begin(); var_it != variables.end(); ++var_it) {
             std::string var_name = (*var_it)->getName();
             // Check that the variable is defined in the state values
-            if (state_values->find(var_name) == state_values->end()) {
-                throw std::runtime_error("Variable " + var_name + " missing in start state definition");
-            }
+            // if (state_values->find(var_name) == state_values->end()) {
+            //     throw std::runtime_error("Variable " + var_name + " missing in start state definition");
+            // }
             // Copy the variable and set its initial value
             std::unique_ptr<Variable> new_var = (*var_it)->clone();
-            switch ((*state_values)[var_name].index()) {
-                case 0: // int
-                    new_var->setValue(std::get<int>((*state_values)[var_name]));
-                    break;
-                case 1: // double
-                    new_var->setValue(std::get<double>((*state_values)[var_name]));
-                    break;
-                case 2: // bool
-                    new_var->setValue(std::get<bool>((*state_values)[var_name]));
-                    break;
-                default:
-                    throw std::runtime_error("Unsupported variable type in start state assignment");
+            if (state_values->find(var_name) != state_values->end()) {
+                // If the variable is defined in the state values, set its value accordingly
+                // Otherwise, keep the default initial value
+                switch ((*state_values)[var_name].index()) {
+                    case 0: // int
+                        new_var->setValue(std::get<int>((*state_values)[var_name]));
+                        break;
+                    case 1: // double
+                        new_var->setValue(std::get<double>((*state_values)[var_name]));
+                        break;
+                    case 2: // bool
+                        new_var->setValue(std::get<bool>((*state_values)[var_name]));
+                        break;
+                    default:
+                        throw std::runtime_error("Unsupported variable type in start state assignment");
+                }
             }
             state->setVariable(var_name, std::move(new_var));
         }
@@ -169,22 +248,43 @@ JANIEngine::JANIEngine(
     std::cout << "DEBUG: Starting to construct JANI model from file: " << jani_model_path << std::endl;
     #endif
     // Construct actions
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Constructing actions..." << std::endl;
+    #endif
     for (auto it = jani_json["actions"].begin(); it != jani_json["actions"].end(); ++it) {
         std::string action_label = (*it)["name"].get<std::string>();
         auto action = constructAction(action_label, actions.size());
         actions.push_back(std::move(action));
     }
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Finished constructing " << actions.size() << " actions." << std::endl;
+    #endif
     // Construct constants
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Constructing constants..." << std::endl;
+    #endif
     for (auto it = jani_json["constants"].begin(); it != jani_json["constants"].end(); ++it) {
         auto constant = constructConstant(*it);
         constants.push_back(std::move(constant));
     }
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Finished constructing " << constants.size() << " constants." << std::endl;
+    #endif
     // Construct variables
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Constructing variables..." << std::endl;
+    #endif
     for (auto it = jani_json["variables"].begin(); it != jani_json["variables"].end(); ++it) {
         auto variable = constructVariable(*it);
         variables.push_back(std::move(variable));
     }
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Finished constructing " << variables.size() << " variables." << std::endl;
+    #endif
     // Construct automata
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Constructing automata..." << std::endl;
+    #endif
     for (auto it = jani_json["automata"].begin(); it != jani_json["automata"].end(); ++it) {
         auto automaton = constructAutomaton(*it, automata.size());
         automata.push_back(std::move(automaton));
@@ -192,6 +292,9 @@ JANIEngine::JANIEngine(
     if (automata.size() > 1) {
         throw std::runtime_error("Currently only single automaton models are supported");
     }
+    #ifndef NDEBUG
+    std::cout << "DEBUG: Finished constructing " << automata.size() << " automata." << std::endl;
+    #endif
     #ifndef NDEBUG
     std::cout << "DEBUG: Finished constructing JANI model from file: " << jani_model_path << std::endl;
     #endif

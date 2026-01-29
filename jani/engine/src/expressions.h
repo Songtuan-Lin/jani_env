@@ -643,4 +643,40 @@ public:
                   << " in state " << ctx_state.toString() << std::endl;
     }
 };
+
+
+class NotExpression : public Expression {
+    Expression* expr;
+public:
+    NotExpression(Expression* expr) : expr(expr) {}
+
+    ~NotExpression() {
+        delete expr;
+    }
+
+    std::string toString() const override {
+        return "¬(" + expr->toString() + ")";
+    }
+
+    std::variant<int, double, bool> eval(const State& ctx_state) const override {
+        auto val = expr->eval(ctx_state);
+        if (std::holds_alternative<bool>(val)) {
+            return !std::get<bool>(val);
+        }
+        throw std::runtime_error("Type mismatch in logical NOT");
+    }
+
+    std::vector<Condition> extractConditions() const override {
+        throw std::runtime_error("Cannot extract conditions from a NOT expression");
+    }
+
+    void debugPrintEval(const State& ctx_state) const override {
+        expr->debugPrintEval(ctx_state);
+        auto val = eval(ctx_state);
+        std::cout << "DEBUG: NOT expr " << toString() << " evaluated to " 
+                  << std::visit([](auto&& arg) { return std::to_string(arg); }, val) 
+                  << " in state " << ctx_state.toString() << std::endl;
+    }
+};
+
 #endif // JANI_ENGINE_EXPRESSIONS_H

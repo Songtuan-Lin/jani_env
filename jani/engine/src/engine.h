@@ -18,7 +18,9 @@ class TransitionEdge {
     std::string label; // action label
     Expression* guard;
     std::vector<std::unordered_map<std::string, Expression*>> destinations; // possible outcomes
-    std::vector<double> probabilities; // corresponding probabilities
+    // std::vector<double> probabilities; // corresponding probabilities
+    // Probability distribution over outcomes expressed as expressions
+    std::vector<std::unique_ptr<Expression>> probability_expressions;
 public:
     TransitionEdge(const std::string label, Expression* guard) : label(label), guard(guard) {}
     ~TransitionEdge() {
@@ -44,9 +46,13 @@ public:
         }
         destinations.push_back(assignments);
         if (json_obj.contains("probability")) {
-            probabilities.push_back(json_obj["probability"]["exp"].get<double>());
+            nlohmann::json prob_exp = json_obj["probability"]["exp"];
+            probability_expressions.push_back(std::unique_ptr<Expression>(Expression::construct(prob_exp)));
+            // probabilities.push_back(json_obj["probability"]["exp"].get<double>());
         } else {
-            probabilities.push_back(1.0); // Default probability
+            // Default probability expression is 1.0
+            probability_expressions.push_back(std::unique_ptr<Expression>(new FloatConstantExpression(1.0)));
+            // probabilities.push_back(1.0); // Default probability
         }
     }
     
@@ -61,6 +67,18 @@ public:
     State apply(const State& ctx_state, std::mt19937& rng) const {
         if (!isEnabled(ctx_state)) {
             throw std::runtime_error("Transition guard is not satisfied in the current state");
+        }
+        // Compute probabilities
+        std::vector<double> probabilities;
+        for (const auto& prob_expr : probability_expressions) {
+            auto prob_val = prob_expr->eval(ctx_state);
+            double prob_numeric = 0.0;
+            if (std::holds_alternative<double>(prob_val)) {
+                prob_numeric = std::get<double>(prob_val);
+            } else {
+                throw std::runtime_error("Probability expression did not evaluate to a numeric type");
+            }
+            probabilities.push_back(prob_numeric);
         }
         // Select a destination based on probabilities
         std::discrete_distribution<> dist(probabilities.begin(), probabilities.end());
@@ -252,7 +270,12 @@ public:
         auto result = failure_expression->eval(s);
         if (!std::holds_alternative<bool>(result))
             throw std::runtime_error("Failure expression does not evaluate to boolean");
-        return std::get<bool>(result);
+        bool eval_result = std::get<bool>(result);
+        bool is_valid = s.validateState();
+        if (!is_valid) {
+            throw std::runtime_error("State validation failed");
+        }
+        return eval_result || (!is_valid);
     }
 
     bool reach_failure_current() {

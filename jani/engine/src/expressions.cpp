@@ -31,6 +31,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new AdditionExpression(left, right);
+        } else {
+            throw std::invalid_argument("Addition expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "-") {
         // Construct a binary expression for subtraction
@@ -38,6 +40,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new SubtractionExpression(left, right);
+        } else {
+            throw std::invalid_argument("Subtraction expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "*") {
         // Construct a binary expression for multiplication
@@ -45,6 +49,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new MultiplicationExpression(left, right);
+        } else {
+            throw std::invalid_argument("Multiplication expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "/") {
         // Construct a binary expression for division
@@ -52,6 +58,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new DivisionExpression(left, right);
+        } else {
+            throw std::invalid_argument("Division expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "<") {
         // Construct a binary expression for less than
@@ -59,6 +67,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new LessThanExpression(left, right);
+        } else {
+            throw std::invalid_argument("Less than expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "≤") {
         // Construct a binary expression for less than or equal
@@ -66,6 +76,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new LessThanOrEqualExpression(left, right);
+        } else {
+            throw std::invalid_argument("Less than or equal expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "=") {
         // Construct a binary expression for equality
@@ -73,6 +85,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new EqualityExpression(left, right);
+        } else {
+            throw std::invalid_argument("Equality expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "∧") {
         // Construct a binary expression for logical AND
@@ -80,6 +94,8 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new AndExpression(left, right);
+        } else {
+            throw std::invalid_argument("AND expression missing 'left' or 'right' field in JSON object");
         }
     } else if (op == "∨") {
         // Construct a binary expression for logical OR
@@ -87,6 +103,15 @@ Expression* Expression::construct(const nlohmann::json& json_obj) {
             Expression* left = construct(json_obj["left"]);
             Expression* right = construct(json_obj["right"]);
             return new OrExpression(left, right);
+        } else {
+            throw std::invalid_argument("OR expression missing 'left' or 'right' field in JSON object");
+        }
+    }  else if (op == "¬") {
+        if (json_obj.contains("exp")) {
+            Expression* operand = construct(json_obj["exp"]);
+            return new NotExpression(operand);
+        } else {
+            throw std::invalid_argument("NOT expression missing 'exp' field in JSON object");
         }
     } else {
         throw std::invalid_argument("Unsupported operator in JSON object: " + op);
