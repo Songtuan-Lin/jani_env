@@ -364,7 +364,7 @@ public:
         return new_state;
     }
 
-    std::vector<State> get_all_successor_states(State &s, int action_id) {
+    std::vector<State> get_all_successor_states(const State &s, int action_id) {
         if (action_id < 0 || action_id >= actions.size()) {
             throw std::runtime_error("Invalid action id: " + std::to_string(action_id));
         }

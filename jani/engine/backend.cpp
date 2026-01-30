@@ -50,6 +50,7 @@ NB_MODULE(backend, m) {
         .def(nb::init<JANIEngine*>(), nb::arg("engine"))
         .def("get_engine_current_state_vector", &TarjanOracle::getEngineCurrentStateVector) // For debugging
         .def("is_engine_state_safe", &TarjanOracle::isEngineStateSafe)
+        .def("is_engine_state_action_safe", &TarjanOracle::isEngineStateActionSafe)
         .def("is_state_safe_from_vector", &TarjanOracle::isStateSafeFromVector)
         .def("engine_state_safety_with_action", &TarjanOracle::engineStateSafetyWithAction);
 }

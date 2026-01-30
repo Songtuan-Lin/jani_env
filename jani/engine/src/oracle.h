@@ -43,16 +43,30 @@ public:
         return result;
     }
 
+    bool isStateActionSafe(const State& state, int action_id) {
+        // Check whether a state is safe under a specific action
+        std::vector<State> successor_states = engine->get_all_successor_states(state, action_id);
+        for (const State& succ_state : successor_states) {
+            std::tuple<bool, int> succ_result = stateSafetyWithAction(succ_state);
+            bool succ_safe = std::get<0>(succ_result);
+            if (!succ_safe) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool isStateSafe(const State& state) {
+        // Check whether a state is safe
         std::tuple<bool, int> result = stateSafetyWithAction(state);
         bool safe = std::get<0>(result);
         return safe;
     }
 
     bool isStateSafeFromVector(const std::vector<double>& state_vector) {
-        // Convert vector to State
+        // Check whether a state (given as a vector) is safe
         State state;
-        state = engine->create_state_from_vector(state_vector);
+        state = engine->create_state_from_vector(state_vector); // Convert vector to State
         // Perform Tarjan's algorithm
         return isStateSafe(state);
     }
@@ -65,6 +79,12 @@ public:
     std::tuple<bool, int> engineStateSafetyWithAction() {
         const State& state = engine->get_current_state();
         return stateSafetyWithAction(state);
+    }
+
+    bool isEngineStateActionSafe(int action_id) {
+        // Check whether the current engine state is safe under a specific action
+        const State& state = engine->get_current_state();
+        return isStateActionSafe(state, action_id);
     }
 
     // For testing purposes
