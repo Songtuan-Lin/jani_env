@@ -10,7 +10,14 @@ from jani import JANIEnv
 from utils import create_env, create_safety_eval_file_args, create_eval_file_args
 
 from .buffer import collect_trajectory, DAggerBuffer
-from .policy import Policy
+from .policy import Policy, evaluate_policy_safety_on_state
+
+RAY_AVAILABLE = True
+try:
+    import ray
+    from . import ray_workers
+except Exception:
+    RAY_AVAILABLE = False
 
 
 def evaluate_policy(
@@ -48,6 +55,43 @@ def evaluate_policy(
     return average_reward
 
 
+def evaluate_policy_safety(args: dict, hyperparams: dict, file_args: dict, network_paras: dict, policy: nn.Module) -> tuple[float, float]:
+    """Evaluate the safety rate of a policy under all initial states."""
+    safety_eval_env = create_env(file_args, n_envs=1, monitor=False, time_limited=True)
+    num_init_states = safety_eval_env.unwrapped.get_init_state_pool_size()
+    
+    if args.get("use_multiprocessors", False) and RAY_AVAILABLE:
+        print(f"Evaluating policy safety using {hyperparams.get('num_workers', 200)} Ray workers...")
+        # Initialize Ray
+        if not ray.is_initialized():
+            ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
+
+        network_state_dict = ray_workers.to_cpu_state_dict(policy)
+        # Create PolicySafetyEvaluator actors
+        evaluators = [ray_workers.PolicySafetyEvaluator.remote(file_args, network_paras, network_state_dict) for _ in range(hyperparams.get("num_workers", 200))]
+        futures = []
+        for idx in range(num_init_states):
+            evaluator = evaluators[idx % len(evaluators)]
+            futures.append(evaluator.evaluate_safety.remote(idx, file_args["max_steps"]))
+
+        # Gather results
+        results = ray.get(futures)
+    else:
+        print("Evaluating policy safety sequentially...")
+        results = []
+        for idx in range(num_init_states):
+            is_safe, final_reward = evaluate_policy_safety_on_state(
+                safety_eval_env, policy, idx, file_args["max_steps"], torch.device("cpu")
+            )
+            results.append((is_safe, final_reward))
+    num_unsafe_trajectories = sum([1 for is_safe, _ in results if not is_safe])
+    safety_rate = 1.0 - (num_unsafe_trajectories / num_init_states)
+    total_reward = sum([reward for _, reward in results])
+    avg_reward = total_reward / num_init_states
+
+    return safety_rate, avg_reward
+
+
 def train_step(
         rb: DAggerBuffer, 
         policy: nn.Module, 
@@ -77,7 +121,6 @@ def train_step(
     optimizer.step()
 
     return loss.item()
-
 
 
 def load_policy(checkpoint) -> nn.Module:
@@ -112,6 +155,18 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     policy = load_policy(checkpoint)
     print("Initial policy loaded.")
 
+    # Set up logging directory
+    log_dir = Path(args.get("log_directory", "./logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    safety_log_file = log_dir / "safety_rates.txt"
+    rewards_log_file = log_dir / "average_rewards.txt"
+    starting_info_file = log_dir / "starting_info.txt"
+    final_info_file = log_dir / "final_info.txt"
+    open(safety_log_file, 'w').close() # Clear existing log file
+    open(rewards_log_file, 'w').close() # Clear existing log file
+    open(starting_info_file, 'w').close() # Clear existing log file
+    open(final_info_file, 'w').close() # Clear existing log file
+
     # Initialize Weights & Biases logging if available
     try:
         import wandb
@@ -131,18 +186,11 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             }
         ) 
 
-    # Decide whether to use mult-processors
-    RAY_AVAILABLE = True
-    try:
-        from . import rollout_collector
-    except Exception:
-        RAY_AVAILABLE = False
-        if args.get("use_multiprocessors", False):
-            print("Ray is not available. Proceeding without multiprocessors.")
-
     # Create environment for sequential rollout collection
     safety_eval_file_args = create_safety_eval_file_args(file_args, args)
     safety_eval_env = create_env(safety_eval_file_args, n_envs=1, monitor=False, time_limited=True)
+
+    safety_coverage_file_args = create_safety_eval_file_args(file_args, args, use_oracle=False)
 
     # Create environment for normal policy evaluation
     eval_file_args = create_eval_file_args(file_args)
@@ -156,22 +204,28 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     rb_capacity = hyperparams.get("replay_buffer_capacity", 10000)
     rb = DAggerBuffer(buffer_size=rb_capacity)
 
-    print(f"Average Reward before training: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
+    starting_safety_coverage, starting_avg_reward = evaluate_policy_safety(
+        args=args, 
+        hyperparams=hyperparams, 
+        file_args=safety_coverage_file_args, 
+        network_paras={
+            'input_dim': checkpoint['input_dim'],
+            'output_dim': checkpoint['output_dim'],
+            'hidden_dims': checkpoint['hidden_dims']
+        }, 
+        policy=policy)
+    print(f"Initial Safety Coverage: {starting_safety_coverage*100.0:.2f}%, Average Reward: {starting_avg_reward:.2f}")
+    # print(f"Average Reward before training: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
+
+    with open(starting_info_file, 'w') as f:
+        f.write(f"{starting_safety_coverage:.4f}\t{starting_avg_reward:.2f}")
     safety_rates = [] # To track safety rates over iterations
     avg_rewards = []  # To track average rewards over iterations
-    
-    # Set up logging directory
-    log_dir = Path(args.get("log_directory", "./logs"))
-    log_dir.mkdir(parents=True, exist_ok=True)
-    safety_log_file = log_dir / "safety_rates.txt"
-    rewards_log_file = log_dir / "average_rewards.txt"
-    open(safety_log_file, 'w').close() # Clear existing log file
-    open(rewards_log_file, 'w').close() # Clear existing log file
 
     # Main training loop
     num_iterations = hyperparams.get("num_iterations", 10000)
     if RAY_AVAILABLE and args.get("use_multiprocessors", False):
-        rollout_manager = rollout_collector.RolloutManager(
+        rollout_manager = ray_workers.RolloutManager(
             file_args=safety_eval_file_args,
             network_paras={
                 'input_dim': checkpoint['input_dim'],
@@ -220,11 +274,6 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             })
 
         if all_safe:
-            avg_reward = evaluate_policy(env, policy, num_episodes=100)
-            final_eval_info = {
-                "iteration": iter,
-                "average_reward": avg_reward
-            }
             # Save final policy
             model_save_dir = Path(args.get("model_save_dir", "./models"))
             model_save_dir.mkdir(parents=True, exist_ok=True)
@@ -237,7 +286,20 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             }, save_path)
             print(f"Saved final policy to {save_path}")
             
-            print(f"All trajectories safe at iteration {iter}. Final evaluation on domain: {final_eval_info["average_reward"]:.2f}")
+            final_safety_coverage, final_avg_reward = evaluate_policy_safety(
+                args=args, 
+                hyperparams=hyperparams, 
+                file_args=safety_coverage_file_args, 
+                network_paras={
+                    'input_dim': checkpoint['input_dim'],
+                    'output_dim': checkpoint['output_dim'],
+                    'hidden_dims': checkpoint['hidden_dims']
+                }, 
+                policy=policy
+            )
+            print(f"Final Safety Coverage: {final_safety_coverage*100.0:.2f}%, Average Reward: {final_avg_reward:.2f}")
+            with open(final_info_file, 'w') as f:
+                f.write(f"{final_safety_coverage:.4f}\t{final_avg_reward:.2f}")
             return
         # Process and add rollouts to replay buffer
         rb.add_rollouts(rollouts)

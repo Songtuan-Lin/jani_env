@@ -36,11 +36,12 @@ class JANIEnv(gym.Env):
         self._goal_reward: float = goal_reward
         self._failure_reward: float = failure_reward
         self._oracle: Optional[TarjanOracle] = None
-        if use_oracle:
-            self._oracle = TarjanOracle(self._engine)
+        self._use_oracle: bool = use_oracle
+        self._oracle = TarjanOracle(self._engine) # Always setup the oracle
         self._unsafe_reward: Optional[float] = None
-        if self._oracle is not None:
+        if self._use_oracle:
             self._unsafe_reward = unsafe_reward
+            assert self._oracle is not None, "Oracle must be set up if use_oracle is True."
         # Define action and observation space
         self.action_space = gym.spaces.Discrete(self._engine.get_num_actions())
         lower_bounds = self._engine.get_lower_bounds()
@@ -78,12 +79,12 @@ class JANIEnv(gym.Env):
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         if not self._reseted:
             raise RuntimeError("Environment must be reset before stepping.")
-        if self._oracle is not None:
+        if self._use_oracle:
             assert self._prev_obs == self._engine.get_current_state_vector(), "Current observation does not match engine state. Expected {}, got {}".format(self._prev_obs, self._engine.get_current_state_vector())
             assert self._engine.get_current_state_vector() == self._oracle.get_engine_current_state_vector(), "Engine state does not match oracle state. Engine {}, Oracle {}".format(self._engine.get_current_state_vector(), self._oracle.get_engine_current_state_vector())
         next_state_vec = self._engine.step(action) # The current state should be automatically updated in the engine
         info = {}
-        if self._oracle is not None:
+        if self._use_oracle:
             assert self._unsafe_reward is not None
             assert self._engine.get_current_state_vector() == self._oracle.get_engine_current_state_vector() == next_state_vec, "After step, engine state does not match oracle state. Engine {}, Oracle {}".format(self._engine.get_current_state_vector(), self._oracle.get_engine_current_state_vector())
             is_next_state_safe, next_safe_action = self._oracle.engine_state_safety_with_action()
@@ -103,7 +104,7 @@ class JANIEnv(gym.Env):
             reward = 0.0
             done = True
         else:
-            if (self._oracle is not None) and (not is_next_state_safe):
+            if self._use_oracle and (not is_next_state_safe):
                 reward = self._unsafe_reward
                 if self._prev_state_safe:
                     # Just transitioned from safe to unsafe
@@ -111,7 +112,7 @@ class JANIEnv(gym.Env):
             else:
                 reward = 0.0
             done = False
-        if self._oracle is not None:
+        if self._use_oracle:
             self._prev_state_safe = is_next_state_safe
             self._prev_safe_action = next_safe_action
             self._prev_obs = next_state_vec
@@ -138,3 +139,9 @@ class JANIEnv(gym.Env):
 
     def get_failure_reward(self) -> float:
         return self._failure_reward
+
+    def is_current_state_action_safe(self, action: int) -> bool:
+        if self._oracle is None:
+            raise RuntimeError("Oracle is not enabled in this environment.")
+        is_safe = self._oracle.is_engine_state_action_safe(action)
+        return is_safe

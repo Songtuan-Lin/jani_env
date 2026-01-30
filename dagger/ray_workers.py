@@ -2,17 +2,18 @@ import ray
 import torch
 import torch.nn as nn
 
-from .policy import Policy
+from .policy import Policy, evaluate_policy_safety_on_state
 from .buffer import collect_trajectory
 
 from jani import JANIEnv
 from utils import create_env
 
+from torchrl.modules import MaskedCategorical
+
 
 def to_cpu_state_dict(policy: torch.nn.Module):
     # Help function to move model state dict to CPU
     return {k: v.detach().cpu() for k, v in policy.state_dict().items()}
-
 
 
 @ray.remote(num_cpus=1)
@@ -38,7 +39,6 @@ class RolloutWorker:
         self.policy.load_state_dict(state_dict)
         self.policy.eval()
     
-
 
 class RolloutManager:
     def __init__(self, file_args: dict, network_paras: dict, policy: nn.Module, num_workers: int):
@@ -73,31 +73,23 @@ class RolloutManager:
         # Gather results
         rollouts = ray.get(futures)
         return rollouts
+    
 
+@ray.remote(num_cpus=1)
+class PolicySafetyEvaluator:
+    def __init__(self, file_args: dict, network_paras: dict, network_state_dict):
+        """Initialize the PolicySafetyEvaluator with multiple RolloutWorker actors."""
+        self.env = create_env(file_args, n_envs=1, monitor=False, time_limited=True)
+        self.policy = Policy(
+            input_dim=network_paras['input_dim'],
+            output_dim=network_paras['output_dim'],
+            hidden_dims=network_paras['hidden_dims']
+        )
+        self.policy.load_state_dict(network_state_dict)
+        self.policy.eval()
 
-def run_rollouts(
-        file_args: dict, 
-        network_paras: dict, 
-        policy: nn.Module,
-        num_workers: int, 
-        init_size: int) -> list:
-    """Run multiple rollouts in parallel using Ray."""
-    # Initialize Ray
-    if not ray.is_initialized():
-        ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
-
-    network_state_dict = to_cpu_state_dict(policy)
-    # state_dict_ref = ray.put(network_state_dict)
-
-    # Create a RolloutWorker actor
-    workers = [RolloutWorker.remote(file_args, network_paras, network_state_dict) for _ in range(num_workers)]
-
-    # Launch rollouts in parallel
-    futures = []
-    for idx in range(init_size):
-        worker = workers[idx % num_workers]
-        futures.append(worker.run_one_rollout.remote(idx))
-
-    # Gather results
-    rollouts = ray.get(futures)
-    return rollouts
+    @torch.no_grad()
+    def evaluate_safety(self, state_idx: int, max_steps: int) -> tuple[bool, float]:
+        """Evaluate the safety of the policy starting from a given state index."""
+        return evaluate_policy_safety_on_state(self.env, self.policy, state_idx, max_steps, torch.device("cpu"))
+        
