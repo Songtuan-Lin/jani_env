@@ -7,7 +7,8 @@ struct TarjanNode {
     State state;
     int index;
     int lowlink;
-    TarjanNode(State s) : state(s), index(-1), lowlink(-1) {}
+    int current_action_id;
+    TarjanNode(State s) : state(s), index(-1), lowlink(-1), current_action_id(-1) {}
 };
 
 
@@ -31,6 +32,8 @@ public:
         #endif
         // Perform Tarjan's algorithm starting from this state
         std::vector<State> stack;
+        if (stack.size() != 0)
+            throw std::runtime_error("Stack should be empty at the start of Tarjan's algorithm");
         // Check if a state is on the stack
         std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> on_stack_map;
         std::unique_ptr<TarjanNode> node = std::make_unique<TarjanNode>(state);

@@ -1,6 +1,15 @@
 #include "oracle.h"
 #include "engine.h"
+#include <fstream>
 #include "base_components.h"
+
+
+size_t check_rss_mb() {
+    std::ifstream f("/proc/self/statm");
+    size_t size, resident;
+    f >> size >> resident;
+    return (resident * 4) / 1024; // MB (page size = 4KB usually)
+}
 
 
 int main(int argc, char** argv) {
@@ -17,11 +26,16 @@ int main(int argc, char** argv) {
     // std::cout << "**************************************************" << std::endl;
     // bool result2 = oracle.isStateSafe(problematic_state);
     // std::cout << "Problematic state is marked " << (result2 ? "safe." : "unsafe.") << std::endl;
+
     JANIEngine engine(argv[1], argv[2], argv[2], "", "", 42);
     TarjanOracle oracle(&engine);
-    engine.reset();
-    const State& current_state = engine.get_current_state();
-    bool result = oracle.isStateSafe(current_state);
-    std::cout << "Engine current state is marked " << (result ? "safe." : "unsafe.") << std::endl;
+    for (int i = 0; i < 3; i++) {
+        engine.reset();
+        std::cout << "Memory usage before checking " << i << "th state safety: " << check_rss_mb() << " MB" << std::endl;
+        const State& current_state = engine.get_current_state();
+        bool result = oracle.isStateSafe(current_state);
+        std::cout << "Engine current state is marked " << (result ? "safe." : "unsafe.") << std::endl;
+        std::cout << "Memory usage after checking " << i << "th state safety: " << check_rss_mb() << " MB" << std::endl;
+    }
     return 0;
 }

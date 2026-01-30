@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <random>
+#include <assert.h>
 #include "oracle.h"
 
 
@@ -38,14 +39,17 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
         print_indent(index);
         std::cout << "DEBUG: Visiting state: " << node->state.toString() << std::endl;
         #endif
+
         node->index = stack.size();
         node->lowlink = stack.size();
+
         #ifndef NDEBUG
         print_indent(index);
         std::cout << "DEBUG: Assigned index and lowlink: " << index << std::endl;
         #endif  
 
         if (cache.find(node->state) != cache.end()) { 
+
             #ifndef NDEBUG
             print_indent(index);
             std::cout << "DEBUG: State found in cache." << std::endl;
@@ -54,6 +58,7 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
             print_indent(index);
             std::cout << "DEBUG: Exiting state: " << node->state.toString() << std::endl;
             #endif
+
             return cache[node->state]; // If the state has been cached
         }
         // TODO: Check whether this inputs the reference of the state
@@ -66,6 +71,7 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
             #endif
             return std::make_tuple(true, -1); // A goal state is a safe state
         }
+
         if (engine->reach_failure(node->state)) {
             #ifndef NDEBUG
             print_indent(index);
@@ -91,88 +97,120 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
         bool is_safe_state = true; // If no action is applicable, the state is safe
         int safe_action_id = -1; // To record one safe action id
         for (int action_id : permuted_action_ids) {
+
             #ifndef NDEBUG
             print_indent(index);
             std::cout << "DEBUG: Checking action id " << action_id;
             #endif
+
             if (!action_mask[action_id]) {
                 #ifndef NDEBUG
                 std::cout << " -- Action not applicable" << std::endl;
                 #endif
                 continue; // Continue to the next action if it is not applicable
             }
+
             #ifndef NDEBUG
             std::cout << " -- Action applicable" << std::endl;
             #endif
+
             bool is_safe_action = true;
+            if (on_stack_map.find(node->state) == on_stack_map.end())
+                throw std::runtime_error("Current node not found in on-stack map");
+            on_stack_map[node->state]->current_action_id = action_id; // update current action id
+
             std::vector<State> successor_states = engine->get_all_successor_states(node->state, action_id);
+
             #ifndef NDEBUG
             print_indent(index);
             std::cout << "DEBUG: Number of successor states: " << successor_states.size() << std::endl;
             int succ_idx = 0;
             #endif
+
             for (State& succ_state : successor_states) {
                 if (on_stack_map.find(succ_state) != on_stack_map.end()) {
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Successor state " << succ_idx << " is on stack: " << succ_state.toString() << std::endl;
                     succ_idx++;
                     #endif
+
                     // Successor is on stack, update lowlink
                     TarjanNode* succ_node = on_stack_map[succ_state].get();
                     node->lowlink = std::min(node->lowlink, succ_node->index);
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Updated lowlink to " << node->lowlink << std::endl;
                     #endif
+
                     // Update the copy of on-stack map
                     if (on_stack_map.find(node->state) == on_stack_map.end())
                         throw std::runtime_error("Current node not found in on-stack map");
                     on_stack_map[node->state]->lowlink = node->lowlink;
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Current node lowlink in on-stack map updated to " << on_stack_map[node->state]->lowlink << std::endl;
                     #endif
+
                 } else {
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Successor state " << succ_idx << " is not on stack: " << succ_state.toString() << std::endl;
                     #endif
+
                     // Successor not on stack
                     std::unique_ptr<TarjanNode> succ_node = std::make_unique<TarjanNode>(succ_state);
                     // TarjanNode* succ_node = new TarjanNode(succ_state);
                     std::tuple<bool, int> succ_result = tarjan_dfs(succ_node.get(), index + 1, stack, on_stack_map);
                     bool succ_safe = std::get<0>(succ_result);
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Successor state " << succ_node->state.toString() << " returned " << (succ_safe ? "safe." : "unsafe.") << " with action " << std::get<1>(succ_result) << std::endl;
                     succ_idx++;
                     #endif
+
                     node->lowlink = std::min(node->lowlink, succ_node->lowlink);
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Updated lowlink to " << node->lowlink << std::endl;
                     #endif
+
                     // Again, update the copy of on-stack map
                     if (on_stack_map.find(node->state) == on_stack_map.end())
                         throw std::runtime_error("Current node not found in on-stack map");
                     on_stack_map[node->state]->lowlink = node->lowlink;
+
                     #ifndef NDEBUG
                     print_indent(index);
                     std::cout << "DEBUG: Current node lowlink in on-stack map updated to " << on_stack_map[node->state]->lowlink << std::endl;
                     #endif 
+
                     if (!succ_safe) {
                         is_safe_action = false;
                         break; // No need to check other successors for this action
                     }
                 }
             }
+            if (on_stack_map[node->state]->current_action_id != action_id)
+                throw std::runtime_error("Current action id in on-stack map does not match");
+
             if (node->lowlink == node->index) {
+                // For inspection
+                int prev_stack_size = stack.size();
+                int prev_stack_map_size = on_stack_map.size();
+
                 // The successor states have all been processed
                 if (is_safe_action) {
                     // Mark the state as safe in the cache only for the root of the SCC
                     cache[node->state] = std::make_tuple(true, action_id);
                 }
+
                 // We can pop the stack to form an SCC
                 State w;
                 while(true) {
@@ -187,8 +225,22 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                         } else
                             break; // We need the current node to remain on the stack for the next action
                     }
+                    
+                    // Doesn't seem very helpful at this moment
+                    // if (on_stack_map.find(w) == on_stack_map.end())
+                    //     throw std::runtime_error("Node to be popped not found in on-stack map");
+                    // int stacked_state_action_id = on_stack_map[w]->current_action_id;
+                    // cache[w] = std::make_tuple(true, stacked_state_action_id);
+
                     stack.pop_back();
+                    if (stack.size() + 1 != prev_stack_size)
+                        throw std::runtime_error("Stack size mismatch when popping SCC");
+                    prev_stack_size--;
+
                     on_stack_map.erase(w);
+                    if (on_stack_map.size() + 1 != prev_stack_map_size)
+                        throw std::runtime_error("On-stack map size mismatch when popping SCC");
+                    prev_stack_map_size--;
                 }
             }
             if (is_safe_action) {
