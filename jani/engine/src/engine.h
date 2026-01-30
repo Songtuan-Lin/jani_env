@@ -103,7 +103,7 @@ public:
         return new_state;
     }
 
-    std::vector<State> getAllPossibleOutcomes(State& ctx_state) const {
+    std::vector<State> getAllPossibleOutcomes(const State& ctx_state) const {
         if (!isEnabled(ctx_state)) {
             throw std::runtime_error("Transition guard is not satisfied in the current state");
         }
