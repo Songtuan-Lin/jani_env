@@ -4,6 +4,7 @@ import torch
 
 from pathlib import Path
 from typing import Any, Dict
+from ray.exceptions import RayActorError, RayTaskError
 
 from .train import train
 
@@ -165,7 +166,13 @@ def main():
         futures.append(trainer.train_on_benchmark.remote(benc_args, file_args, device))
 
     # Wait for all trainings to complete
-    ray.get(futures)
+    results = []
+    for idx, ref in enumerate(futures):
+        try:
+            results.append(ray.get(ref))
+        except (RayTaskError, RayActorError):
+            print(f"BenchmarkTrainer {idx % args.num_trainers} failed during training.")
+    
 
 
 if __name__ == "__main__":

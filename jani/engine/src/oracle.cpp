@@ -4,6 +4,8 @@
 #include <assert.h>
 #include "oracle.h"
 
+#define NDEBUG
+
 
 size_t rss_mb() {
     std::ifstream f("/proc/self/statm");

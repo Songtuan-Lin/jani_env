@@ -2,6 +2,8 @@
 #include "base_components.h"
 #include "engine.h"
 
+#define NDEBUG
+
 
 struct TarjanNode {
     State state;

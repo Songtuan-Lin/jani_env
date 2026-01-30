@@ -2,6 +2,8 @@
 #include "nlohmann/json.hpp"
 #include "engine.h"
 
+#define NDEBUG
+
 
 std::unique_ptr<Action> JANIEngine::constructAction(std::string action_label, int action_id) {
     auto action = std::make_unique<Action>(action_id, action_label);

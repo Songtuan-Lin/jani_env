@@ -13,6 +13,7 @@
 #include "base_components.h"
 #include "expressions.h"
 
+#define NDEBUG
 
 class TransitionEdge {
     std::string label; // action label
