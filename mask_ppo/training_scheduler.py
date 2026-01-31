@@ -167,7 +167,7 @@ def main():
 
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(num_gpus=0, ignore_reinit_error=False)
+        ray.init(ignore_reinit_error=False)
     
     trainers = [BenchmarkTrainer.remote() for _ in range(args.num_trainers)]
     
