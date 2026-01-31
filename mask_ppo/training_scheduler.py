@@ -69,13 +69,13 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "disable_wandb": True,
             "disable_eval": False,
             "use_separate_eval_env": True,
-            "enumate_all_init_states": True,
+            "enumate_all_init_states": False,
             "log_reward": True,
             "eval_freq": 1025,
             "eval_safety": False,
             "save_all_checkpoints": True,
             "use_oracle": False,
-            "verbose": 0,
+            "verbose": 1,
             "device": "cpu",
             "seed": shared_args.get("seed", 42),
         }
@@ -129,12 +129,9 @@ def get_all_configs(root_dir: str, shared_args: dict[str, any]) -> list[dict[str
 
 @ray.remote(num_cpus=1, num_gpus=0)
 class BenchmarkTrainer:
-    def __init__(self, hyperparams: dict[str, any]):
-        self.hyperparams = hyperparams
-
     def train_on_benchmark(self, args, file_args):
         """Train the model on the benchmark dataset."""
-        train_model(args, file_args, self.hyperparams) # So far only support CPU training
+        train_model(args, file_args) # So far only support CPU training
 
 
 def main():
@@ -170,9 +167,9 @@ def main():
 
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
+        ray.init(num_gpus=0, ignore_reinit_error=False)
     
-    trainers = [BenchmarkTrainer.remote(hyperparams={}) for _ in range(args.num_trainers)]
+    trainers = [BenchmarkTrainer.remote() for _ in range(args.num_trainers)]
     
     futures = []
     for i, (config_args, config_file_args) in enumerate(list_configs):

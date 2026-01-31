@@ -155,7 +155,6 @@ class EvalCallback(BaseCallback):
                         policy, network_paras, 
                         Path(self.best_model_save_path), "best_model"
                     )
-                    self.model.save(self.best_model_save_path)
             if WANDB_AVAILABLE and wandb.run is not None:
                 wandb.log({
                     'eval/mean_reward': mean_reward,
