@@ -180,8 +180,8 @@ def main():
     for idx, ref in enumerate(futures):
         try:
             results.append(ray.get(ref))
-        except (RayTaskError, RayActorError):
-            print(f"BenchmarkTrainer {idx % args.num_trainers} failed during training.")
+        except (RayTaskError, RayActorError) as e:
+            print(f"BenchmarkTrainer {idx % args.num_trainers} failed during training: {e}")
     
 
 
