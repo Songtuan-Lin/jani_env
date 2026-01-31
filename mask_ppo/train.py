@@ -107,7 +107,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
             eval_freq=args.eval_freq,
             n_eval_episodes=args.n_eval_episodes,
             enumate_all_init_states=args.enumate_all_init_states,
-            best_model_save_path=str(model_save_dir / "best_model")
+            best_model_save_path=str(model_save_dir)
         )
         callbacks.append(eval_callback)
 
@@ -115,7 +115,7 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     if args.save_all_checkpoints:
         save_actor_callback = SaveActorCallback(
             save_freq=args.eval_freq,
-            save_path=model_save_dir / "actor_checkpoints",
+            save_path=model_save_dir,
             verbose=args.verbose
         )
         callbacks.append(save_actor_callback)

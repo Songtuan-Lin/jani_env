@@ -33,6 +33,19 @@ def snap(tag):
 
 
 
+def save_policy(policy: torch.nn.Module, network_paras: dict, save_path: Path, name: str):
+    """Save the policy network to the specified path."""
+    save_path.mkdir(parents=True, exist_ok=True)
+    actor_path = save_path / f"{name}.pth"
+    actor_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({
+        'input_dim': network_paras.get('input_dim'),
+        'output_dim': network_paras.get('output_dim'),
+        'hidden_dims': network_paras.get('hidden_dims'),
+        'state_dict': policy.state_dict()
+    }, actor_path)
+
+
 def compute_mean_reward(eval_env, model, n_eval_episodes=10, enumate_all_init_states=False) -> float:
     rewards = []
     num_iter = n_eval_episodes
@@ -78,17 +91,15 @@ class SaveActorCallback(BaseCallback):
     def _on_step(self) -> bool:
         if self.save_freq > 0 and self.n_calls % self.save_freq == 0:
             policy = self.model.policy
-            hidden_dims = policy.net_arch['pi']
-            actor_path = self.save_path / f"actor_iter_{self.n_calls // self.save_freq}.pth"
-            actor_path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({
+            network_paras = {
                 'input_dim': self.training_env.observation_space.shape[0],
                 'output_dim': self.training_env.action_space.n,
-                'hidden_dims': hidden_dims,
-                'state_dict': policy.state_dict()
-            }, actor_path)
-            if self.verbose > 0:
-                print(f"Saved model checkpoint to {actor_path} at step {self.num_timesteps}")
+                'hidden_dims': policy.net_arch['pi']
+            }
+            save_policy(
+                policy, network_paras, self.save_path, 
+                f"actor_iter_{self.n_calls // self.save_freq}"
+            )
         return True
     
 
@@ -134,6 +145,16 @@ class EvalCallback(BaseCallback):
             if self.best_model_save_path is not None:
                 if mean_reward > self.best_mean_reward:
                     self.best_mean_reward = mean_reward
+                    policy = self.model.policy
+                    network_paras = {
+                        'input_dim': self.training_env.observation_space.shape[0],
+                        'output_dim': self.training_env.action_space.n,
+                        'hidden_dims': policy.net_arch['pi']
+                    }
+                    save_policy(
+                        policy, network_paras, 
+                        Path(self.best_model_save_path), "best_model"
+                    )
                     self.model.save(self.best_model_save_path)
             if WANDB_AVAILABLE and wandb.run is not None:
                 wandb.log({

@@ -51,7 +51,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "objective": "",
             "failure_property": "",
             "eval_start_states": str(eval_property_file),
-            "policy_path": variant_dir / jani_name / "policy.pth",
+            "policy_path": variant_dir / "training_policy" / "best_model.pth",
             "goal_reward": 1.0,
             "failure_reward": -1.0,
             "unsafe_reward": -0.01,
