@@ -24,7 +24,8 @@ class JANIEnv(gym.Env):
                  goal_reward: float = 1.0,
                  failure_reward: float = -1.0,
                  use_oracle: bool = False,
-                 unsafe_reward: float = -0.01) -> None:
+                 unsafe_reward: float = -0.01,
+                 disable_oracle_cache: bool = False) -> None:
         super().__init__()
         # print(f"DEBUG: Initializing JANIEnv with model: {jani_model_path}, property: {jani_property_path}, start states: {start_states_path}, objective: {objective_path}, failure property: {failure_property_path}, seed: {seed}")
         self._engine = JANIEngine(jani_model_path, 
@@ -37,7 +38,7 @@ class JANIEnv(gym.Env):
         self._failure_reward: float = failure_reward
         self._oracle: Optional[TarjanOracle] = None
         self._use_oracle: bool = use_oracle
-        self._oracle = TarjanOracle(self._engine) # Always setup the oracle
+        self._oracle = TarjanOracle(self._engine, disable_oracle_cache) # Always setup the oracle
         self._unsafe_reward: Optional[float] = None
         if self._use_oracle:
             self._unsafe_reward = unsafe_reward

@@ -45,7 +45,7 @@ class RolloutManager:
         """Initialize the RolloutManager with multiple RolloutWorker actors."""
         # Initialize Ray
         if not ray.is_initialized():
-            ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
+            ray.init(ignore_reinit_error=False)
 
         network_state_dict = to_cpu_state_dict(policy)
         # state_dict_ref = ray.put(network_state_dict)

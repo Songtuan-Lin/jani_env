@@ -24,10 +24,10 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
         jani_name = model_file.name.replace(".jani", "")
         if variant_name == "models":
             property_dir = domain_dir / "additional_properties"
-            policy_dir = domain_dir / "policies" / jani_name / "trained_policies"
+            policy_dir = domain_dir / "policies" / jani_name
         else:
             property_dir = domain_dir / "additional_properties" / variant_name
-            policy_dir = domain_dir / "policies" / variant_name / jani_name / "trained_policies"
+            policy_dir = domain_dir / "policies" / variant_name / jani_name
 
 
         # Locate the training property file
@@ -61,13 +61,14 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "num_init_states": 20000,
             "num_iterations": 50,
             "max_steps": 1024,
+            "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
             "use_multiprocessors": True,
             "empty_buffer": True,
             "wandb_project": f"{jani_name}",
             "experiment_name": f"dagger_{variant_name}" if variant_name != "models" else "dagger",
             "log_directory": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name,
             "model_save_dir": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name / "models" if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name / "models",
-            "disable_wandb": False,
+            "disable_wandb": shared_args.get("disable_wandb", False),
             "seed": seed,
         }
         # Create file arguments
@@ -82,6 +83,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "failure_reward": args.get("failure_reward", -1.0),
             "unsafe_reward": args.get("unsafe_reward", -0.01),
             "use_oracle": True,
+            "disable_oracle_cache": args.get("disable_oracle_cache", False),
             "max_steps": args.get("max_steps", 1024)
         }
         list_configs.append((args, file_args))
@@ -133,13 +135,18 @@ def main():
     parser.add_argument("--num_trainers", type=int, default=4, help="Number of policy trainers to run in parallel")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of rollout workers per trainer")
     parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
+    parser.add_argument("--disable_oracle_cache", action="store_true", help="Disable caching in the oracle.")
+    parser.add_argument("--disable_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
     args = parser.parse_args()
 
     # Load file arguments and hyperparameters
     shared_args = {
         "log_directory": args.log_directory,
+        "disable_wandb": args.disable_wandb,
+        "disable_oracle_cache": args.disable_oracle_cache
     }
+
     hyperparams = {
         'learning_rate': 1e-3,
         'replay_buffer_capacity': 10000,
@@ -152,7 +159,7 @@ def main():
 
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
+        ray.init(ignore_reinit_error=False)
 
     # Create BenchmarkTrainer actors
     if args.device == "cuda" and torch.cuda.is_available():

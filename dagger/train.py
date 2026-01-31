@@ -64,7 +64,7 @@ def evaluate_policy_safety(args: dict, hyperparams: dict, file_args: dict, netwo
         print(f"Evaluating policy safety using {hyperparams.get('num_workers', 200)} Ray workers...")
         # Initialize Ray
         if not ray.is_initialized():
-            ray.init(ignore_reinit_error=False, log_to_driver=False, include_dashboard=False)
+            ray.init(ignore_reinit_error=False)
 
         network_state_dict = ray_workers.to_cpu_state_dict(policy)
         # Create PolicySafetyEvaluator actors
@@ -204,6 +204,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     rb_capacity = hyperparams.get("replay_buffer_capacity", 10000)
     rb = DAggerBuffer(buffer_size=rb_capacity)
 
+    print("Evaluating starting safety coverage")
     starting_safety_coverage, starting_avg_reward = evaluate_policy_safety(
         args=args, 
         hyperparams=hyperparams, 
@@ -340,6 +341,7 @@ def main():
     parser.add_argument('--policy_path', type=str, required=True, help="Path to the initial policy file for DAgger.")
     parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
     parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument('--disable_oracle_cache', action='store_true', help="Disable caching in the oracle.")
     parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
     parser.add_argument('--num_init_states', type=int, default=10000, help="Number of initial states to sample from.")
     parser.add_argument('--num_iterations', type=int, default=200, help="Number of DAgger iterations to perform.")
@@ -366,6 +368,7 @@ def main():
         'goal_reward': args.goal_reward,
         'failure_reward': args.failure_reward,
         'unsafe_reward': args.unsafe_reward,
+        'disable_oracle_cache': args.disable_oracle_cache,
         'seed': args.seed,
         'use_oracle': True, # Always use oracle during DAgger training
         'max_steps': args.max_steps

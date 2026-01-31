@@ -58,6 +58,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "total_timesteps": shared_args.get("total_timesteps", 35000),
             "n_envs": shared_args.get("n_envs", 4),
             "n_steps": shared_args.get("n_steps", 1024),
+            "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
             "n_eval_episodes": 100,
             "wandb_project": f"{jani_name}",
             "wandb_entity": "",
@@ -89,6 +90,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "goal_reward": args.get("goal_reward", 1.0),
             "failure_reward": args.get("failure_reward", -1.0),
             "unsafe_reward": args.get("unsafe_reward", -0.01),
+            "disable_oracle_cache": args.get("disable_oracle_cache", False),
             "use_oracle": args.get("use_oracle", False),
             "max_steps": args.get("max_steps", 1024)
         }
@@ -146,6 +148,7 @@ def main():
     parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
     parser.add_argument('--max_steps', type=int, default=1024, help="Max steps per episode.")
     parser.add_argument('--n_steps', type=int, default=1024, help="Number of steps per update.")
+    parser.add_argument('--disable_oracle_cache', action='store_true', help="Disable caching in the oracle.")
     parser.add_argument('--total_timesteps', type=int, default=35000, help="Total timesteps for training.")
     parser.add_argument('--seed', type=int, default=42, help="Random seed for training.")
     args = parser.parse_args()
@@ -159,7 +162,8 @@ def main():
         "max_steps": args.max_steps,
         "n_steps": args.n_steps,
         "total_timesteps": args.total_timesteps,
-        "seed": args.seed
+        "seed": args.seed,
+        "disable_oracle_cache": args.disable_oracle_cache
     }
     list_configs = get_all_configs(args.root_dir, shared_args)
 

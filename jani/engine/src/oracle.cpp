@@ -209,8 +209,10 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
 
                 // The successor states have all been processed
                 if (is_safe_action) {
-                    // Mark the state as safe in the cache only for the root of the SCC
-                    cache[node->state] = std::make_tuple(true, action_id);
+                    if (!disable_cache){
+                        // Mark the state as safe in the cache only for the root of the SCC
+                        cache[node->state] = std::make_tuple(true, action_id);
+                    }
                 }
 
                 // We can pop the stack to form an SCC
@@ -253,8 +255,12 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                 return std::make_tuple(true, action_id); 
             }
         }
-        // If we reach here, then the state is unsafe
-        cache[node->state] = std::make_tuple(false, -1); // Directly cache unsafe state
+
+        if (!disable_cache) {
+            // If we reach here, then the state is unsafe
+            cache[node->state] = std::make_tuple(false, -1); // Directly cache unsafe state
+        }
+        
         if (node->lowlink == node->index) {
             State u = stack.back();
             if (u != node->state) {

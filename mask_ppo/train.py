@@ -181,6 +181,7 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
     parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
+    parser.add_argument('--disable_oracle_cache', action='store_true', help="Disable caching in the oracle.")
     parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
     parser.add_argument('--n_steps', type=int, default=256, help="Number of steps per update.")
     parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
@@ -226,7 +227,8 @@ def main():
         'unsafe_reward': args.unsafe_reward,
         'seed': args.seed,
         'use_oracle': args.use_oracle,
-        'max_steps': args.max_steps
+        'max_steps': args.max_steps,
+        'disable_oracle_cache': args.disable_oracle_cache
     }
     if args.use_separate_eval_env:
         assert args.eval_start_states != "", "Evaluation start states file must be provided when using separate eval env."

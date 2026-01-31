@@ -16,6 +16,8 @@ struct TarjanNode {
 
 class TarjanOracle {
     JANIEngine* engine;
+    // Disable caching if needed to save memory
+    bool disable_cache;
     // Cache the safety results for states
     std::unordered_map<State, std::tuple<bool, int>, StateHasher> cache;
     // The main Tarjan's DFS function
@@ -25,7 +27,11 @@ class TarjanOracle {
                     std::vector<State>& stack,
                     std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher>& on_stack_map);
 public:
-    TarjanOracle(JANIEngine* eng) : engine(eng) {}
+    TarjanOracle(JANIEngine* eng, bool disable_cache = true) : engine(eng), disable_cache(disable_cache) {
+        if (disable_cache) {
+            std::cout << "Oracle cache is disabled to save memory." << std::endl;
+        }
+    }
     
     std::tuple<bool, int> stateSafetyWithAction(const State& state) {
         /*Check whether a state is safe. Return the safety result and a safe action starting from the state*/
@@ -41,7 +47,9 @@ public:
         std::unique_ptr<TarjanNode> node = std::make_unique<TarjanNode>(state);
         std::tuple<bool, int> result = tarjan_dfs(node.get(), 0, stack, on_stack_map);
         // int safe = std::get<0>(result) ? 1 : 0;
-        cache[state] = result;
+        if (!disable_cache){
+            cache[state] = result;
+        }
         #ifndef NDEBUG
         std::cout << "DEBUG: State is marked " << (std::get<0>(result) ? "safe." : "unsafe.") << std::endl;
         #endif

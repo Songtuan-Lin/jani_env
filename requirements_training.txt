@@ -35,4 +35,4 @@ nanobind
 psutil
 
 # Ray for distributed training
-ray>=2.0.0
+ray[default]>=2.0.0

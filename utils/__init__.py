@@ -30,7 +30,8 @@ def create_env(file_args: dict, n_envs: int = 1, monitor: bool = False, time_lim
             goal_reward=file_args["goal_reward"],
             use_oracle=file_args.get("use_oracle", False),
             failure_reward=file_args["failure_reward"],
-            unsafe_reward=file_args.get("unsafe_reward", -0.01)
+            unsafe_reward=file_args.get("unsafe_reward", -0.01),
+            disable_oracle_cache=file_args.get("disable_oracle_cache", False)
         ) 
 
         if time_limited:
