@@ -20,19 +20,20 @@ COPY . /jani_env
 
 # ---- Python deps ----
 # (PyTorch image already has python + torch; you install your extras.)
-RUN python -m pip install --upgrade pip && \
-    python -m pip install -r requirements_training.txt
+# RUN python -m venv /opt/venv
+# ENV PATH="/opt/venv/bin:${PATH}"
+RUN pip install --no-cache-dir --break-system-packages -r requirements_training.txt
 
 # ---- Build the C++ engine ----
 WORKDIR /jani_env/jani/engine
 RUN mkdir -p build && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    make 
+    make -j"$(nproc)"
 
 # ---- Runtime env ----
 WORKDIR /jani_env
-ENV PYTHONPATH=/jani_env:$PYTHONPATH
+ENV PYTHONPATH=/jani_env
 
 # Optional quick self-check (comment out after debugging):
 RUN python -c "import mask_ppo.train; import dagger.train; print('Import OK')"

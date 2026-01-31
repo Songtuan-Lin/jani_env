@@ -24,8 +24,11 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
         jani_name = model_file.name.replace(".jani", "")
         if variant_name == "models":
             property_dir = domain_dir / "additional_properties"
+            policy_dir = domain_dir / "policies" / jani_name / "trained_policies"
         else:
             property_dir = domain_dir / "additional_properties" / variant_name
+            policy_dir = domain_dir / "policies" / variant_name / jani_name / "trained_policies"
+
 
         # Locate the training property file
         training_property_dir = property_dir / "random_starts_20000" / jani_name
@@ -51,7 +54,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "objective": "",
             "failure_property": "",
             "eval_start_states": str(eval_property_file),
-            "policy_path": variant_dir / "training_policy" / "best_model.pth",
+            "policy_path": policy_dir / "best_model.pth",
             "goal_reward": 1.0,
             "failure_reward": -1.0,
             "unsafe_reward": -0.01,

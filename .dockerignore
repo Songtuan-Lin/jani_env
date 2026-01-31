@@ -1,0 +1,10 @@
+**/build/
+build/
+**/CMakeCache.txt
+**/CMakeFiles/
+**/*.o
+**/*.a
+**/*.so
+**/*.dylib
+**/*.dll
+**/*.exe

@@ -22,8 +22,10 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
         jani_name = model_file.name.replace(".jani", "")
         if variant_name == "models":
             property_dir = domain_dir / "additional_properties"
+            model_save_dir = domain_dir / "policies"
         else:
             property_dir = domain_dir / "additional_properties" / variant_name
+            model_save_dir = domain_dir / "policies" / variant_name
 
         # Locate the training property file
         training_property_dir = property_dir / "random_starts_20000" / jani_name
@@ -59,9 +61,9 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "n_eval_episodes": 100,
             "wandb_project": f"{jani_name}",
             "wandb_entity": "",
-            "experiment_name": "training_policy",
+            "experiment_name": jani_name,
             "log_dir": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name,
-            "model_save_dir": variant_dir,
+            "model_save_dir": model_save_dir,
             "disable_wandb": True,
             "disable_eval": False,
             "use_separate_eval_env": True,
