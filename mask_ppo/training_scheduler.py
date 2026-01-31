@@ -1,5 +1,6 @@
 import ray
 
+from ray.exceptions import RayActorError, RayTaskError
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,7 +57,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "unsafe_reward": shared_args.get("unsafe_reward", -0.01),
             "max_steps": shared_args.get("max_steps", 1024),
             "total_timesteps": shared_args.get("total_timesteps", 35000),
-            "n_envs": shared_args.get("n_envs", 4),
+            "n_envs": shared_args.get("n_envs", 1),
             "n_steps": shared_args.get("n_steps", 1024),
             "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
             "n_eval_episodes": 100,
@@ -74,7 +75,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "eval_safety": False,
             "save_all_checkpoints": True,
             "use_oracle": False,
-            "verbose": 1,
+            "verbose": 0,
             "device": "cpu",
             "seed": shared_args.get("seed", 42),
         }
@@ -180,7 +181,14 @@ def main():
         futures.append(future)
 
     # Wait for all trainers to complete
-    ray.get(futures)
+    # Wait for all trainings to complete
+    results = []
+    for idx, ref in enumerate(futures):
+        try:
+            results.append(ray.get(ref))
+        except (RayTaskError, RayActorError) as e:
+            print(f"BenchmarkTrainer {idx % args.num_trainers} failed during training: {e}")
+
 
 if __name__ == "__main__":
     main()
