@@ -5,6 +5,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# ---- Add tags to identify the image ----
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
+LABEL org.opencontainers.image.revision=$GIT_SHA
+LABEL org.opencontainers.image.created=$BUILD_TIME
+
 # ---- System deps for building your C++/CMake parts ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
@@ -37,3 +44,6 @@ ENV PYTHONPATH=/jani_env
 
 # Optional quick self-check (comment out after debugging):
 RUN python -c "import mask_ppo.train; import dagger.train; print('Import OK')"
+# Checking the image version
+RUN echo "GIT_SHA=$GIT_SHA" > /IMAGE_VERSION && \
+    echo "BUILD_TIME=$BUILD_TIME" >> /IMAGE_VERSION
