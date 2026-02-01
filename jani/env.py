@@ -67,7 +67,7 @@ class JANIEnv(gym.Env):
         self._reseted = True
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         reset_info = {}
-        if self._oracle is not None:
+        if self._use_oracle:
             is_current_state_safe, current_safe_action = self._oracle.engine_state_safety_with_action()
             reset_info["current_state_safety"] = is_current_state_safe
             reset_info["current_safe_action"] = current_safe_action
