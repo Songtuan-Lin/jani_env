@@ -1,0 +1,26 @@
+{
+    "elements": [
+        16,
+        16
+    ],
+    "file": "bouncing_ball_0.9_0.9_16_16.nnet",
+    "filter": false,
+    "input": [
+        {
+            "automaton": null,
+            "name": "episode"
+        },
+        {
+            "automaton": null,
+            "name": "height"
+        },
+        {
+            "automaton": null,
+            "name": "velocity"
+        }
+    ],
+    "output": [
+        "push",
+        "skip"
+    ]
+}

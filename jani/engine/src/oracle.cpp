@@ -117,7 +117,7 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
 
         // Randomly permute the action ids
         std::vector<int> permuted_action_ids = random_permutation(num_actions);
-        std::vector<int> action_visit_seq(engine->get_num_actions());
+        std::vector<int> action_visit_seq;
         if (start_action_id != -1)
             action_visit_seq.push_back(start_action_id);
         for (int action_id : permuted_action_ids) {
@@ -125,8 +125,12 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                 continue;
             action_visit_seq.push_back(action_id);
         }
-        if (action_visit_seq.size() != permuted_action_ids.size())
-            throw std::runtime_error("Number of actions to be visited is different from the actual number of actions");
+        if (action_visit_seq.size() != num_actions) {
+            throw std::runtime_error("Number " + std::to_string(action_visit_seq.size()) + " of actions to be visited is different from the total number of actions " + std::to_string(num_actions));
+        }
+        if (action_visit_seq.size() != permuted_action_ids.size()) {
+            throw std::runtime_error("Number " + std::to_string(action_visit_seq.size()) + " of actions to be visited is different from the actual number of actions " + std::to_string(permuted_action_ids.size()));
+        }
         if ((start_action_id != -1) && (action_visit_seq[0] != start_action_id))
             throw std::runtime_error("First action to be visited is different from the scheduled one");
 
