@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .policy import Policy, evaluate_policy_safety_on_state
-from .buffer import collect_trajectory
+from .buffer import collect_trajectory, collect_trajectory_with_stricted_rule
 
 from jani import JANIEnv
 from utils import create_env
@@ -18,7 +18,7 @@ def to_cpu_state_dict(policy: torch.nn.Module):
 
 @ray.remote(num_cpus=1)
 class RolloutWorker:
-    def __init__(self, file_args: dict, network_paras: dict, network_state_dict):
+    def __init__(self, file_args: dict, network_paras: dict, network_state_dict, use_strict_rule: bool = False, max_horizon: int = 1024):
         """Initialize the RolloutWorker with environment and policy network."""
         self.env = create_env(file_args, n_envs=1, monitor=False, time_limited=True)
         self.policy = Policy(
@@ -28,11 +28,16 @@ class RolloutWorker:
         )
         self.policy.load_state_dict(network_state_dict)
         self.policy.eval()
+        self.use_strict_rule = use_strict_rule
+        self.max_horizon = max_horizon
 
     @torch.no_grad()
     def run_one_rollout(self, idx: int):
         """Run one rollout in the environment using the current policy."""
-        trajectory = collect_trajectory(self.env, self.policy, idx)
+        if self.use_strict_rule:
+            trajectory = collect_trajectory_with_stricted_rule(self.env, self.policy, idx, self.max_horizon)
+        else:
+            trajectory = collect_trajectory(self.env, self.policy, idx, self.max_horizon)
         return trajectory
     
     def set_weights(self, state_dict):
@@ -41,7 +46,15 @@ class RolloutWorker:
     
 
 class RolloutManager:
-    def __init__(self, file_args: dict, network_paras: dict, policy: nn.Module, num_workers: int):
+    def __init__(
+            self, 
+            file_args: dict, 
+            network_paras: dict, 
+            policy: nn.Module, 
+            num_workers: int, 
+            use_strict_rule: bool = False,
+            max_horizon: int = 1024,
+            ):
         """Initialize the RolloutManager with multiple RolloutWorker actors."""
         # Initialize Ray
         if not ray.is_initialized():
@@ -51,7 +64,12 @@ class RolloutManager:
         # state_dict_ref = ray.put(network_state_dict)
 
         # Create RolloutWorker actors
-        self.workers = [RolloutWorker.remote(file_args, network_paras, network_state_dict) for _ in range(num_workers)]
+        self.workers = [RolloutWorker.remote(
+            file_args, 
+            network_paras, 
+            network_state_dict, 
+            use_strict_rule, 
+            max_horizon) for _ in range(num_workers)]
         self.num_workers = num_workers
 
 

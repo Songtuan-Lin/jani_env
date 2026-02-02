@@ -41,7 +41,7 @@ def evaluate_policy_safety_on_state(env: JANIEnv, policy: nn.Module, state_idx: 
         with torch.no_grad():
             logits = policy(obs_tensor)
             action_dist = MaskedCategorical(logits=logits, mask=action_mask_tensor)
-            action = action_dist.sample().squeeze(0).item()  # Sample action and remove batch dimension
+            action = action_dist.probs.argmax(dim=-1).squeeze(0).item()  # Sample action and remove batch dimension
         if keep_using_oracle:
             is_state_action_safe = env.unwrapped.is_current_state_action_safe(action)
             if not is_state_action_safe:

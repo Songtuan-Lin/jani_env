@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import tensordict
 
+import numpy as np
+
 from tensordict import TensorDict
 from torchrl.modules import MaskedCategorical
 from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage
@@ -69,20 +71,28 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
         safe_actions.append(info["next_safe_action"])
 
     assert len(observations) == len(actions) == len(rewards) == len(next_observations), f"Mismatch in trajectory lengths, get {len(observations)}, {len(actions)}, {len(rewards)}, {len(next_observations)}"
+
+    # Convert lists to numpy arrays for efficient tensor conversion
+    observation_array = np.stack(observations, axis=0)
+    next_observation_array = np.stack(next_observations, axis=0)
+    obs_to_correct_array = np.stack(obs_to_correct, axis=0) if len(obs_to_correct) > 0 else np.empty((0, observation_array.shape[1]))
+    obs_to_keep_array = np.stack(obs_to_keep, axis=0) if len(obs_to_keep) > 0 else np.empty((0, observation_array.shape[1]))
+
     trajectory = TensorDict({
-        "observation": torch.tensor(observations, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "observation": torch.tensor(observation_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "action": torch.tensor(actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
-        "next_observation": torch.tensor(next_observations, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "next_observation": torch.tensor(next_observation_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "reward": torch.tensor(rewards, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "safety": torch.tensor(safety, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
         "safe_action": torch.tensor(safe_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
-        "obs_to_correct": torch.tensor(obs_to_correct, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "obs_to_correct": torch.tensor(obs_to_correct_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "corrected_action": torch.tensor(corrected_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
         "corrected_action_mask": torch.tensor(corrected_action_masks, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
-        "obs_to_keep": torch.tensor(obs_to_keep, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "obs_to_keep": torch.tensor(obs_to_keep_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "kept_action": torch.tensor(kept_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
         "kept_action_mask": torch.tensor(kept_action_masks, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
     }, batch_size=())
+
     info = {
         "is_safe_trajectory": safe_trajectory,
         "final_reward": rewards[-1]
@@ -92,6 +102,91 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
     # print(f"Safety info for trajectory {idx}: {safety}")
 
     return (trajectory, info)
+
+
+def collect_trajectory_with_stricted_rule(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: int = 1024) -> tuple[TensorDict, bool]:
+    """Collect trajectories using the given policy, but subject to the stricted safety rule."""
+    policy.cpu() # Ensure policy is on CPU
+    policy.eval() # Set policy to evaluation mode
+
+    assert not env.unwrapped._use_oracle, "Environment should not use oracle during trajectory collection with stricted rule."
+
+    observations, next_observations, actions, action_masks, rewards = [], [], [], [], []
+    obs_to_correct, corrected_actions, corrected_action_masks = [], [], []
+    obs_to_keep, kept_actions, kept_action_masks = [], [], []
+    safety, safe_actions = [], []
+    safe_trajectory = True # Flag to indicate if the trajectory remains safe throughout
+
+    obs, reset_info = env.reset(options={"idx": idx, "no_safety_info": True}) # Reset environment to specific initial state
+    
+    for step in range(max_horizon):
+        observations.append(obs) # Record current observation
+        action_mask = env.unwrapped.action_mask() # Current action mask
+        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+        action_mask_tensor = torch.tensor(action_mask, dtype=torch.bool).unsqueeze(0)  # Add batch dimension
+        with torch.no_grad():
+            logits = policy(obs_tensor) # Compute logits from policy
+            action_dist = MaskedCategorical(logits=logits, mask=action_mask_tensor)
+            action = action_dist.sample().squeeze(0).item()  # Sample action and remove batch dimension
+        actions.append(action) # Record taken action
+        action_masks.append(action_mask.astype(int)) # Record action mask
+
+        # Check whether the action is safe under the current state (before stepping)
+        is_state_safe, safe_action = env.unwrapped.current_state_safety_with_action(action)
+        safety.append(is_state_safe)
+        safe_actions.append(safe_action)
+        if safe_action != -1 and safe_action != action:
+            assert is_state_safe, f"State should be safe if there is a safe action exists"
+            safe_trajectory = False # Mark the trajectory as unsafe because an unsafe action is taken
+            # If there is a safe action differ from the taken action, we need to correct it
+            obs_to_correct.append(obs)
+            corrected_actions.append(safe_action)
+            corrected_action_masks.append(action_mask.astype(int))
+        else:
+            if not is_state_safe:
+                assert safe_action == -1, f"Safe action should be -1 if the state is unsafe"
+                safe_trajectory = False # Mark the trajectory as unsafe because we are in an unsafe state
+            obs_to_keep.append(obs) # Keep the action taken in the previous safe state unchanged
+            kept_actions.append(action) # This is to restrict the policy not deviate too much
+            kept_action_masks.append(action_mask.astype(int))
+
+        # Step the environment    
+        obs, reward, done, _, info = env.step(action)
+        rewards.append(reward)
+        next_observations.append(obs)
+        if done:
+            break
+
+    assert len(observations) == len(actions) == len(rewards) == len(next_observations), f"Mismatch in trajectory lengths, get {len(observations)}, {len(actions)}, {len(rewards)}, {len(next_observations)}"
+
+    # Convert lists to numpy arrays for efficient tensor conversion
+    observation_array = np.stack(observations, axis=0)
+    next_observation_array = np.stack(next_observations, axis=0)
+    obs_to_correct_array = np.stack(obs_to_correct, axis=0) if len(obs_to_correct) > 0 else np.empty((0, observation_array.shape[1]))
+    obs_to_keep_array = np.stack(obs_to_keep, axis=0) if len(obs_to_keep) > 0 else np.empty((0, observation_array.shape[1]))
+
+    trajectory = TensorDict({
+        "observation": torch.tensor(observation_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "action": torch.tensor(actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
+        "next_observation": torch.tensor(next_observation_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "reward": torch.tensor(rewards, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "safety": torch.tensor(safety, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
+        "safe_action": torch.tensor(safe_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
+        "obs_to_correct": torch.tensor(obs_to_correct_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "corrected_action": torch.tensor(corrected_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
+        "corrected_action_mask": torch.tensor(corrected_action_masks, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
+        "obs_to_keep": torch.tensor(obs_to_keep_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
+        "kept_action": torch.tensor(kept_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
+        "kept_action_mask": torch.tensor(kept_action_masks, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
+    }, batch_size=())
+
+    info = {
+        "is_safe_trajectory": safe_trajectory,
+        "final_reward": rewards[-1]
+    }
+
+    return (trajectory, info)
+
 
 
 class DAggerBuffer:

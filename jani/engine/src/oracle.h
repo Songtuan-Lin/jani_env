@@ -22,6 +22,7 @@ class TarjanOracle {
     // Returns a tuple of (is_safe, safe_action_id) 
     // safe_action_id is -1 if no safe actions exist (the state is unsafe), the state is a goal state, or the state is a dead-end
     std::tuple<bool, int> tarjan_dfs(TarjanNode* node, int index,
+                    int start_action_id,
                     std::vector<State>& stack,
                     std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher>& on_stack_map);
 public:
@@ -31,8 +32,9 @@ public:
         }
     }
     
-    std::tuple<bool, int> stateSafetyWithAction(const State& state) {
-        /*Check whether a state is safe. Return the safety result and a safe action starting from the state*/
+    std::tuple<bool, int> stateSafetyWithAction(const State& state, int start_action_id = -1) {
+        /*Check whether a state is safe. Return the safety result and a safe action starting from the state
+        start_action_id specifies which action (id) should be visited first. -1 means an arbitrary one*/
         #ifndef NDEBUG
         std::cout << "DEBUG: Checking safety for state: " << state.toString() << std::endl;
         #endif
@@ -43,7 +45,7 @@ public:
         // Check if a state is on the stack
         std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> on_stack_map;
         std::unique_ptr<TarjanNode> node = std::make_unique<TarjanNode>(state);
-        std::tuple<bool, int> result = tarjan_dfs(node.get(), 0, stack, on_stack_map);
+        std::tuple<bool, int> result = tarjan_dfs(node.get(), 0, start_action_id, stack, on_stack_map);
         // int safe = std::get<0>(result) ? 1 : 0;
         if (!disable_cache){
             cache[state] = result;
@@ -56,15 +58,9 @@ public:
 
     bool isStateActionSafe(const State& state, int action_id) {
         // Check whether a state is safe under a specific action
-        std::vector<State> successor_states = engine->get_all_successor_states(state, action_id);
-        for (const State& succ_state : successor_states) {
-            std::tuple<bool, int> succ_result = stateSafetyWithAction(succ_state);
-            bool succ_safe = std::get<0>(succ_result);
-            if (!succ_safe) {
-                return false;
-            }
-        }
-        return true;
+        std::tuple<bool, int> safety_result = stateSafetyWithAction(state, action_id); // action_id will be the first action to be visited
+        // If the action turns out to be a safe one, it will be returned
+        return action_id == std::get<1>(safety_result);
     }
 
     bool isStateSafe(const State& state) {
@@ -87,9 +83,9 @@ public:
         return isStateSafe(state);
     }
 
-    std::tuple<bool, int> engineStateSafetyWithAction() {
+    std::tuple<bool, int> engineStateSafetyWithAction(int start_action_id = -1) {
         const State& state = engine->get_current_state();
-        return stateSafetyWithAction(state);
+        return stateSafetyWithAction(state, start_action_id);
     }
 
     bool isEngineStateActionSafe(int action_id) {

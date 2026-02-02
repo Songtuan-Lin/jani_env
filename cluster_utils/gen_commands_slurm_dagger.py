@@ -57,8 +57,10 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "num_workers": shared_args.get("num_workers", 4),
             "max_steps": 1024,
             "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
+            "use_strict_rule": shared_args.get("use_strict_rule", False),
             "use_multiprocessors": True,
             "empty_buffer": True,
+            "steps_per_iteration": shared_args.get("steps_per_iteration", 5),
             "wandb_project": f"{jani_name}",
             "experiment_name": f"dagger_{variant_name}" if variant_name != "models" else "dagger",
             "log_directory": Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name if variant_name != "models" else Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name,
@@ -119,6 +121,8 @@ def main():
     parser.add_argument("--log_directory", type=str, default="./logs", help="Directory to save logs")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of rollout workers per trainer")
     parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
+    parser.add_argument("--steps_per_iteration", type=int, default=5, help="Number of training steps per DAgger iteration")
+    parser.add_argument("--use_strict_rule", action="store_true", help="Use strict rules for trajectory collection.")
     parser.add_argument("--disable_oracle_cache", action="store_true", help="Disable caching in the oracle.")
     parser.add_argument("--disable_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
@@ -132,6 +136,8 @@ def main():
         "disable_oracle_cache": args.disable_oracle_cache,
         "num_workers": args.num_workers,
         "num_iterations": args.num_iterations,
+        "steps_per_iteration": args.steps_per_iteration,
+        "use_strict_rule": args.use_strict_rule,
         "seed": args.seed
     }
 

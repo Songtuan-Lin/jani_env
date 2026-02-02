@@ -68,13 +68,14 @@ class JANIEnv(gym.Env):
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         reset_info = {}
         if self._use_oracle:
-            is_current_state_safe, current_safe_action = self._oracle.engine_state_safety_with_action()
-            reset_info["current_state_safety"] = is_current_state_safe
-            reset_info["current_safe_action"] = current_safe_action
+            if (options is None) or ("no_safety_info" not in options):
+                is_current_state_safe, current_safe_action = self._oracle.engine_state_safety_with_action()
+                reset_info["current_state_safety"] = is_current_state_safe
+                reset_info["current_safe_action"] = current_safe_action
 
-            self._prev_state_safe = is_current_state_safe
-            self._prev_safe_action = current_safe_action
-            self._prev_obs = state_vec
+                self._prev_state_safe = is_current_state_safe
+                self._prev_safe_action = current_safe_action
+                self._prev_obs = state_vec
         return np.array(state_vec, dtype=np.float32), reset_info
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
@@ -146,3 +147,9 @@ class JANIEnv(gym.Env):
             raise RuntimeError("Oracle is not enabled in this environment.")
         is_safe = self._oracle.is_engine_state_action_safe(action)
         return is_safe
+    
+    def current_state_safety_with_action(self, action: int) -> tuple[bool, int]:
+        if self._oracle is None:
+            raise RuntimeError("Oracle is not enabled in this environment.")
+        safety_result = self._oracle.engine_state_safety_with_action(action)
+        return safety_result

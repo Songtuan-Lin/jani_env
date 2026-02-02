@@ -52,6 +52,7 @@ void pop_up_stack_until(
 
 std::tuple<bool, int>TarjanOracle::tarjan_dfs(
     TarjanNode *node, int index,
+    int start_action_id,
     std::vector<State> &stack, 
     std::unordered_map<State, std::unique_ptr<TarjanNode>, StateHasher> &on_stack_map) {
         if ((node->index != -1) || (node->lowlink != -1)) 
@@ -113,12 +114,26 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
         
         // Iterate through all applicable actions
         int num_actions = engine->get_num_actions();
+
         // Randomly permute the action ids
         std::vector<int> permuted_action_ids = random_permutation(num_actions);
+        std::vector<int> action_visit_seq(engine->get_num_actions());
+        if (start_action_id != -1)
+            action_visit_seq.push_back(start_action_id);
+        for (int action_id : permuted_action_ids) {
+            if (action_id == start_action_id)
+                continue;
+            action_visit_seq.push_back(action_id);
+        }
+        if (action_visit_seq.size() != permuted_action_ids.size())
+            throw std::runtime_error("Number of actions to be visited is different from the actual number of actions");
+        if ((start_action_id != -1) && (action_visit_seq[0] != start_action_id))
+            throw std::runtime_error("First action to be visited is different from the scheduled one");
+
         std::vector<bool> action_mask = engine->get_action_mask(node->state);
         bool is_safe_state = true; // If no action is applicable, the state is safe
         int safe_action_id = -1; // To record one safe action id
-        for (int action_id : permuted_action_ids) {
+        for (int action_id : action_visit_seq) {
 
             #ifndef NDEBUG
             print_indent(index);
@@ -191,7 +206,8 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
                     // Successor not on stack
                     std::unique_ptr<TarjanNode> succ_node = std::make_unique<TarjanNode>(succ_state);
                     // TarjanNode* succ_node = new TarjanNode(succ_state);
-                    std::tuple<bool, int> succ_result = tarjan_dfs(succ_node.get(), index + 1, stack, on_stack_map);
+                    // Action visiting order is irrevelent after the first call of the dfs
+                    std::tuple<bool, int> succ_result = tarjan_dfs(succ_node.get(), index + 1, -1, stack, on_stack_map);
                     bool succ_safe = std::get<0>(succ_result);
 
                     #ifndef NDEBUG

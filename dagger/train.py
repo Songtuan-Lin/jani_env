@@ -9,7 +9,7 @@ from torchrl.modules import MaskedCategorical
 from jani import JANIEnv
 from utils import create_env, create_safety_eval_file_args, create_eval_file_args
 
-from .buffer import collect_trajectory, DAggerBuffer
+from .buffer import collect_trajectory, collect_trajectory_with_stricted_rule, DAggerBuffer
 from .policy import Policy, evaluate_policy_safety_on_state
 
 RAY_AVAILABLE = True
@@ -187,7 +187,12 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         ) 
 
     # Create environment for sequential rollout collection
-    safety_eval_file_args = create_safety_eval_file_args(file_args, args)
+    if args.get("use_strict_rule", False):
+        print("Using strict rules for trajectory collection.")
+        safety_eval_file_args = create_safety_eval_file_args(file_args, args, use_oracle=False)
+    else:
+        print("Using normal safety rule for trajectory collection.")
+        safety_eval_file_args = create_safety_eval_file_args(file_args, args)
     safety_eval_env = create_env(safety_eval_file_args, n_envs=1, monitor=False, time_limited=True)
 
     safety_coverage_file_args = create_safety_eval_file_args(file_args, args, use_oracle=False)
@@ -234,7 +239,9 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 'hidden_dims': checkpoint['hidden_dims']
             },
             policy=policy,
-            num_workers=hyperparams.get("num_workers", 200)
+            num_workers=hyperparams.get("num_workers", 200),
+            use_strict_rule=args.get("use_strict_rule", False),
+            max_horizon=hyperparams.get("max_horizon", 1024)
         )
     for iter in range(num_iterations):
         if args.get("empty_buffer", False):
@@ -252,7 +259,17 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             print("Collecting trajectories sequentially...")
             # Collect trajectories sequentially
             for idx in range(init_state_size):
-                rollout = collect_trajectory(env=safety_eval_env, policy=policy, idx=idx)
+                if args.get("use_strict_rule", False):
+                    rollout = collect_trajectory_with_stricted_rule(
+                        env=safety_eval_env, 
+                        policy=policy, 
+                        idx=idx, 
+                        max_horizon=hyperparams.get("max_horizon", 1024))
+                else:
+                    rollout = collect_trajectory(
+                        env=safety_eval_env, 
+                        policy=policy, idx=idx,
+                        max_horizon=hyperparams.get("max_horizon", 1024))
                 rollouts.append(rollout)
         # Check whether all trajectories are safe
         all_safe = all([rollout[1]["is_safe_trajectory"] for rollout in rollouts])
@@ -345,6 +362,8 @@ def main():
     parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
     parser.add_argument('--num_init_states', type=int, default=10000, help="Number of initial states to sample from.")
     parser.add_argument('--num_iterations', type=int, default=200, help="Number of DAgger iterations to perform.")
+    parser.add_argument('--steps_per_iteration', type=int, default=5, help="Number of training steps per DAgger iteration.")
+    parser.add_argument('--use_strict_rule', action='store_true', help="Use strict rules for trajectory collection.")
     parser.add_argument('--use_multiprocessors', action='store_true', help="Use multiprocessors for rollout collection.")
     parser.add_argument('--num_workers', type=int, default=8, help="Number of workers for multiprocessor rollout collection.")
     parser.add_argument('--empty_buffer', action='store_true', help="Empty the replay buffer at each iteration.")
@@ -380,7 +399,9 @@ def main():
         'replay_buffer_capacity': 10000,
         'num_iterations': args.num_iterations,
         'batch_size': 256,
-        'num_workers': min(args.num_workers, os.cpu_count() - 2) # Ensure not to exceed available CPUs
+        'num_workers': args.num_workers, # Ensure not to exceed available CPUs
+        'steps_per_iteration': args.steps_per_iteration,
+        'max_horizon': args.max_steps
     }
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
