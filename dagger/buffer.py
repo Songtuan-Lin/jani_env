@@ -89,7 +89,7 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
     }
 
     # For debugging
-    print(f"Safety info for trajectory {idx}: {safety}")
+    # print(f"Safety info for trajectory {idx}: {safety}")
 
     return (trajectory, info)
 

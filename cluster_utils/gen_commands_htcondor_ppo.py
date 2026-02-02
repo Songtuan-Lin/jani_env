@@ -62,7 +62,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "n_eval_episodes": 100,
             "wandb_project": f"{jani_name}",
             "wandb_entity": "",
-            "experiment_name": jani_name,
+            "experiment_name": f"{jani_name}_{variant_name}" if variant_name != "models" else jani_name,
             "log_dir": log_dir,
             "model_save_dir": model_save_dir,
             "disable_wandb": False,
