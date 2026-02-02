@@ -9,7 +9,7 @@ from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage
 from jani import JANIEnv
 
 
-def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: int = 2048) -> tuple[TensorDict, bool]:
+def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: int = 1024) -> tuple[TensorDict, bool]:
     """Collect trajectories using the given policy."""
     policy.cpu() # Ensure policy is on CPU
     policy.eval() # Set policy to evaluation mode
