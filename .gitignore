@@ -9,3 +9,5 @@ training_results/
 benchmarks/
 state_generated.json
 build/
+cluster_utils/commands.txt
+cluster_utils/ready_benchmarks*

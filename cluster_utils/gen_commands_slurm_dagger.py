@@ -53,7 +53,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "failure_reward": -1.0,
             "unsafe_reward": -0.01,
             "num_init_states": 20000,
-            "num_iterations": 50,
+            "num_iterations": shared_args.get("num_iterations", 20),
             "num_workers": shared_args.get("num_workers", 4),
             "max_steps": 1024,
             "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
@@ -131,6 +131,7 @@ def main():
         "disable_wandb": args.disable_wandb,
         "disable_oracle_cache": args.disable_oracle_cache,
         "num_workers": args.num_workers,
+        "num_iterations": args.num_iterations,
         "seed": args.seed
     }
 
@@ -152,7 +153,7 @@ def main():
             "apptainer",
             "exec",
             "jani_env.sif",
-            "python3"
+            "python3",
             "-m",
             "dagger.train"
         ]
