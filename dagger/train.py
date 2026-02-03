@@ -6,6 +6,8 @@ from pathlib import Path
 from tensordict import TensorDict
 from torchrl.modules import MaskedCategorical
 
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn, TimeElapsedColumn
+
 from jani import JANIEnv
 from utils import create_env, create_safety_eval_file_args, create_eval_file_args
 
@@ -209,22 +211,25 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     rb_capacity = hyperparams.get("replay_buffer_capacity", 10000)
     rb = DAggerBuffer(buffer_size=rb_capacity)
 
-    print("Evaluating starting safety coverage")
-    starting_safety_coverage, starting_avg_reward = evaluate_policy_safety(
-        args=args, 
-        hyperparams=hyperparams, 
-        file_args=safety_coverage_file_args, 
-        network_paras={
-            'input_dim': checkpoint['input_dim'],
-            'output_dim': checkpoint['output_dim'],
-            'hidden_dims': checkpoint['hidden_dims']
-        }, 
-        policy=policy)
-    print(f"Initial Safety Coverage: {starting_safety_coverage*100.0:.2f}%, Average Reward: {starting_avg_reward:.2f}")
-    # print(f"Average Reward before training: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
+    if not args.get("use_strict_rule", False):
+        # Evaluate initial safety coverage of the policy (only requiired when not using strict rule)
+        print("Evaluating starting safety coverage")
+        starting_safety_coverage, starting_avg_reward = evaluate_policy_safety(
+            args=args, 
+            hyperparams=hyperparams, 
+            file_args=safety_coverage_file_args, 
+            network_paras={
+                'input_dim': checkpoint['input_dim'],
+                'output_dim': checkpoint['output_dim'],
+                'hidden_dims': checkpoint['hidden_dims']
+            }, 
+            policy=policy)
+        print(f"Initial Safety Coverage: {starting_safety_coverage*100.0:.2f}%, Average Reward: {starting_avg_reward:.2f}")
+        # print(f"Average Reward before training: {evaluate_policy(env, policy, num_episodes=100, device=device):.2f}")
+        with open(starting_info_file, 'w') as f:
+            f.write(f"{starting_safety_coverage:.4f}\t{starting_avg_reward:.2f}")
 
-    with open(starting_info_file, 'w') as f:
-        f.write(f"{starting_safety_coverage:.4f}\t{starting_avg_reward:.2f}")
+
     safety_rates = [] # To track safety rates over iterations
     avg_rewards = []  # To track average rewards over iterations
 
@@ -257,20 +262,36 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             rollouts = rollout_manager.run_rollouts(init_state_size)
         else:
             print("Collecting trajectories sequentially...")
-            # Collect trajectories sequentially
-            for idx in range(init_state_size):
-                if args.get("use_strict_rule", False):
-                    rollout = collect_trajectory_with_stricted_rule(
-                        env=safety_eval_env, 
-                        policy=policy, 
-                        idx=idx, 
-                        max_horizon=hyperparams.get("max_horizon", 1024))
-                else:
-                    rollout = collect_trajectory(
-                        env=safety_eval_env, 
-                        policy=policy, idx=idx,
-                        max_horizon=hyperparams.get("max_horizon", 1024))
-                rollouts.append(rollout)
+
+            # Display progress bar for trajectory collection when not using multiprocessors
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
+                TimeElapsedColumn(),
+                TextColumn("•"),
+                TimeRemainingColumn(),
+                transient=False,
+            ) as progress:
+                task = progress.add_task("Collecting Trajectories", total=init_state_size)
+                # Collect trajectories sequentially
+                for idx in range(init_state_size):
+                    if args.get("use_strict_rule", False):
+                        rollout = collect_trajectory_with_stricted_rule(
+                            env=safety_eval_env, 
+                            policy=policy, 
+                            idx=idx, 
+                            max_horizon=hyperparams.get("max_horizon", 1024))
+                    else:
+                        rollout = collect_trajectory(
+                            env=safety_eval_env, 
+                            policy=policy, idx=idx,
+                            max_horizon=hyperparams.get("max_horizon", 1024))
+                    rollouts.append(rollout)
+                    progress.advance(task, advance=1)
+
         # Check whether all trajectories are safe
         all_safe = all([rollout[1]["is_safe_trajectory"] for rollout in rollouts])
         percentage_safe = sum([rollout[1]["is_safe_trajectory"] for rollout in rollouts]) / len(rollouts) * 100.0
@@ -323,15 +344,19 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         rb.add_rollouts(rollouts)
 
         # Perform training steps
+        total_loss = 0.0
         for s in range(hyperparams.get("steps_per_iteration", 5)):
             batch_size = hyperparams.get("batch_size", 256)
             loss = train_step(rb, policy, optimizer, batch_size, device)
-            print(f"Iteration {iter} step {s}: Loss = {loss:.4f}")
+            total_loss += loss
+            # print(f"Iteration {iter} step {s}: Loss = {loss:.4f}")
             if WANDB_AVAILABLE and (not args.get("disable_wandb", False)) and wandb.run is not None:
                 wandb.log({
                     'train/loss': loss,
                     'train/iteration': iter,
                 })
+        avg_loss = total_loss / hyperparams.get("steps_per_iteration", 5)
+        print(f"Iteration {iter} completed. Average Training Loss: {avg_loss:.4f}")
 
         # Save intermediate policy
         if (iter + 1) % args.get("save_interval", 10) == 0:

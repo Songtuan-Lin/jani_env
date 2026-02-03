@@ -116,7 +116,9 @@ std::tuple<bool, int>TarjanOracle::tarjan_dfs(
         int num_actions = engine->get_num_actions();
 
         // Randomly permute the action ids
-        std::vector<int> permuted_action_ids = random_permutation(num_actions);
+        // std::vector<int> permuted_action_ids = random_permutation(num_actions);
+        std::vector<int> permuted_action_ids(num_actions); // Let's try keeping the original order
+        std::iota(permuted_action_ids.begin(), permuted_action_ids.end(), 0);
         std::vector<int> action_visit_seq;
         if (start_action_id != -1)
             action_visit_seq.push_back(start_action_id);

@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     // std::cout << "Problematic state is marked " << (result2 ? "safe." : "unsafe.") << std::endl;
 
     JANIEngine engine(argv[1], argv[2], argv[2], "", "", 42);
-    TarjanOracle oracle(&engine, true);
+    TarjanOracle oracle(&engine, false);
     for (int i = 0; i < 10; i++) {
         engine.reset_with_index(i);
         std::cout << "Memory usage before checking " << i << "th state safety: " << check_rss_mb() << " MB" << std::endl;
