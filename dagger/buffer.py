@@ -76,7 +76,9 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
     observation_array = np.stack(observations, axis=0)
     next_observation_array = np.stack(next_observations, axis=0)
     obs_to_correct_array = np.stack(obs_to_correct, axis=0) if len(obs_to_correct) > 0 else np.empty((0, observation_array.shape[1]))
+    mask_to_correct_array = np.stack(corrected_action_masks, axis=0) if len(corrected_action_masks) > 0 else np.empty((0, observation_array.shape[1]))
     obs_to_keep_array = np.stack(obs_to_keep, axis=0) if len(obs_to_keep) > 0 else np.empty((0, observation_array.shape[1]))
+    mask_to_keep_array = np.stack(kept_action_masks, axis=0) if len(kept_action_masks) > 0 else np.empty((0, observation_array.shape[1]))
 
     trajectory = TensorDict({
         "observation": torch.tensor(observation_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
@@ -87,10 +89,10 @@ def collect_trajectory(env: JANIEnv, policy: nn.Module, idx: int, max_horizon: i
         "safe_action": torch.tensor(safe_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
         "obs_to_correct": torch.tensor(obs_to_correct_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "corrected_action": torch.tensor(corrected_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
-        "corrected_action_mask": torch.tensor(corrected_action_masks, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
+        "corrected_action_mask": torch.tensor(mask_to_correct_array, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
         "obs_to_keep": torch.tensor(obs_to_keep_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "kept_action": torch.tensor(kept_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
-        "kept_action_mask": torch.tensor(kept_action_masks, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
+        "kept_action_mask": torch.tensor(mask_to_keep_array, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
     }, batch_size=())
 
     info = {
@@ -164,7 +166,9 @@ def collect_trajectory_with_stricted_rule(env: JANIEnv, policy: nn.Module, idx: 
     observation_array = np.stack(observations, axis=0)
     next_observation_array = np.stack(next_observations, axis=0)
     obs_to_correct_array = np.stack(obs_to_correct, axis=0) if len(obs_to_correct) > 0 else np.empty((0, observation_array.shape[1]))
+    mask_to_correct_array = np.stack(corrected_action_masks, axis=0) if len(corrected_action_masks) > 0 else np.empty((0, observation_array.shape[1]))
     obs_to_keep_array = np.stack(obs_to_keep, axis=0) if len(obs_to_keep) > 0 else np.empty((0, observation_array.shape[1]))
+    mask_to_keep_array = np.stack(kept_action_masks, axis=0) if len(kept_action_masks) > 0 else np.empty((0, observation_array.shape[1]))
 
     trajectory = TensorDict({
         "observation": torch.tensor(observation_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
@@ -175,10 +179,10 @@ def collect_trajectory_with_stricted_rule(env: JANIEnv, policy: nn.Module, idx: 
         "safe_action": torch.tensor(safe_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
         "obs_to_correct": torch.tensor(obs_to_correct_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "corrected_action": torch.tensor(corrected_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
-        "corrected_action_mask": torch.tensor(corrected_action_masks, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
+        "corrected_action_mask": torch.tensor(mask_to_correct_array, dtype=torch.bool).unsqueeze(0),  # Add batch dimension 1
         "obs_to_keep": torch.tensor(obs_to_keep_array, dtype=torch.float32).unsqueeze(0),  # Add batch dimension 1
         "kept_action": torch.tensor(kept_actions, dtype=torch.long).unsqueeze(0),  # Add batch dimension 1
-        "kept_action_mask": torch.tensor(kept_action_masks, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
+        "kept_action_mask": torch.tensor(mask_to_keep_array, dtype=torch.bool).unsqueeze(0)  # Add batch dimension 1
     }, batch_size=())
 
     info = {
