@@ -146,9 +146,10 @@ def collect_trajectory_with_stricted_rule(env: JANIEnv, policy: nn.Module, idx: 
             if not is_state_safe:
                 assert safe_action == -1, f"Safe action should be -1 if the state is unsafe"
                 safe_trajectory = False # Mark the trajectory as unsafe because we are in an unsafe state
-            obs_to_keep.append(obs) # Keep the action taken in the previous safe state unchanged
-            kept_actions.append(action) # This is to restrict the policy not deviate too much
-            kept_action_masks.append(action_mask.astype(int))
+            if safe_action == action:
+                obs_to_keep.append(obs) # Keep the action taken in the previous safe state unchanged
+                kept_actions.append(action) # This is to restrict the policy not deviate too much
+                kept_action_masks.append(action_mask.astype(int))
 
         # Step the environment    
         obs, reward, done, _, info = env.step(action)
