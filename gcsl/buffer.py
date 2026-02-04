@@ -19,17 +19,14 @@ class GCSLReplayBuffer:
         def forward(self, x: TensorDict) -> TensorDict:
             batch_size = x.batch_size[0] 
             lengths = x["episode_length"]  # Assuming episode_length is provided in x
+            
             # Sample start and end indices for each sampled trajectory
             first_idxs = (np.random.rand(batch_size) * lengths.numpy()).astype(int)
             second_idxs = (np.random.rand(batch_size) * lengths.numpy()).astype(int)
             # Ensure start_idx is less than end_idx
             start_idxs = np.minimum(first_idxs, second_idxs)
-            end_idxs = np.maximum(first_idxs, second_idxs) + 1  # end_idx is exclusive
-            if not np.all(end_idxs <= lengths.numpy()):
-                print(f"DEBUG: lengths: {lengths.numpy()}")
-                print(f"DEBUG: start_idxs: {start_idxs}")
-                print(f"DEBUG: end_idxs: {end_idxs}")
-            assert np.all(end_idxs <= lengths.numpy()), "End indices exceed trajectory lengths"
+            end_idxs = np.maximum(first_idxs, second_idxs)
+
             # The observation is of shape (batch_size, max_length, obs_dim)
             # Expected shape after indexing: (batch_size, obs_dim)
             x["current_observation"] = x["observation"][torch.arange(batch_size), start_idxs, :]

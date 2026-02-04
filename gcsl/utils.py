@@ -32,21 +32,6 @@ def collect_trajectory(env: EnvBase, policy: GoalConditionedActor | None = None,
 
         # Collect a trajectory
         with torch.no_grad():
-            td_test = env.reset()
-            for _ in range(max_horizon):
-                x = td_test["observation_with_goal"].unsqueeze(0)  # Add batch dimension
-                assert len(x.shape) == 2, f"Expected observation_with_goal to have shape (1, obs_dim + condition_size), got {x.shape}"
-                print(f"Observation with goal: {x}")
-                logits = policy(x)
-                mask = td_test["action_mask"].unsqueeze(0)  # Add batch dimension
-                print(f"Action mask: {mask}")
-                print(f"Logits: {logits}")
-                action = MaskedCategorical(logits=logits, mask=mask).sample()
-                assert mask[0, action.item()].item(), (action.item(), mask)
-                action_td = TensorDict({"action": action.squeeze(0)}, batch_size=())
-                td_test = env.step(action_td)
-                if td_test.get("done").item():
-                    break
             td = env.rollout(max_steps=max_horizon, policy=actor)
     else:
         # Collect a random trajectory
