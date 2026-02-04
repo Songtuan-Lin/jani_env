@@ -14,12 +14,17 @@ from utils import create_env, create_safety_eval_file_args, create_eval_file_arg
 from .buffer import collect_trajectory, collect_trajectory_with_stricted_rule, DAggerBuffer
 from .policy import Policy, evaluate_policy_safety_on_state
 
+import sys
+DISABLE_BAR = not sys.stdout.isatty()
+
 RAY_AVAILABLE = True
 try:
     import ray
     from . import ray_workers
 except Exception:
     RAY_AVAILABLE = False
+
+
 
 
 def evaluate_policy(
@@ -274,6 +279,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 TextColumn("•"),
                 TimeRemainingColumn(),
                 transient=False,
+                disable=DISABLE_BAR
             ) as progress:
                 task = progress.add_task("Collecting Trajectories", total=init_state_size)
                 # Collect trajectories sequentially
