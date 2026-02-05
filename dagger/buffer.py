@@ -119,7 +119,10 @@ def collect_trajectory_with_stricted_rule(env: JANIEnv, policy: nn.Module, idx: 
     safety, safe_actions = [], []
     safe_trajectory = True # Flag to indicate if the trajectory remains safe throughout
 
-    obs, reset_info = env.reset(options={"idx": idx, "no_safety_info": True}) # Reset environment to specific initial state
+    if idx != -1:
+        obs, reset_info = env.reset(options={"idx": idx, "no_safety_info": True}) # Reset environment to specific initial state
+    else:
+        obs, _ = env.reset()
     
     for step in range(max_horizon):
         observations.append(obs) # Record current observation

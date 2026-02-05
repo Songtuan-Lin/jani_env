@@ -257,6 +257,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
         if args.get("empty_buffer", False):
             rb.empty() # Optionally empty the buffer at each iteration
         # Collect new trajectories and add to replay buffer
+        
         rollouts = []
         init_state_size = safety_eval_env.unwrapped.get_init_state_pool_size()
         init_state_size = min(args.get("num_init_states", 10000), init_state_size)
@@ -267,7 +268,36 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
             rollouts = rollout_manager.run_rollouts(init_state_size)
         else:
             print("Collecting trajectories sequentially...")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
+                TimeElapsedColumn(),
+                TextColumn("•"),
+                TimeRemainingColumn(),
+                transient=False,
+                disable=DISABLE_BAR
+            ) as progress:
+                task = progress.add_task("Collecting Trajectories for Training", total=3000)
+                # Collect trajectories sequentially
+                for _ in range(3000):
+                    if args.get("use_strict_rule", False):
+                        rollout = collect_trajectory_with_stricted_rule(
+                            env=env, 
+                            policy=policy, 
+                            idx=-1, 
+                            max_horizon=hyperparams.get("max_horizon", 1024))
+                    else:
+                        rollout = collect_trajectory(
+                            env=env, 
+                            policy=policy, idx=idx,
+                            max_horizon=hyperparams.get("max_horizon", 1024))
+                    rollouts.append(rollout)
+                    progress.advance(task, advance=1)
 
+            eval_rollouts = []
             # Display progress bar for trajectory collection when not using multiprocessors
             with Progress(
                 SpinnerColumn(),
@@ -281,27 +311,27 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                 transient=False,
                 disable=DISABLE_BAR
             ) as progress:
-                task = progress.add_task("Collecting Trajectories", total=init_state_size)
+                task = progress.add_task("Collecting Trajectories for Evaluation", total=init_state_size)
                 # Collect trajectories sequentially
                 for idx in range(init_state_size):
                     if args.get("use_strict_rule", False):
-                        rollout = collect_trajectory_with_stricted_rule(
+                        eval_rollout = collect_trajectory_with_stricted_rule(
                             env=safety_eval_env, 
                             policy=policy, 
                             idx=idx, 
                             max_horizon=hyperparams.get("max_horizon", 1024))
                     else:
-                        rollout = collect_trajectory(
+                        eval_rollout = collect_trajectory(
                             env=safety_eval_env, 
                             policy=policy, idx=idx,
                             max_horizon=hyperparams.get("max_horizon", 1024))
-                    rollouts.append(rollout)
+                    eval_rollouts.append(eval_rollout)
                     progress.advance(task, advance=1)
 
         # Check whether all trajectories are safe
-        all_safe = all([rollout[1]["is_safe_trajectory"] for rollout in rollouts])
-        percentage_safe = sum([rollout[1]["is_safe_trajectory"] for rollout in rollouts]) / len(rollouts) * 100.0
-        avg_reward = sum([rollout[1]["final_reward"] for rollout in rollouts]) / len(rollouts)
+        all_safe = all([eval_rollout[1]["is_safe_trajectory"] for eval_rollout in eval_rollouts])
+        percentage_safe = sum([eval_rollout[1]["is_safe_trajectory"] for eval_rollout in eval_rollouts]) / len(eval_rollouts) * 100.0
+        avg_reward = sum([eval_rollout[1]["final_reward"] for eval_rollout in eval_rollouts]) / len(eval_rollouts)
         # Log safety statistics
         safety_rates.append(percentage_safe)
         avg_rewards.append(avg_reward)
