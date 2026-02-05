@@ -48,6 +48,9 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
         assert len(all_eval_properties_files) == 1, f"Expected one property file in {eval_property_dir}, found {len(all_eval_properties_files)}"
         eval_property_file = all_eval_properties_files[0]
 
+        # Whether to use multi-processors
+        use_multiprocessors = shared_args.get("use_multiprocessors", False)
+
         # set seed
         seed = 42
         # Set up arguments
@@ -64,11 +67,11 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "unsafe_reward": -0.01,
             "num_init_states": 20000,
             "num_iterations": shared_args.get("num_iterations", 20),
-            "num_workers": shared_args.get("num_workers", 4),
+            "num_workers": shared_args.get("num_workers", 4) if use_multiprocessors else False,
             "max_steps": shared_args.get("max_steps", 256),
             "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
             "use_strict_rule": shared_args.get("use_strict_rule", False),
-            "use_multiprocessors": True,
+            "use_multiprocessors": use_multiprocessors,
             "empty_buffer": True,
             "steps_per_iteration": shared_args.get("steps_per_iteration", 5),
             "wandb_project": f"{jani_name}",
@@ -134,8 +137,9 @@ def main():
     parser.add_argument("--num_workers", type=int, default=4, help="Number of rollout workers per trainer")
     parser.add_argument("--num_iterations", type=int, default=50, help="Number of training iterations per benchmark")
     parser.add_argument("--steps_per_iteration", type=int, default=5, help="Number of training steps per DAgger iteration")
-    parser.add_argument("--use_strict_rule", action="store_true", help="Use strict rules for trajectory collection.")
-    parser.add_argument("--disable_oracle_cache", action="store_true", help="Disable caching in the oracle.")
+    parser.add_argument("--use_strict_rule", action="store_true", help="Use strict rules for trajectory collection")
+    parser.add_argument("--use_multiprocessors", action="store_true", help="Whether to use multi-processors")
+    parser.add_argument("--disable_oracle_cache", action="store_true", help="Disable caching in the oracle")
     parser.add_argument("--disable_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training")
@@ -152,6 +156,7 @@ def main():
         "use_strict_rule": args.use_strict_rule,
         "policy_filename": args.policy_filename,
         "condor_dir_prefix": args.condor_dir_prefix,
+        "use_multiprocessors": args.use_multiprocessors,
         "seed": args.seed
     }
 
