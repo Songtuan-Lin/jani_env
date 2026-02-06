@@ -170,10 +170,16 @@ class EvalCallback(BaseCallback):
 class SafetyEvalCallback(BaseCallback):
     """Custom safety evaluation callback."""
 
-    def __init__(self, safety_eval_env, eval_freq: int):
+    def __init__(self, safety_eval_env, eval_freq: int, log_dir: Optional[Path] = None):
         super().__init__()
         self.safety_eval_env = safety_eval_env
         self.eval_freq = eval_freq
+        if log_dir is not None:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self.log_file = log_dir / "safety_eval.txt"
+            open(self.log_file, 'w').close()  # Create or clear log file
+        else:
+            self.log_file = None
 
     def _unwrap_to_jani_env(self, env):
         """Helper method to unwrap environment to get JaniEnv."""
@@ -195,29 +201,41 @@ class SafetyEvalCallback(BaseCallback):
                 unwrapped_env = self._unwrap_to_jani_env(self.safety_eval_env)
             init_pool_size = unwrapped_env.get_init_state_pool_size()
             num_unsafe_episode = 0 # count number of episodes with unsafe steps
+            episode_rewards = []
             for idx in range(init_pool_size):  
                 obs, _ = self.safety_eval_env.reset(options={"idx": idx})
                 done = False
                 truncated = False
-                unsafe_steps = 0
-                total_steps = 0
+                rewards = []
+                keep_using_oracle = True
                 while not done and not truncated:
                     # snap("        Inside eval step ")
                     action_masks = get_action_masks(self.safety_eval_env)
                     action_masks = np.expand_dims(action_masks, axis=0)  # shape (1, n_actions)
                     action, _ = self.model.predict(obs, action_masks=action_masks)
+                    if keep_using_oracle:
+                        is_action_safe = unwrapped_env.is_current_state_action_safe(action)
+                        if not is_action_safe:
+                            keep_using_oracle = False  # Stop using oracle for the rest of this episode
+                            num_unsafe_episode += 1
                     obs, reward, done, truncated, _ = self.safety_eval_env.step(action)
-                    if reward == unwrapped_env.get_unsafe_reward() or reward == unwrapped_env.get_failure_reward():
-                        num_unsafe_episode += 1
-                        break  # Stop evaluation on first unsafe step
-            unsafe_episode_rate = num_unsafe_episode / init_pool_size
+                    rewards.append(reward)
+                # Compute average reward for this episode
+                episode_reward = sum(rewards)
+                assert episode_reward == rewards[-1], f"Episode reward {episode_reward} should equal the last step reward {rewards[-1]} in JANIEnv where intermediate rewards are 0 and only terminal reward is non-zero."
+                episode_rewards.append(episode_reward)
+    
+            safe_episode_rate = (init_pool_size - num_unsafe_episode) / init_pool_size
+            avg_reward = np.mean(episode_rewards)
             if WANDB_AVAILABLE and wandb.run is not None:
                 wandb.log({
-                    'safety_eval/unsafe_episodes_rate': unsafe_episode_rate,
+                    'safety_eval/safe_episodes_rate': safe_episode_rate,
                     'safety_eval/timesteps': self.n_calls
                 })
-            self.logger.record('safety_eval/unsafe_episodes_rate', unsafe_episode_rate)
+            self.logger.record('safety_eval/safe_episodes_rate', safe_episode_rate)
             self.logger.record('safety_eval/timesteps', self.n_calls)
+            with open(self.log_file, 'a') as f:
+                f.write(f"{self.n_calls}\t{safe_episode_rate}\t{avg_reward}\n")
         return True
 
 

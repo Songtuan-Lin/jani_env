@@ -79,6 +79,11 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
             **hyperparams
         )
     reset_timesteps = True
+    # Load pre-trained policy if specified
+    if args.load_policy_path:
+        print(f"Loading pre-trained policy from {args.load_policy_path}...")
+        checkpoint = torch.load(args.load_policy_path, map_location=args.device, weights_only=False)
+        model.policy.load_state_dict(checkpoint['state_dict'])
     
     # Placeholder for callbacks
     callbacks = []
@@ -137,11 +142,12 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
     # Create safety evaluation environment and callback
     if args.eval_safety:
         assert args.eval_start_states != "", "Evaluation start states file must be provided for safety evaluation."
-        safety_eval_file_args = create_safety_eval_file_args(file_args, vars(args))
+        safety_eval_file_args = create_safety_eval_file_args(file_args, vars(args), use_oracle=False)
         safety_eval_env = create_env(safety_eval_file_args, 1, monitor=True, time_limited=True)
         safety_eval_callback = SafetyEvalCallback(
             safety_eval_env=safety_eval_env,
-            eval_freq=args.eval_freq
+            eval_freq=args.eval_freq,
+            log_dir=log_dir
         )
         callbacks.append(safety_eval_callback)
 
@@ -168,38 +174,80 @@ def train_model(args, file_args: Dict[str, str], hyperparams: Optional[Dict[str,
 
 def main():
     parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")
-    parser.add_argument('--jani_model', type=str, required=True, help="Path to the JANI model file.")
-    parser.add_argument('--jani_property', type=str, default="", help="Path to the JANI property file.")
-    parser.add_argument('--start_states', type=str, default="", help="Path to the start states file.")
-    parser.add_argument('--objective', type=str, default="", help="Path to the objective file.")
-    parser.add_argument('--failure_property', type=str, default="", help="Path to the failure property file.")
-    parser.add_argument('--eval_start_states', type=str, default="", help="Path to the evaluation start states file.")
-    parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
-    parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
-    parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
-    parser.add_argument('--use_oracle', action='store_true', help="Use Tarjan oracle for unsafe state detection.")
-    parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
-    parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
-    parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
-    parser.add_argument('--disable_oracle_cache', action='store_true', help="Disable caching in the oracle.")
-    parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
-    parser.add_argument('--n_steps', type=int, default=256, help="Number of steps per update.")
-    parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
-    parser.add_argument('--log_reward', action='store_true', help="Log episode rewards.")
-    parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save models.")
-    parser.add_argument('--use_separate_eval_env', action='store_true', help="Use a separate environment for evaluation.")
-    parser.add_argument('--enumate_all_init_states', action='store_true', help="Evaluate on all initial states during evaluation.")
-    parser.add_argument('--eval_freq', type=int, default=2048, help="Evaluation frequency in timesteps.")
-    parser.add_argument('--n_eval_episodes', type=int, default=50, help="Number of episodes for each evaluation.")
-    parser.add_argument('--experiment_name', type=str, default="", help="Name of the experiment.")
-    parser.add_argument('--verbose', type=int, default=1, help="Verbosity level.")
-    parser.add_argument('--device', type=str, default='auto', help="Device to use for training (cpu or cuda).")
-    parser.add_argument('--disable_wandb', action='store_true', help="Disable Weights & Biases logging.")
-    parser.add_argument('--disable_eval', action='store_true', help="Disable evaluation during training.")
-    parser.add_argument('--eval_safety', action='store_true', help="Enable safety evaluation during training.")
-    parser.add_argument('--wandb_project', type=str, default="jani_rl", help="Weights & Biases project name.")
-    parser.add_argument('--wandb_entity', type=str, default=None, help="Weights & Biases entity name.")
-    parser.add_argument('--save_all_checkpoints', action='store_true', help="Save model checkpoints at each evaluation.")
+    # Environment settings
+    parser.add_argument('--jani_model', type=str, required=True, 
+                        help="Path to the JANI model file.")
+    parser.add_argument('--jani_property', type=str, default="", 
+                        help="Path to the JANI property file.")
+    parser.add_argument('--start_states', type=str, default="", 
+                        help="Path to the start states file.")
+    parser.add_argument('--objective', type=str, default="", 
+                        help="Path to the objective file.")
+    parser.add_argument('--failure_property', type=str, default="", 
+                        help="Path to the failure property file.")
+    parser.add_argument('--eval_start_states', type=str, default="", 
+                        help="Path to the evaluation start states file.")
+    parser.add_argument('--goal_reward', type=float, default=1.0, 
+                        help="Reward for reaching the goal.")
+    parser.add_argument('--failure_reward', type=float, default=-1.0, 
+                        help="Reward for reaching failure state.")
+    parser.add_argument('--unsafe_reward', type=float, default=-0.01, 
+                        help="Reward for unsafe states when using oracle.")
+    parser.add_argument('--use_oracle', action='store_true', 
+                        help="Use Tarjan oracle for unsafe state detection.")
+    parser.add_argument('--disable_oracle_cache', action='store_true', 
+                        help="Disable caching in the oracle.")
+    
+    # Training hyperparameters
+    parser.add_argument('--seed', type=int, default=42, 
+                        help="Random seed for reproducibility.")
+    parser.add_argument('--total_timesteps', type=int, default=1_000_000, 
+                        help="Total timesteps for training.")
+    parser.add_argument('--n_envs', type=int, default=1, 
+                        help="Number of parallel environments.")
+    parser.add_argument('--max_steps', type=int, default=1000, 
+                        help="Max steps per episode.")
+    parser.add_argument('--n_steps', type=int, default=256, 
+                        help="Number of steps per update.")
+    
+    # Training and evaluation settings
+    parser.add_argument('--log_dir', type=str, default="./logs", 
+                        help="Directory for logging.")
+    parser.add_argument('--log_reward', action='store_true', 
+                        help="Log episode rewards.")
+    parser.add_argument('--model_save_dir', type=str, default="./models", 
+                        help="Directory to save models.")
+    parser.add_argument('--use_separate_eval_env', action='store_true', 
+                        help="Use a separate environment for evaluation.")
+    parser.add_argument('--enumate_all_init_states', action='store_true', 
+                        help="Evaluate on all initial states during evaluation.")
+    parser.add_argument('--eval_freq', type=int, default=2048, 
+                        help="Evaluation frequency in timesteps.")
+    parser.add_argument('--n_eval_episodes', type=int, default=50, 
+                        help="Number of episodes for each evaluation.")
+    parser.add_argument('--load_policy_path', type=str, default="", 
+                        help="Path to a pre-trained policy to load before training.")
+    parser.add_argument('--save_all_checkpoints', action='store_true', 
+                        help="Save model checkpoints at each evaluation.")
+    parser.add_argument('--eval_safety', action='store_true', 
+                        help="Enable safety evaluation during training.")
+    parser.add_argument('--disable_eval', action='store_true', 
+                        help="Disable evaluation during training.")
+    
+    # Others
+    parser.add_argument('--wandb_project', type=str, default="jani_rl", 
+                        help="Weights & Biases project name.")
+    parser.add_argument('--wandb_entity', type=str, default=None, 
+                        help="Weights & Biases entity name.")
+    parser.add_argument('--experiment_name', type=str, default="", 
+                        help="Name of the experiment.")
+    parser.add_argument('--verbose', type=int, default=1, 
+                        help="Verbosity level.")
+    parser.add_argument('--device', type=str, default='cpu', 
+                        help="Device to use for training (cpu or cuda).")
+    parser.add_argument('--disable_wandb', action='store_true', 
+                        help="Disable Weights & Biases logging.")
+    
 
     args = parser.parse_args()
 
