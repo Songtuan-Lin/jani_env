@@ -211,16 +211,17 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
                         + loss["loss_critic"]
                         + loss["loss_entropy"]
                     )
+                    # Optimizer step
+                    optim.zero_grad()
                     loss_value.backward()
                     torch.nn.utils.clip_grad_norm_(loss_module.parameters(), max_grad_norm)
-                    # Optimizer step
                     optim.step()
-                    optim.zero_grad()
             
             logs["loss"].append(loss_value.item())
             logs["reward"].append(td_data["next", "reward"].mean().item())
             training_reward_str = f"📊 Average training reward={logs['reward'][-1]: 4.4f} (Init={logs['reward'][0]: 4.4f})"
-            if i % 100 == 0:
+            avg_loss_str = f" | 🧑‍🏫 Loss={logs['loss'][-1]: 4.4f}"
+            if i % 100== 0:
                 # Evaluation
                 eval_rewards = []
                 for _ in range(n_eval_episodes):
@@ -230,9 +231,9 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
                         eval_rewards.append(eval_reward)
                 mean_eval_reward = sum(eval_rewards) / n_eval_episodes
                 eval_reward_str = f" | 🧪 Eval reward={mean_eval_reward: 4.4f}"
-                progress.console.print(f"{training_reward_str}{eval_reward_str}")
+                progress.console.print(f"{training_reward_str}{avg_loss_str}{eval_reward_str}")
 
-            progress.update(task, advance=td_data.numel())
+            progress.update(task, advance=n_steps)
             progress.refresh()
             scheduler.step()
 

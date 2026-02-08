@@ -90,11 +90,12 @@ class JANIEnv(EnvBase):
             dtype=torch.float32
         )
 
-        # Done specification
-        self.done_spec = Binary(
-            n=1,
-            shape=(1,),
-        )
+        # Done specification - TorchRL expects "done", "terminated" and "truncated" keys
+        self.done_spec = Composite({
+            "done": Binary(n=1, shape=(1,), dtype=torch.bool),
+            "terminated": Binary(n=1, shape=(1,), dtype=torch.bool),
+            "truncated": Binary(n=1, shape=(1,), dtype=torch.bool),
+        })
 
         # Initialize reset flag
         self._reseted = False
@@ -122,7 +123,10 @@ class JANIEnv(EnvBase):
             "observation": torch.tensor(state_vec, dtype=torch.float32),
             "observation_with_goal": torch.tensor(state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
             "action_mask": self.action_mask(),
-            "condition": self.extract_current_conditions()
+            "condition": self.extract_current_conditions(),
+            "done": torch.tensor([False], dtype=torch.bool),
+            "terminated": torch.tensor([False], dtype=torch.bool),
+            "truncated": torch.tensor([False], dtype=torch.bool),
         }
         return TensorDict(obs, batch_size=())
     
@@ -160,8 +164,10 @@ class JANIEnv(EnvBase):
                 "observation": torch.tensor(next_state_vec, dtype=torch.float32),
                 "observation_with_goal": torch.tensor(next_state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
                 "action_mask": self.action_mask(),
-                "done": torch.tensor(done, dtype=torch.bool),
-                "reward": torch.tensor(reward, dtype=torch.float32),
+                "done": torch.tensor([done], dtype=torch.bool),
+                "terminated": torch.tensor([done], dtype=torch.bool),
+                "truncated": torch.tensor([False], dtype=torch.bool),
+                "reward": torch.tensor([reward], dtype=torch.float32),
                 "condition": self.extract_current_conditions()
             }, batch_size=())
         else:
@@ -169,8 +175,10 @@ class JANIEnv(EnvBase):
                 "observation": torch.tensor(next_state_vec, dtype=torch.float32),
                 "observation_with_goal": torch.tensor(next_state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
                 "action_mask": self.action_mask(),
-                "done": torch.tensor(done, dtype=torch.bool),
-                "reward": torch.tensor(reward, dtype=torch.float32),
+                "done": torch.tensor([done], dtype=torch.bool),
+                "terminated": torch.tensor([done], dtype=torch.bool),
+                "truncated": torch.tensor([False], dtype=torch.bool),
+                "reward": torch.tensor([reward], dtype=torch.float32),
                 "is_safe": torch.tensor(is_next_state_safe, dtype=torch.bool),
                 "condition": self.extract_current_conditions()
             }, batch_size=())
@@ -178,5 +186,7 @@ class JANIEnv(EnvBase):
         return next_td
     
     def _set_seed(self, seed: int | None) -> None:
-        rng = torch.manual_seed(torch.seed)
+        if seed is None:
+            seed = torch.seed()
+        rng = torch.manual_seed(seed)
         self.rng = rng
