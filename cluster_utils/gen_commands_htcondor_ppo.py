@@ -20,12 +20,21 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
         jani_name = model_file.name.replace(".jani", "")
         if variant_name == "models":
             property_dir = domain_dir / "additional_properties"
-            model_save_dir = condor_dir_prefix / domain_dir / "ppo_policies"
+            load_policy_dir = domain_dir / "ppo_policies" / jani_name
+            model_save_dir = condor_dir_prefix / domain_dir / "ppo_policies_continue"
             log_dir = condor_dir_prefix / Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name
         else:
             property_dir = domain_dir / "additional_properties" / variant_name
-            model_save_dir = condor_dir_prefix / domain_dir / "ppo_policies" / variant_name
+            load_policy_dir = domain_dir / "ppo_policies" / variant_name / f"{jani_name}_{variant_name}"
+            model_save_dir = condor_dir_prefix / domain_dir / "ppo_policies_continue" / variant_name
             log_dir = condor_dir_prefix / Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name
+
+        if shared_args.get("policy_filename"):
+            load_policy_path = load_policy_dir / shared_args.get("policy_filename")
+            assert load_policy_path.exists(), f"Policy file {load_policy_path} does not exist."
+            load_policy_path = condor_dir_prefix / load_policy_path
+        else:
+            load_policy_path = ""  # empty string indicates not loading from a checkpoint
 
         # Locate the training property file
         training_property_dir = property_dir / "random_starts_20000" / jani_name
@@ -54,27 +63,28 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "goal_reward": shared_args.get("goal_reward", 1.0),
             "failure_reward": shared_args.get("failure_reward", -1.0),
             "unsafe_reward": shared_args.get("unsafe_reward", -0.01),
+            "load_policy_path": load_policy_path,
             "max_steps": shared_args.get("max_steps", 1024),
             "total_timesteps": shared_args.get("total_timesteps", 35000),
             "n_envs": shared_args.get("n_envs", 1),
             "n_steps": shared_args.get("n_steps", 1024),
             "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
             "n_eval_episodes": 100,
-            "wandb_project": f"{jani_name}",
+            "wandb_project": f"{jani_name}_clean",
             "wandb_entity": "",
             "experiment_name": f"{jani_name}_{variant_name}" if variant_name != "models" else jani_name,
             "log_dir": log_dir,
             "model_save_dir": model_save_dir,
             "disable_wandb": False,
-            "disable_eval": False,
+            "disable_eval": True,
             "use_separate_eval_env": False,
             "enumate_all_init_states": False,
             "log_reward": True,
             "eval_freq": 1025,
-            "eval_safety": False,
+            "eval_safety": shared_args.get("eval_safety", False),
             "save_all_checkpoints": True,
             "use_oracle": shared_args.get("use_oracle", False),
-            "verbose": 1,
+            "verbose": 0,
             "device": "cpu",
             "seed": shared_args.get("seed", 42),
         }
@@ -141,6 +151,8 @@ def main():
     parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
     parser.add_argument('--max_steps', type=int, default=1024, help="Max steps per episode")
     parser.add_argument('--n_steps', type=int, default=1024, help="Number of steps per update")
+    parser.add_argument('--eval_safety', action='store_true', help="Whether to evaluate safety during training")
+    parser.add_argument("--policy_filename", type=str, default="", help="Filename of the policy checkpoint to load (relative to the PPO policies directory)")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training")
     parser.add_argument("--output_file", type=Path, required=True, help="File to save generated configurations")
@@ -159,7 +171,9 @@ def main():
         "seed": args.seed,
         "disable_oracle_cache": args.disable_oracle_cache,
         "disable_wandb": args.disable_wandb,
-        "use_oracle": args.use_oracle
+        "use_oracle": args.use_oracle,
+        "eval_safety": args.eval_safety,
+        "policy_filename": args.policy_filename,
     }
 
     all_configs = get_all_configs(args.root, shared_args)
