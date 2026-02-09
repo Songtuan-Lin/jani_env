@@ -20,17 +20,17 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
         jani_name = model_file.name.replace(".jani", "")
         if variant_name == "models":
             property_dir = domain_dir / "additional_properties"
-            policy_dir = domain_dir / "policies" / jani_name
+            policy_dir = domain_dir / "ppo_policies" / jani_name
             log_dir = condor_dir_prefix / Path(shared_args.get("log_directory", "./logs")) / domain_name / jani_name
         else:
             property_dir = domain_dir / "additional_properties" / variant_name
-            policy_dir = domain_dir / "policies" / variant_name / jani_name
+            policy_dir = domain_dir / "ppo_policies" / variant_name / f"{jani_name}_{variant_name}"
             log_dir = condor_dir_prefix / Path(shared_args.get("log_directory", "./logs")) / domain_name / variant_name / jani_name
 
         model_save_dir = log_dir / "policies"
         policy_path = policy_dir / shared_args.get("policy_filename")
-        if not policy_path.exists():
-            policy_path = policy_dir / "best_model.pth"
+        # if not policy_path.exists():
+        #     policy_path = policy_dir / "best_model.pth"
         assert policy_path.exists(), f"Policy file {policy_path} does not exist."
         policy_path = condor_dir_prefix / policy_path
 
@@ -74,7 +74,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "use_multiprocessors": use_multiprocessors,
             "empty_buffer": True,
             "steps_per_iteration": shared_args.get("steps_per_iteration", 5),
-            "wandb_project": f"{jani_name}",
+            "wandb_project": f"{jani_name}_clean",
             "experiment_name": f"dagger_{variant_name}" if variant_name != "models" else "dagger",
             "log_directory": log_dir,
             "model_save_dir": model_save_dir,
