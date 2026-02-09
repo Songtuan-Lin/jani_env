@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libicu-dev \
     libboost-all-dev
 
+ENV PATH="/usr/bin:${PATH}"
+RUN which cmake && cmake --version
 # ---- Copy your repo (no git clone needed) ----
 WORKDIR /jani_env
 COPY . /jani_env
