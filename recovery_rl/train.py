@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import argparse
 
-from tensordict.nn import TensorDictModule
+from tensordict.nn import TensorDictModule, TensorDictModuleBase
 
 from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
 from torchrl.modules.distributions import MaskedCategorical
@@ -22,7 +22,7 @@ from jani.torchrl_env import JANIEnv
 from utils import create_eval_file_args
 
 
-def create_actor(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule:
+def create_actor(hyperparams: Dict[str, Any], env: JANIEnv, out_keys=["action"]) -> TensorDictModule:
     """Create the actor network for the policy."""
     n_actions = env.n_actions
     input_size = env.observation_spec["observation"].shape[0]
@@ -47,7 +47,7 @@ def create_actor(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule:
     actor = ProbabilisticActor(
         module=actor_module,
         in_keys={"logits": "logits", "mask": "action_mask"},
-        out_keys=["action"],
+        out_keys=out_keys,
         distribution_class=MaskedCategorical,
         return_log_prob=True,
     )
@@ -101,7 +101,7 @@ def load_q_risk_model(path: str, device: torch.device) -> TensorDictModule:
     
     return q_risk_model
 
-def create_data_collector(hyperparams: Dict[str, Any], env: JANIEnv, policy: TensorDictModule) -> SyncDataCollector:
+def create_data_collector(hyperparams: Dict[str, Any], env: JANIEnv, policy: TensorDictModuleBase) -> SyncDataCollector:
     """Create a data collector for experience gathering."""
     n_steps = hyperparams.get("n_steps", 2048)
     total_timesteps = hyperparams.get("total_timesteps", 1024000)
