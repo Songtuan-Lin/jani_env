@@ -10,7 +10,7 @@ from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
 from torchrl.collectors import SyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, Sampler
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
 
@@ -114,8 +114,8 @@ def create_data_collector(hyperparams: Dict[str, Any], env: JANIEnv, policy: Ten
     )
     return collector
 
-def create_replay_buffer(hyperparams: Dict[str, Any]) -> ReplayBuffer:
-    """Create a replay buffer for experience storage."""
+def create_rollout_buffer(hyperparams: Dict[str, Any]) -> ReplayBuffer:
+    """Create a rollout buffer for PPO."""
     # For PPO, buffer size must equal to n_steps
     buffer_size = hyperparams.get("n_steps", 100000)
     batch_size = hyperparams.get("batch_size", 64)
@@ -126,6 +126,24 @@ def create_replay_buffer(hyperparams: Dict[str, Any]) -> ReplayBuffer:
     )
     # Create the sampler
     sampler = SamplerWithoutReplacement()
+    # Create the replay buffer
+    rollout_buffer = ReplayBuffer(
+        storage=storage,
+        sampler=sampler,
+    )
+    return rollout_buffer
+
+def create_replay_buffer(hyperparams: dict[str, any]) -> ReplayBuffer:
+    """Create a replay buffer for Q-risk training."""
+    buffer_size = hyperparams.get("replay_buffer_size", 100000)
+    batch_size = hyperparams.get("batch_size", 64)
+    # Create the storage
+    storage = LazyTensorStorage(
+        max_size=buffer_size,
+        device=hyperparams.get("device", "cpu"),
+    )
+    # Create the sampler
+    sampler = Sampler()
     # Create the replay buffer
     replay_buffer = ReplayBuffer(
         storage=storage,
@@ -191,9 +209,9 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
     print("Creating data collector...")
     collector = create_data_collector(hyperparams, env, actor)
 
-    # Create replay buffer
-    print("Creating replay buffer...")
-    replay_buffer = create_replay_buffer(hyperparams)
+    # Create rollout buffer
+    print("Creating rollout buffer...")
+    rollout_buffer = create_rollout_buffer(hyperparams)
 
     # Create optimizer
     optim = torch.optim.Adam(loss_module.parameters(), lr)
@@ -219,19 +237,14 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
             # Compute advantages
             with torch.no_grad():
                 advantage_module(td_data)
-            # Store in replay buffer
+            # Store in rollout buffer
             date_view = td_data.reshape(-1)
-            replay_buffer.empty()
-            replay_buffer.extend(date_view)
+            rollout_buffer.empty()
+            rollout_buffer.extend(date_view)
             for _ in range(n_epochs):
-                # # Compute advantages
-                # advantage_module(td_data)
-                # # Store in replay buffer
-                # date_view = td_data.reshape(-1)
-                # replay_buffer.extend(date_view)
-                # Sample from replay buffer
+                # Sample from rollout buffer
                 for _ in range(n_steps // batch_size):
-                    batch_data = replay_buffer.sample(batch_size)
+                    batch_data = rollout_buffer.sample(batch_size)
                     loss = loss_module(batch_data)
                     loss_value = (
                         loss["loss_objective"]
