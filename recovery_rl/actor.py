@@ -33,12 +33,12 @@ class RecoveryActor(TensorDictModuleBase):
 
         task_action = td.get("task_action")
         task_action = task_action.view(-1, 1) # Ensure task_action has shape (batch_size, 1)
-        q_risk_values = td.get("q_risk").view(-1, self.q_risk_module.module.out_features) # Ensure q_risk_values has shape (batch_size, action_dim)
+        q_risk_values = td.get("q_risk_value").view(-1, self.q_risk_module.module.out_features) # Ensure q_risk_values has shape (batch_size, action_dim)
        
         chosen_value = q_risk_values.gather(dim=1, index=task_action)
 
         # Decide whether to use recovery policy based on risk threshold
-        use_recovery = (chosen_value > self.risk_threshold).float()
+        use_recovery = (chosen_value < self.risk_threshold).float()
 
         # Get recovery policy action
         recovery_action = td.get("recovery_action").view(-1, 1) # Ensure recovery_action has shape (batch_size, 1)
@@ -53,7 +53,7 @@ class RecoveryActor(TensorDictModuleBase):
 if __name__ == "__main__":
     import argparse
 
-    from .train import create_actor, create_critic, create_data_collector
+    from .utils import create_actor, create_critic, create_data_collector
 
     from jani import TorchRLJANIEnv
     from torchrl.modules import MLP, ValueOperator
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     q_risk_module = ValueOperator(
         module=q_risk_backbone,
         in_keys=["observation"],
-        out_keys=["q_risk"]
+        out_keys=["q_risk_value"]
     )
 
     recovery_actor = RecoveryActor(

@@ -6,7 +6,7 @@ from tensordict.nn import TensorDictModule, TensorDictModuleBase
 
 from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
 from torchrl.modules.distributions import MaskedCategorical
-from torchrl.objectives import ClipPPOLoss
+from torchrl.objectives import DiscreteSACLoss
 from torchrl.objectives.value import GAE
 from torchrl.collectors import SyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
@@ -16,205 +16,145 @@ from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration
 
 from typing import Dict, Any
 from collections import defaultdict
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich.progress import (
+    Progress, 
+    SpinnerColumn, 
+    TextColumn, 
+    BarColumn, 
+    TimeRemainingColumn, 
+    TimeElapsedColumn
+)
 
 from jani.torchrl_env import JANIEnv
 from utils import create_eval_file_args
 
+from .utils import (
+    create_actor_module, 
+    create_critic, 
+    create_data_collector, 
+    create_replay_buffer,
+    load_recovery_policy_module,
+    load_q_risk_backbone,
+    load_replay_buffer,
+)
+from .actor import RecoveryActor
 
-def create_actor(hyperparams: Dict[str, Any], env: JANIEnv, out_keys=["action"]) -> TensorDictModule:
-    """Create the actor network for the policy."""
-    n_actions = env.n_actions
-    input_size = env.observation_spec["observation"].shape[0]
-    hidden_sizes = hyperparams.get("actor_hidden_sizes", [64, 128])
-    dropout = hyperparams.get("actor_dropout", 0.2)
-    activation_fn = hyperparams.get("activation_fn", nn.Tanh)
-    # Build the actor network
-    actor_backbone = MLP(
-        in_features=input_size,
-        out_features=n_actions,
-        num_cells=hidden_sizes,
-        dropout=dropout,
-        activation_class=activation_fn,
-    )
-    # Wrap in TensorDictModule
-    actor_module = TensorDictModule(
-        module=actor_backbone,
-        in_keys=["observation"],
-        out_keys=["logits"],
-    )
-    # Create the probabilistic actor with masked categorical distribution
-    actor = ProbabilisticActor(
-        module=actor_module,
-        in_keys={"logits": "logits", "mask": "action_mask"},
-        out_keys=out_keys,
-        distribution_class=MaskedCategorical,
-        return_log_prob=True,
-    )
-    return actor
 
-def create_critic(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule:
-    """Create the critic network for value estimation."""
-    input_size = env.observation_spec["observation"].shape[0]
-    hidden_sizes = hyperparams.get("critic_hidden_sizes", [64, 128])
-    dropout = hyperparams.get("critic_dropout", 0.2)
-    activation_fn = hyperparams.get("activation_fn", nn.Tanh)
-    # Build the critic network
-    critic_backbone = MLP(
-        in_features=input_size,
-        out_features=1,
-        num_cells=hidden_sizes,
-        dropout=dropout,
-        activation_class=activation_fn,
-    )
-    # Wrap in TensorDictModule
-    critic_module = ValueOperator(
-        module=critic_backbone,
-        in_keys=["observation"],
-    )
-    return critic_module
-
-def load_q_risk_model(path: str, device: torch.device) -> TensorDictModule:
-    """Load a pre-trained Q-risk model from the specified path."""
-    # Load the checkpoint
-    checkpoint = torch.load(path, map_location=device)
-    input_dim= checkpoint['input_dim']
-    output_dim= checkpoint['output_dim'] # this should equal to the number of actions
-    hidden_dims= checkpoint['hidden_dims']
-
-    # Create the backbone model architecture
-    q_risk_backbone = MLP(
-        in_features=input_dim,
-        out_features=output_dim,
-        num_cells=hidden_dims,
-    )
-
-    # Load the state dict into the backbone model
-    q_risk_backbone.load_state_dict(checkpoint['model_state_dict'])
-
-    # Wrap in TensorDictModule
-    q_risk_model = TensorDictModule(
-        module=q_risk_backbone,
-        in_keys=["observation"],
-        out_keys=["q_risk_value"],
-    )
-    
-    return q_risk_model
-
-def create_data_collector(hyperparams: Dict[str, Any], env: JANIEnv, policy: TensorDictModuleBase) -> SyncDataCollector:
-    """Create a data collector for experience gathering."""
-    n_steps = hyperparams.get("n_steps", 2048)
-    total_timesteps = hyperparams.get("total_timesteps", 1024000)
-    collector = SyncDataCollector(
-        create_env_fn=env,
-        policy=policy,
-        total_frames=total_timesteps,
-        frames_per_batch=n_steps,
-        split_trajs=False,
-    )
-    return collector
-
-def create_rollout_buffer(hyperparams: Dict[str, Any]) -> ReplayBuffer:
-    """Create a rollout buffer for PPO."""
-    # For PPO, buffer size must equal to n_steps
-    buffer_size = hyperparams.get("n_steps", 100000)
-    batch_size = hyperparams.get("batch_size", 64)
-    # Create the storage
-    storage = LazyTensorStorage(
-        max_size=buffer_size,
-        device=hyperparams.get("device", "cpu"),
-    )
-    # Create the sampler
-    sampler = SamplerWithoutReplacement()
-    # Create the replay buffer
-    rollout_buffer = ReplayBuffer(
-        storage=storage,
-        sampler=sampler,
-    )
-    return rollout_buffer
-
-def create_replay_buffer(hyperparams: dict[str, any]) -> ReplayBuffer:
-    """Create a replay buffer for Q-risk training."""
-    buffer_size = hyperparams.get("replay_buffer_size", 100000)
-    batch_size = hyperparams.get("batch_size", 64)
-    # Create the storage
-    storage = LazyTensorStorage(
-        max_size=buffer_size,
-        device=hyperparams.get("device", "cpu"),
-    )
-    # Create the sampler
-    sampler = Sampler()
-    # Create the replay buffer
-    replay_buffer = ReplayBuffer(
-        storage=storage,
-        sampler=sampler,
-    )
-    return replay_buffer
-
-def create_advantage_module(hyperparams: Dict[str, Any], value_module: nn.Module) -> nn.Module:
-    """Create an advantage estimation module."""
-    gae_lambda = hyperparams.get("gae_lambda", 0.95)
-    gamma = hyperparams.get("gamma", 0.99)
-    advantage_module = GAE(
-        gamma=gamma,
-        lmbda=gae_lambda,
-        value_network=value_module, # This should be the critic module in PPO
-        average_gae=True,
-    )
-    return advantage_module
-
-def create_loss_module(hyperparams: Dict[str, Any], actor_module: TensorDictModule, critic_module: TensorDictModule) -> nn.Module:
-    """Create the loss module for PPO."""
-    clip_epsilon = hyperparams.get("clip_epsilon", 0.2)
-    entropy_coef = hyperparams.get("ent_coef", 1e-4)
-    critic_coeff = hyperparams.get("critic_coeff", 1.0)
-
-    loss_module = ClipPPOLoss(
-        actor_network=actor_module,
-        critic_network=critic_module,
-        clip_epsilon=clip_epsilon,
-        entropy_bonus=bool(entropy_coef),
-        entropy_coef=entropy_coef,
-        critic_coeff=critic_coeff,
-        loss_critic_type="smooth_l1",
-    )
-    return loss_module
-
-def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
+def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_env: JANIEnv) -> None:
     """Train the PPO agent."""
     logs = defaultdict(list)
     # Some hyperparameters
     total_timesteps = hyperparams.get("total_timesteps", 1024000)
-    n_steps = hyperparams.get("n_steps", 2048)
+    n_steps = hyperparams.get("n_steps", 256)
     batch_size = hyperparams.get("batch_size", 64)
-    max_grad_norm = hyperparams.get("max_grad_norm", 0.5)
-    n_epochs = hyperparams.get("n_epochs", 10)
     lr = hyperparams.get("learning_rate", 3e-4)
     n_eval_episodes = hyperparams.get("n_eval_episodes", 100)
 
-    # Create actor and critic
-    print("Creating actor and critic networks...")
-    actor = create_actor(hyperparams, env)
+    # Create actor and critic (i.e., q_value) networks
+    print("Creating task policy and critic networks...")
+    task_policy_module = create_actor_module(hyperparams, env)
+    # Task policy for collecting data
+    task_policy = ProbabilisticActor(
+        module=task_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["task_action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+    # Training view of the task policy (outputs "action" instead of "task_action")
+    task_policy_training = ProbabilisticActor(
+        module=task_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+    # Critic for task policy value estimation
     critic = create_critic(hyperparams, env)
+
+    # Load recovery policy and risk module from pretrained models
+    print("Loading pretrained recovery policy and risk module...")
+    rec_policy_path = args.get("recover_policy_path", "")
+    assert rec_policy_path != "", "Path to pretrained recovery policy must be provided in args with key 'recover_policy_path'"
+
+    q_risk_path = args.get("q_risk_path", "")
+    assert q_risk_path != "", "Path to pretrained q_risk module must be provided in args with key 'q_risk_path'"
+
+    # Load the recovery policy backbone and create the recovery policy module
+    recovery_policy_module = load_recovery_policy_module(rec_policy_path)
+    # recovery policy for collecting data
+    recovery_policy = ProbabilisticActor(
+        module=recovery_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["recovery_action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+    # recovery policy for training (outputs "action" instead of "recovery_action")
+    recovery_policy_training = ProbabilisticActor(
+        module=recovery_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+
+    # Load the q_risk backbone and create the q_risk module
+    q_risk_backbone = load_q_risk_backbone(q_risk_path)
+    # q_risk module for collecting data
+    q_risk_module = ValueOperator(
+        module=q_risk_backbone,
+        in_keys=["observation"],
+        out_keys=["q_risk_value"],
+    )
+    # q_risk module for training (outputs "action_value" instead of "q_risk_value")
+    q_risk_module_training = ValueOperator(
+        module=q_risk_backbone,
+        in_keys=["observation"],
+        out_keys=["action_value"],
+    )
+
+    # Create the combined recovery actor
+    recovery_actor = RecoveryActor(
+        task_policy=task_policy,
+        recovery_policy=recovery_policy,
+        q_risk_module=q_risk_module,
+        risk_threshold=-0.35
+    )
+
+    # Create replay buffer for training task policy and critic
+    print("Creating replay buffer...")
+    replay_buffer = create_replay_buffer(hyperparams)
+
+    # Load replay buffer for q_risk and recovery policy
+    offline_buffer_path = args.get("offline_buffer_path", "")
+    assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
+    offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
     
     # Create loss module
-    print("Creating loss module...")
-    loss_module = create_loss_module(hyperparams, actor, critic)
-
-    # Create advantage module
-    print("Creating advantage module...")
-    advantage_module = create_advantage_module(hyperparams, critic)
+    print("Creating loss modules...")
+    task_loss_module = DiscreteSACLoss(
+        actor_module = task_policy_training,
+        qvalue_network = critic,
+        action_space = "categorical",
+        num_actions = env.n_actions,
+    )
+    risk_loss_module = DiscreteSACLoss(
+        actor_module = recovery_policy_training,
+        qvalue_network = q_risk_module_training,
+        action_space = "categorical",
+        num_actions = env.n_actions,
+    )
 
     # Create data collector
     print("Creating data collector...")
-    collector = create_data_collector(hyperparams, env, actor)
-
-    # Create rollout buffer
-    print("Creating rollout buffer...")
-    rollout_buffer = create_rollout_buffer(hyperparams)
+    collector = create_data_collector(hyperparams, env, recovery_actor)
 
     # Create optimizer
-    optim = torch.optim.Adam(loss_module.parameters(), lr)
+    optim = torch.optim.Adam(
+        list(task_loss_module.parameters()) + list(risk_loss_module.parameters()), 
+        lr=hyperparams.get("learning_rate", 3e-4)
+    )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, total_timesteps // n_steps, 0.0
     )
@@ -234,28 +174,57 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
         task = progress.add_task("Training PPO Agent", total=hyperparams.get("total_timesteps", 1024000))
 
         for i, td_data in enumerate(collector):
-            # Compute advantages
-            with torch.no_grad():
-                advantage_module(td_data)
-            # Store in rollout buffer
-            date_view = td_data.reshape(-1)
-            rollout_buffer.empty()
-            rollout_buffer.extend(date_view)
-            for _ in range(n_epochs):
-                # Sample from rollout buffer
-                for _ in range(n_steps // batch_size):
-                    batch_data = rollout_buffer.sample(batch_size)
-                    loss = loss_module(batch_data)
-                    loss_value = (
-                        loss["loss_objective"]
-                        + loss["loss_critic"]
-                        + loss["loss_entropy"]
-                    )
-                    # Optimizer step
-                    optim.zero_grad()
-                    loss_value.backward()
-                    torch.nn.utils.clip_grad_norm_(loss_module.parameters(), max_grad_norm)
-                    optim.step()
+            td_task_data = td_data.clone(recurse=True).detach()
+            # Set the task action as the main action for task policy training
+            td_task_data = td_task_data.select(
+                "observation", 
+                "task_action", 
+                "action_mask", 
+                "next"
+            )
+            td_task_data.set_("action", td_task_data.get("task_action"))
+            del td_task_data["task_action"]
+            assert td_task_data["action"].shape == (td_data.batch_size, 1), f"Expected action shape to be (batch_size, 1), but got {td_task_data['action'].shape}"
+            # Add the data to the replay buffer
+            replay_buffer.extend(td_task_data)
+
+            td_risk_data = td_data.clone(recurse=True).detach()
+            # The final action is the main action for risk policy training
+            td_risk_data = td_risk_data.select(
+                "observation", 
+                "action", 
+                "action_mask",
+                "next"
+            )
+            assert td_risk_data["action"].shape == (td_data.batch_size, 1), f"Expected action shape to be (batch_size, 1), but got {td_risk_data['action'].shape}"
+            # Relabel all goal reached rewards to 0 for risk module training
+            td_risk_data["next", "reward"] = torch.where(
+                td_risk_data["next", "reward"] == env._goal_reward, 
+                torch.tensor(0.0, dtype=torch.float32), 
+                td_risk_data["next", "reward"]
+            )
+            # Add the data to the replay buffer for risk module training
+            offline_replay_buffer.extend(td_risk_data)
+
+            # Sample batches for task and risk training
+            batch_task_data = replay_buffer.sample(batch_size)
+            batch_risk_data = offline_replay_buffer.sample(batch_size)
+
+            task_loss = task_loss_module(batch_task_data)
+            risk_loss = risk_loss_module(batch_risk_data)
+            loss_value = (
+                task_loss["loss_actor"]
+                + task_loss["loss_qvalue"]
+                + task_loss["loss_alpha"]
+                + risk_loss["loss_actor"]
+                + risk_loss["loss_alpha"]
+                + risk_loss["loss_qvalue"]
+            )
+
+            # Optimizer step
+            optim.zero_grad()
+            loss_value.backward()
+            optim.step()
             
             logs["loss"].append(loss_value.item())
             logs["reward"].append(td_data["next", "reward"].mean().item())
@@ -266,7 +235,7 @@ def train(hyperparams: Dict[str, Any], env: JANIEnv, eval_env: JANIEnv) -> None:
                 eval_rewards = []
                 for _ in range(n_eval_episodes):
                     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-                        eval_rollout = eval_env.rollout(max_steps=1000, policy=actor)
+                        eval_rollout = eval_env.rollout(max_steps=1000, policy=recovery_actor)
                         eval_reward = eval_rollout["next", "reward"].sum().item()
                         eval_rewards.append(eval_reward)
                 mean_eval_reward = sum(eval_rewards) / n_eval_episodes
