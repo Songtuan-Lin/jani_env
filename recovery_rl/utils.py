@@ -9,7 +9,7 @@ from torchrl.objectives import ClipPPOLoss
 from torchrl.objectives.value import GAE
 from torchrl.collectors import SyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, Sampler
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, RandomSampler
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
 
@@ -173,7 +173,7 @@ def create_replay_buffer(hyperparams: dict[str, any]) -> ReplayBuffer:
         device=hyperparams.get("device", "cpu"),
     )
     # Create the sampler
-    sampler = Sampler()
+    sampler = RandomSampler()
     # Create the replay buffer
     replay_buffer = ReplayBuffer(
         storage=storage,

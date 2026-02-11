@@ -74,14 +74,15 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
 
     # Load recovery policy and risk module from pretrained models
     print("Loading pretrained recovery policy and risk module...")
-    rec_policy_path = args.get("recover_policy_path", "")
-    assert rec_policy_path != "", "Path to pretrained recovery policy must be provided in args with key 'recover_policy_path'"
+    # rec_policy_path = args.get("recover_policy_path", "")
+    # assert rec_policy_path != "", "Path to pretrained recovery policy must be provided in args with key 'recover_policy_path'"
 
-    q_risk_path = args.get("q_risk_path", "")
-    assert q_risk_path != "", "Path to pretrained q_risk module must be provided in args with key 'q_risk_path'"
+    # q_risk_path = args.get("q_risk_path", "")
+    # assert q_risk_path != "", "Path to pretrained q_risk module must be provided in args with key 'q_risk_path'"
 
     # Load the recovery policy backbone and create the recovery policy module
-    recovery_policy_module = load_recovery_policy_module(rec_policy_path)
+    # recovery_policy_module = load_recovery_policy_module(rec_policy_path)
+    recovery_policy_module = create_actor_module(hyperparams, env)
     # recovery policy for collecting data
     recovery_policy = ProbabilisticActor(
         module=recovery_policy_module,
@@ -100,7 +101,8 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     )
 
     # Load the q_risk backbone and create the q_risk module
-    q_risk_backbone = load_q_risk_backbone(q_risk_path)
+    # q_risk_backbone = load_q_risk_backbone(q_risk_path)
+    q_risk_backbone = create_critic(hyperparams, env)
     # q_risk module for collecting data
     q_risk_module = ValueOperator(
         module=q_risk_backbone,
@@ -127,20 +129,21 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     replay_buffer = create_replay_buffer(hyperparams)
 
     # Load replay buffer for q_risk and recovery policy
-    offline_buffer_path = args.get("offline_buffer_path", "")
-    assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
-    offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
+    # offline_buffer_path = args.get("offline_buffer_path", "")
+    # assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
+    # offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
+    offline_replay_buffer = create_replay_buffer(hyperparams)
     
     # Create loss module
     print("Creating loss modules...")
     task_loss_module = DiscreteSACLoss(
-        actor_module = task_policy_training,
+        actor_network = task_policy_training,
         qvalue_network = critic,
         action_space = "categorical",
         num_actions = env.n_actions,
     )
     risk_loss_module = DiscreteSACLoss(
-        actor_module = recovery_policy_training,
+        actor_network = recovery_policy_training,
         qvalue_network = q_risk_module_training,
         action_space = "categorical",
         num_actions = env.n_actions,
@@ -153,7 +156,7 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     # Create optimizer
     optim = torch.optim.Adam(
         list(task_loss_module.parameters()) + list(risk_loss_module.parameters()), 
-        lr=hyperparams.get("learning_rate", 3e-4)
+        lr=lr
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, total_timesteps // n_steps, 0.0
@@ -171,13 +174,14 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             TimeRemainingColumn(),
             transient=False,
         ) as progress:
-        task = progress.add_task("Training PPO Agent", total=hyperparams.get("total_timesteps", 1024000))
+        task = progress.add_task("Training Recovery RL Agent", total=hyperparams.get("total_timesteps", 1024000))
 
         for i, td_data in enumerate(collector):
             td_task_data = td_data.clone(recurse=True).detach()
             # Set the task action as the main action for task policy training
             td_task_data = td_task_data.select(
                 "observation", 
+                "action",
                 "task_action", 
                 "action_mask", 
                 "next"
@@ -291,21 +295,14 @@ def main():
     # Define hyperparameters
     hyperparams = {
         'total_timesteps': args.total_timesteps,
-        'n_steps': 2048,
+        'n_steps': 256,
         'batch_size': 64,
         'learning_rate': 3e-4,
-        'gae_lambda': 0.95,
-        'gamma': 0.99,
-        'clip_epsilon': 0.2,
-        'ent_coef': 1e-4,
-        'critic_coeff': 1.0,
-        'max_grad_norm': 0.5,
-        'n_epochs': 10,
         'device': args.device,
     }
     print(f"Training with hyperparameters: {hyperparams}")
     # Start training
-    train(hyperparams, env, eval_env)
+    train(hyperparams, vars(args), env, eval_env)
 
 if __name__ == "__main__":
     main()
