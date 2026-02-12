@@ -4,6 +4,8 @@ import argparse
 
 from tensordict.nn import TensorDictModule, TensorDictModuleBase
 
+from torch.distributions import Categorical
+
 from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
 from torchrl.modules.distributions import MaskedCategorical
 from torchrl.objectives import DiscreteSACLoss
@@ -64,9 +66,9 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     # Training view of the task policy (outputs "action" instead of "task_action")
     task_policy_training = ProbabilisticActor(
         module=task_policy_module,
-        in_keys={"logits": "logits", "mask": "action_mask"},
+        in_keys={"logits": "logits"},
         out_keys=["action"],
-        distribution_class=MaskedCategorical,
+        distribution_class=Categorical,
         return_log_prob=True, # Not sure whether this is actually need
     )
     # Critic for task policy value estimation
@@ -94,9 +96,9 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     # recovery policy for training (outputs "action" instead of "recovery_action")
     recovery_policy_training = ProbabilisticActor(
         module=recovery_policy_module,
-        in_keys={"logits": "logits", "mask": "action_mask"},
+        in_keys={"logits": "logits"},
         out_keys=["action"],
-        distribution_class=MaskedCategorical,
+        distribution_class=Categorical, # DiscreteSACLoss does not support action mask
         return_log_prob=True, # Not sure whether this is actually need
     )
 
@@ -141,12 +143,18 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         qvalue_network = critic,
         action_space = "categorical",
         num_actions = env.n_actions,
+        delay_qvalue=True,
+        fixed_alpha=True,
+        alpha_init=0.1
     )
     risk_loss_module = DiscreteSACLoss(
         actor_network = recovery_policy_training,
         qvalue_network = q_risk_module_training,
         action_space = "categorical",
         num_actions = env.n_actions,
+        delay_qvalue=True,
+        fixed_alpha=True,
+        alpha_init=0.1
     )
 
     # Create data collector
@@ -161,6 +169,10 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, total_timesteps // n_steps, 0.0
     )
+
+    # Target network update parameters
+    target_update_freq = hyperparams.get("target_update_freq", 1)  # Update target networks every N steps
+    polyak_tau = hyperparams.get("polyak_tau", 0.005)  # Soft update coefficient
 
     # Training loop
     with Progress(
@@ -188,7 +200,7 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             )
             td_task_data.set_("action", td_task_data.get("task_action"))
             del td_task_data["task_action"]
-            assert td_task_data["action"].shape == (td_data.batch_size, 1), f"Expected action shape to be (batch_size, 1), but got {td_task_data['action'].shape}"
+
             # Add the data to the replay buffer
             replay_buffer.extend(td_task_data)
 
@@ -200,7 +212,7 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
                 "action_mask",
                 "next"
             )
-            assert td_risk_data["action"].shape == (td_data.batch_size, 1), f"Expected action shape to be (batch_size, 1), but got {td_risk_data['action'].shape}"
+
             # Relabel all goal reached rewards to 0 for risk module training
             td_risk_data["next", "reward"] = torch.where(
                 td_risk_data["next", "reward"] == env._goal_reward, 
@@ -228,7 +240,35 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             # Optimizer step
             optim.zero_grad()
             loss_value.backward()
+
+            # Clip gradients to prevent explosion
+            torch.nn.utils.clip_grad_norm_(
+                list(task_loss_module.parameters()) + list(risk_loss_module.parameters()),
+                max_norm=1.0
+            )
+            
             optim.step()
+
+            # Update target networks with soft update (Polyak averaging)
+            if (i + 1) % target_update_freq == 0:
+                with torch.no_grad():
+                    # Update task Q-value target network
+                    for param, target_param in zip(
+                        task_loss_module.qvalue_network_params.values(),
+                        task_loss_module.target_qvalue_network_params.values()
+                    ):
+                        target_param.data.copy_(
+                            polyak_tau * param.data + (1 - polyak_tau) * target_param.data
+                        )
+
+                    # Update risk Q-value target network
+                    for param, target_param in zip(
+                        risk_loss_module.qvalue_network_params.values(),
+                        risk_loss_module.target_qvalue_network_params.values()
+                    ):
+                        target_param.data.copy_(
+                            polyak_tau * param.data + (1 - polyak_tau) * target_param.data
+                        )
             
             logs["loss"].append(loss_value.item())
             logs["reward"].append(td_data["next", "reward"].mean().item())

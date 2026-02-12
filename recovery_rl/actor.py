@@ -32,18 +32,18 @@ class RecoveryActor(TensorDictModuleBase):
         td = self.recovery_policy(td)
 
         task_action = td.get("task_action")
-        task_action = task_action.view(-1, 1) # Ensure task_action has shape (batch_size, 1)
-        q_risk_values = td.get("q_risk_value").view(-1, self.q_risk_module.module.out_features) # Ensure q_risk_values has shape (batch_size, action_dim)
+        task_action = task_action
+        q_risk_values = td.get("q_risk_value") # Ensure q_risk_values has shape (batch_size, action_dim)
        
-        chosen_value = q_risk_values.gather(dim=1, index=task_action)
+        chosen_value = q_risk_values.gather(dim=0, index=task_action)
 
         # Decide whether to use recovery policy based on risk threshold
         use_recovery = (chosen_value < self.risk_threshold).float()
 
         # Get recovery policy action
-        recovery_action = td.get("recovery_action").view(-1, 1) # Ensure recovery_action has shape (batch_size, 1)
+        recovery_action = td.get("recovery_action")
         # Compute the final action by selecting between task and recovery actions based on the risk assessment
-        final_action = torch.where(use_recovery.bool(), recovery_action, task_action).squeeze(1)
+        final_action = torch.where(use_recovery.bool(), recovery_action, task_action)
         # Set the final action in the tensordict
         td.set("action", final_action)
         return td
