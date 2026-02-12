@@ -5,7 +5,7 @@ import argparse
 from tensordict.nn import TensorDictModule, TensorDictModuleBase
 
 from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
-from torchrl.modules.distributions import MaskedOneHotCategorical, OneHotCategorical
+from torchrl.modules.distributions import MaskedCategorical
 from torchrl.objectives import DiscreteSACLoss
 from torchrl.objectives.value import GAE
 from torchrl.collectors import SyncDataCollector
@@ -58,8 +58,16 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         module=task_policy_module,
         in_keys={"logits": "logits", "mask": "action_mask"},
         out_keys=["task_action"],
-        distribution_class=MaskedOneHotCategorical,
-        return_log_prob=False,  # Don't need log_prob during collection
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+    # Training view of the task policy (outputs "action" instead of "task_action")
+    task_policy_training = ProbabilisticActor(
+        module=task_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
     )
     # Critic for task policy value estimation
     critic = create_critic(hyperparams, env)
@@ -80,8 +88,16 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         module=recovery_policy_module,
         in_keys={"logits": "logits", "mask": "action_mask"},
         out_keys=["recovery_action"],
-        distribution_class=MaskedOneHotCategorical,
-        return_log_prob=False,  # Don't need log_prob during collection
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+    # recovery policy for training (outputs "action" instead of "recovery_action")
+    recovery_policy_training = ProbabilisticActor(
+        module=recovery_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
     )
 
     # Load the q_risk backbone and create the q_risk module
@@ -108,9 +124,6 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         risk_threshold=-0.35
     )
 
-    # Set recovery actor to eval mode for data collection
-    recovery_actor.eval()
-
     # Create replay buffer for training task policy and critic
     print("Creating replay buffer...")
     replay_buffer = create_replay_buffer(hyperparams)
@@ -120,68 +133,34 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     # assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
     # offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
     offline_replay_buffer = create_replay_buffer(hyperparams)
-
-    # Create training policy actors that use the SAME modules as the collector
-    # This ensures that when we update the modules during training, the collector uses updated policies
-    print("Creating training policy modules...")
-    # For training, use OneHotCategorical WITHOUT masking
-    # The masking is already enforced during data collection by the recovery actor
-    # Using OneHotCategorical avoids NaN issues in DiscreteSACLoss with masked distributions
-    task_policy_training = ProbabilisticActor(
-        module=task_policy_module,  # Use the same module instance
-        in_keys=["logits"],  # Only need logits, no mask for training
-        out_keys=["action"],
-        distribution_class=OneHotCategorical,  # Changed from MaskedOneHotCategorical
-        return_log_prob=True,  # Need log_prob for SAC loss computation
-    )
-    recovery_policy_training = ProbabilisticActor(
-        module=recovery_policy_module,  # Use the same module instance
-        in_keys=["logits"],  # Only need logits, no mask for training
-        out_keys=["action"],
-        distribution_class=OneHotCategorical,  # Changed from MaskedOneHotCategorical
-        return_log_prob=True,  # Need log_prob for SAC loss computation
-    )
-
-    # Create loss modules
+    
+    # Create loss module
     print("Creating loss modules...")
     task_loss_module = DiscreteSACLoss(
         actor_network = task_policy_training,
         qvalue_network = critic,
-        action_space = "one-hot",  # Changed from "categorical" to match MaskedOneHotCategorical
+        action_space = "categorical",
         num_actions = env.n_actions,
-        delay_qvalue = True,  # Use target networks for Q-values
-        fixed_alpha = True,  # Don't learn alpha to avoid numerical issues
-        alpha_init = 0.1,  # Start with smaller alpha to reduce entropy weight
     )
-
     risk_loss_module = DiscreteSACLoss(
         actor_network = recovery_policy_training,
         qvalue_network = q_risk_module_training,
-        action_space = "one-hot",  # Changed from "categorical" to match MaskedOneHotCategorical
+        action_space = "categorical",
         num_actions = env.n_actions,
-        delay_qvalue = True,  # Use target networks for Q-values
-        fixed_alpha = True,  # Don't learn alpha to avoid numerical issues
-        alpha_init = 0.1,  # Start with smaller alpha to reduce entropy weight
     )
 
-    # IMPORTANT: Create data collector AFTER loss modules
-    # The loss modules convert networks to functional parameters, so we need to
-    # create the collector after this conversion is complete
+    # Create data collector
     print("Creating data collector...")
     collector = create_data_collector(hyperparams, env, recovery_actor)
 
     # Create optimizer
     optim = torch.optim.Adam(
-        list(task_loss_module.parameters()) + list(risk_loss_module.parameters()),
+        list(task_loss_module.parameters()) + list(risk_loss_module.parameters()), 
         lr=lr
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, total_timesteps // n_steps, 0.0
     )
-
-    # Target network update parameters
-    target_update_freq = hyperparams.get("target_update_freq", 1)  # Update target networks every N steps
-    polyak_tau = hyperparams.get("polyak_tau", 0.005)  # Soft update coefficient
 
     # Training loop
     with Progress(
@@ -200,53 +179,36 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         for i, td_data in enumerate(collector):
             td_task_data = td_data.clone(recurse=True).detach()
             # Set the task action as the main action for task policy training
-            # task_action is one-hot from the policy, we need to store it for training
             td_task_data = td_task_data.select(
-                "observation",
+                "observation", 
                 "action",
-                "task_action",
-                "action_mask",
+                "task_action", 
+                "action_mask", 
                 "next"
             )
-            # For SAC training, we need one-hot actions, so use task_action (which is one-hot)
-            # Use .set() instead of .set_() because shapes are different (index vs one-hot)
-            task_action_onehot = td_task_data.get("task_action")
-            td_task_data = td_task_data.set("action", task_action_onehot)
-            td_task_data = td_task_data.exclude("task_action")
-
+            td_task_data.set_("action", td_task_data.get("task_action"))
+            del td_task_data["task_action"]
+            assert td_task_data["action"].shape == (td_data.batch_size, 1), f"Expected action shape to be (batch_size, 1), but got {td_task_data['action'].shape}"
             # Add the data to the replay buffer
             replay_buffer.extend(td_task_data)
 
             td_risk_data = td_data.clone(recurse=True).detach()
             # The final action is the main action for risk policy training
-            # We need the one-hot version for SAC training
             td_risk_data = td_risk_data.select(
-                "observation",
-                "action",
-                "action_onehot",  # Get the one-hot version
+                "observation", 
+                "action", 
                 "action_mask",
                 "next"
             )
-
-            # Replace action (index) with action_onehot for SAC training
-            final_action_onehot = td_risk_data.get("action_onehot")
-            td_risk_data = td_risk_data.set("action", final_action_onehot)
-            td_risk_data = td_risk_data.exclude("action_onehot")
-
+            assert td_risk_data["action"].shape == (td_data.batch_size, 1), f"Expected action shape to be (batch_size, 1), but got {td_risk_data['action'].shape}"
             # Relabel all goal reached rewards to 0 for risk module training
             td_risk_data["next", "reward"] = torch.where(
-                td_risk_data["next", "reward"] == env._goal_reward,
-                torch.tensor(0.0, dtype=torch.float32),
+                td_risk_data["next", "reward"] == env._goal_reward, 
+                torch.tensor(0.0, dtype=torch.float32), 
                 td_risk_data["next", "reward"]
             )
             # Add the data to the replay buffer for risk module training
             offline_replay_buffer.extend(td_risk_data)
-
-            # Skip training if we don't have enough samples in the buffer yet
-            if len(replay_buffer) < batch_size or len(offline_replay_buffer) < batch_size:
-                progress.update(task, advance=n_steps)
-                progress.refresh()
-                continue
 
             # Sample batches for task and risk training
             batch_task_data = replay_buffer.sample(batch_size)
@@ -266,48 +228,13 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             # Optimizer step
             optim.zero_grad()
             loss_value.backward()
-
-            # Clip gradients to prevent explosion
-            torch.nn.utils.clip_grad_norm_(
-                list(task_loss_module.parameters()) + list(risk_loss_module.parameters()),
-                max_norm=1.0
-            )
-
             optim.step()
-
-            # Update target networks with soft update (Polyak averaging)
-            if (i + 1) % target_update_freq == 0:
-                with torch.no_grad():
-                    # Update task Q-value target network
-                    for param, target_param in zip(
-                        task_loss_module.qvalue_network_params.values(),
-                        task_loss_module.target_qvalue_network_params.values()
-                    ):
-                        target_param.data.copy_(
-                            polyak_tau * param.data + (1 - polyak_tau) * target_param.data
-                        )
-
-                    # Update risk Q-value target network
-                    for param, target_param in zip(
-                        risk_loss_module.qvalue_network_params.values(),
-                        risk_loss_module.target_qvalue_network_params.values()
-                    ):
-                        target_param.data.copy_(
-                            polyak_tau * param.data + (1 - polyak_tau) * target_param.data
-                        )
-
-            # Check for NaN/Inf in loss and log
-            if torch.isnan(loss_value) or torch.isinf(loss_value):
-                print(f"\n⚠️  Warning: NaN/Inf detected in loss at step {i}")
-                print(f"Task loss components: {task_loss}")
-                print(f"Risk loss components: {risk_loss}")
-                raise ValueError("Training stopped due to NaN/Inf in loss")
-
+            
             logs["loss"].append(loss_value.item())
             logs["reward"].append(td_data["next", "reward"].mean().item())
             training_reward_str = f"📊 Average training reward={logs['reward'][-1]: 4.4f} (Init={logs['reward'][0]: 4.4f})"
             avg_loss_str = f" | 🧑‍🏫 Loss={logs['loss'][-1]: 4.4f}"
-            if (i+1) % 100== 0:
+            if i % 100== 0:
                 # Evaluation
                 eval_rewards = []
                 for _ in range(n_eval_episodes):

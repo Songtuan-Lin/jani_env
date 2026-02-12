@@ -19,14 +19,14 @@ from jani.torchrl_env import JANIEnv
 
 
 def create_actor_module(
-        hyperparams: Dict[str, Any],
-        env: JANIEnv,
+        hyperparams: Dict[str, Any], 
+        env: JANIEnv, 
     ) -> TensorDictModule:
     """Create the actor network for the policy."""
     n_actions = env.n_actions
     input_size = env.observation_spec["observation"].shape[0]
     hidden_sizes = hyperparams.get("actor_hidden_sizes", [64, 128])
-    dropout = hyperparams.get("actor_dropout", 0.0)
+    dropout = hyperparams.get("actor_dropout", 0.2)
     activation_fn = hyperparams.get("activation_fn", nn.Tanh)
     # Build the actor network
     actor_backbone = MLP(
@@ -36,14 +36,6 @@ def create_actor_module(
         dropout=dropout,
         activation_class=activation_fn,
     )
-
-    # Initialize weights properly to prevent NaN/Inf in logits
-    for module in actor_backbone.modules():
-        if isinstance(module, nn.Linear):
-            nn.init.orthogonal_(module.weight, gain=1.0)
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0.0)
-
     # Wrap in TensorDictModule
     actor_module = TensorDictModule(
         module=actor_backbone,
