@@ -26,26 +26,74 @@ class RecoveryActor(TensorDictModuleBase):
     def forward(self, td: TensorDict) -> TensorDict:
         # A new field task_action will be added to the tensordict of size (batch_size, 1)
         td = self.task_policy(td)
+        # print("Task action shape:", td.get("task_action").shape)
         # A new field q_risk will be added to the tensordict of size (batch_size, action_dim)
         td = self.q_risk_module(td)
+        # print("Q-risk value shape:", td.get("q_risk_value").shape)
         # A new field recovery_action will be added to the tensordict of size (batch_size, 1)
         td = self.recovery_policy(td)
 
-        task_action = td.get("task_action")
-        task_action = task_action.view(-1, 1) # Ensure task_action has shape (batch_size, 1)
-        q_risk_values = td.get("q_risk_value").view(-1, self.q_risk_module.module.out_features) # Ensure q_risk_values has shape (batch_size, action_dim)
-       
-        chosen_value = q_risk_values.gather(dim=1, index=task_action)
+        task_action = td.get("task_action")  # One-hot encoded action
+        action_mask = td.get("action_mask")  # Boolean mask
+
+        # Convert one-hot action to index for easier manipulation
+        task_action_idx = task_action.argmax(dim=-1, keepdim=True)
+
+        # Assert task action respects action mask
+        # Extract the mask value at the chosen action index
+        task_action_valid = action_mask.gather(dim=-1, index=task_action_idx)
+        if not torch.all(task_action_valid):
+            print("Action mask:", action_mask)
+            print("Task action (one-hot):", task_action)
+            print("Task action (index):", task_action_idx)
+            print("Observation:", td.get("observation"))
+            raise ValueError("Task action does not respect action mask")
+
+        # Get Q-risk values and extract the value for the chosen task action
+        q_risk_values = td.get("q_risk_value")  # Shape: (batch_size, num_actions) or (num_actions,)
+
+        # Handle both batched and unbatched cases
+        if q_risk_values.dim() == 1:
+            # Unbatched: q_risk_values is (num_actions,), task_action_idx is (1,)
+            chosen_value = q_risk_values.gather(dim=0, index=task_action_idx.squeeze(-1))
+        else:
+            # Batched: q_risk_values is (batch_size, num_actions)
+            chosen_value = q_risk_values.gather(dim=-1, index=task_action_idx).squeeze(-1)
 
         # Decide whether to use recovery policy based on risk threshold
-        use_recovery = (chosen_value < self.risk_threshold).float()
+        use_recovery = (chosen_value < self.risk_threshold)
 
-        # Get recovery policy action
-        recovery_action = td.get("recovery_action").view(-1, 1) # Ensure recovery_action has shape (batch_size, 1)
-        # Compute the final action by selecting between task and recovery actions based on the risk assessment
-        final_action = torch.where(use_recovery.bool(), recovery_action, task_action).squeeze(1)
-        # Set the final action in the tensordict
-        td.set("action", final_action)
+        # Get recovery policy action (also one-hot encoded)
+        recovery_action = td.get("recovery_action")
+        recovery_action_idx = recovery_action.argmax(dim=-1, keepdim=True)
+
+        # Assert recovery action respects action mask
+        recovery_action_valid = action_mask.gather(dim=-1, index=recovery_action_idx)
+        if not torch.all(recovery_action_valid):
+            print("Action mask:", action_mask)
+            print("Recovery action (one-hot):", recovery_action)
+            print("Recovery action (index):", recovery_action_idx)
+            raise ValueError("Recovery action does not respect action mask")
+
+        # Compute the final action by selecting between task and recovery actions
+        # Expand use_recovery to match the one-hot action shape
+        if use_recovery.dim() == 0:
+            # Scalar case
+            final_action_onehot = recovery_action if use_recovery.item() else task_action
+        else:
+            # Batch case: use_recovery is (batch_size,), actions are (batch_size, num_actions)
+            use_recovery_expanded = use_recovery.unsqueeze(-1).expand_as(task_action)
+            final_action_onehot = torch.where(use_recovery_expanded, recovery_action, task_action)
+
+        # Convert one-hot action to index for environment compatibility
+        # The environment expects integer actions, not one-hot vectors
+        final_action_idx = final_action_onehot.argmax(dim=-1)
+
+        # Set BOTH the one-hot action (for training) and the index action (for environment)
+        # The environment step will use "action" field
+        td.set("action", final_action_idx)
+        # Store the one-hot version separately for potential use in training
+        td.set("action_onehot", final_action_onehot)
         return td
 
 
@@ -53,10 +101,12 @@ class RecoveryActor(TensorDictModuleBase):
 if __name__ == "__main__":
     import argparse
 
-    from .utils import create_actor, create_critic, create_data_collector
+    from .utils import create_actor_module, create_data_collector
 
     from jani import TorchRLJANIEnv
-    from torchrl.modules import MLP, ValueOperator
+
+    from torchrl.modules import MLP, ValueOperator, ProbabilisticActor
+    from torchrl.modules.distributions import MaskedCategorical
 
     parser = argparse.ArgumentParser(description="Test RecoveryActor")
     parser.add_argument("--jani_model", type=str, required=True, help="Path to the JANI model file")
@@ -85,8 +135,24 @@ if __name__ == "__main__":
     }
     env = TorchRLJANIEnv(**file_args)
 
-    task_policy = create_actor(hyperparams={}, env=env, out_keys=["task_action"])
-    recovery_policy = create_actor(hyperparams={}, env=env, out_keys=["recovery_action"])
+    task_policy_module = create_actor_module({}, env)
+    # Task policy for collecting data
+    task_policy = ProbabilisticActor(
+        module=task_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["task_action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
+
+    recovery_policy_module = create_actor_module({}, env)
+    recovery_policy = ProbabilisticActor(
+        module=recovery_policy_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["recovery_action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True, # Not sure whether this is actually need
+    )
 
     n_actions = env.n_actions
     input_size = env.observation_spec["observation"].shape[0]
