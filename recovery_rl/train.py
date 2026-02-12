@@ -154,7 +154,7 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         num_actions = env.n_actions,
         delay_qvalue=True,
         fixed_alpha=True,
-        alpha_init=0.1
+        alpha_init=1e-12, # Disable entropy regularization to simulate normal average value learning for the risk module
     )
 
     # Create data collector
@@ -231,10 +231,8 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             loss_value = (
                 task_loss["loss_actor"]
                 + task_loss["loss_qvalue"]
-                + task_loss["loss_alpha"]
                 + risk_loss["loss_actor"]
-                + risk_loss["loss_alpha"]
-                + risk_loss["loss_qvalue"]
+                + risk_loss["loss_qvalue"] # Only q_value loss for the risk module
             )
 
             # Optimizer step
