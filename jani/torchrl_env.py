@@ -38,9 +38,8 @@ class JANIEnv(EnvBase):
                                   seed)
         self._goal_reward: float = goal_reward
         self._failure_reward: float = failure_reward
-        self._oracle: Optional[TarjanOracle] = None
-        if use_oracle:
-            self._oracle = TarjanOracle(self._engine)
+        self._oracle: Optional[TarjanOracle] = TarjanOracle(self._engine)
+        self._use_oracle = use_oracle
         self._unsafe_reward: Optional[float] = None
         if self._oracle is not None:
             self._unsafe_reward = unsafe_reward
@@ -135,7 +134,7 @@ class JANIEnv(EnvBase):
             raise RuntimeError("Environment must be reset before stepping.")
         action = td.get("action").item()
         next_state_vec = self._engine.step(action) # The current state should be automatically updated in the engine
-        if self._oracle is not None:
+        if self._use_oracle:
             assert self._unsafe_reward is not None
             is_next_state_safe = self._oracle.is_engine_state_safe()
         
@@ -152,14 +151,14 @@ class JANIEnv(EnvBase):
             reward = 0.0
             done = True
         else:
-            if self._oracle is not None and not is_next_state_safe:
+            if self._use_oracle and not is_next_state_safe:
                 reward = self._unsafe_reward
             else:
                 reward = 0.0
             done = False
 
         # Construct the next tensordict
-        if self._oracle is None:
+        if self._use_oracle is False:
             next_td = TensorDict({
                 "observation": torch.tensor(next_state_vec, dtype=torch.float32),
                 "observation_with_goal": torch.tensor(next_state_vec + self._engine.extract_goal_condition(), dtype=torch.float32),
@@ -184,6 +183,11 @@ class JANIEnv(EnvBase):
             }, batch_size=())
 
         return next_td
+
+    def is_state_action_safe(self, action: int) -> bool:
+        if self._oracle is None:
+            raise RuntimeError("Oracle is not enabled for this environment.")
+        return self._oracle.is_engine_state_action_safe(action)
     
     def _set_seed(self, seed: int | None) -> None:
         if seed is None:
