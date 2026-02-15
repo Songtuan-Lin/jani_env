@@ -3,6 +3,7 @@ Utility functions for training policies with stable-baselines3.
 """
 
 import numpy as np
+import torch
 
 from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
@@ -79,3 +80,15 @@ def create_safety_eval_file_args(file_args: Dict[str, Any], args: Dict[str, Any]
 def mask_fn(env) -> np.ndarray:
     """Action masking function for the environment."""
     return env.unwrapped.action_mask()
+
+def save_network(network: torch.nn.Module, network_paras: dict, save_path: Path, name: str):
+    """Save the network to the specified path."""
+    save_path.mkdir(parents=True, exist_ok=True)
+    actor_path = save_path / f"{name}.pth"
+    actor_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({
+        'input_dim': network_paras.get('input_dim'),
+        'output_dim': network_paras.get('output_dim'),
+        'hidden_dims': network_paras.get('hidden_dims'),
+        'state_dict': network.state_dict()
+    }, actor_path)

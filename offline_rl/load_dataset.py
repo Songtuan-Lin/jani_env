@@ -3,9 +3,16 @@ import numpy as np
 import pandas as pd
 
 from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
+from torchrl.data.replay_buffers import LazyTensorStorage
+from torchrl.data.replay_buffers.samplers import RandomSampler
+from torchrl.envs.transforms import ActionMask, TransformedEnv
+from torchrl.collectors import SyncDataCollector
 from tensordict import TensorDict
+from tensordict.nn import TensorDictModuleBase
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn, TimeElapsedColumn
+
+from jani import TorchRLJANIEnv as JANIEnv
 
 
 def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: bool = False, unsafe_reward: float = -0.01) -> TensorDict:
@@ -101,6 +108,44 @@ def create_replay_buffer(tensordict: TensorDict, num_slices: int = 32, batch_siz
     sampler = SliceSampler(num_slices=num_slices, end_key=("next", "done"), traj_key="episode")
     replay_buffer = TensorDictReplayBuffer(storage=storage, sampler=sampler, batch_size=batch_size)
     return replay_buffer
+
+
+def collect_trajectories(
+        env: JANIEnv, 
+        policy: TensorDictModuleBase | None, 
+        num_total_steps: int, 
+        n_steps: int) -> TensorDictReplayBuffer:
+    """Collect trajectories from the environment using the provided policy."""
+    # Transform the environment to accept action mask
+    transformed_env = TransformedEnv(env, ActionMask())
+
+    # Create the replay buffer
+    replay_buffer = TensorDictReplayBuffer(
+        storage=LazyTensorStorage(max_size=num_total_steps),
+        sampler=RandomSampler(),
+    )
+
+    # Collect rollouts
+    with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            transient=False,
+        ) as progress:
+        task = progress.add_task("Collecting trajectories", total=10000)
+        for _ in range(10000):
+            rollout = transformed_env.rollout(max_steps=n_steps)
+            replay_buffer.extend(rollout)
+            progress.update(task, advance=1)
+
+    return replay_buffer
+
+
 
 if __name__ == "__main__":
     import argparse

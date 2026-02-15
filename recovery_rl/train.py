@@ -76,15 +76,15 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
 
     # Load recovery policy and risk module from pretrained models
     print("Loading pretrained recovery policy and risk module...")
-    # rec_policy_path = args.get("recover_policy_path", "")
-    # assert rec_policy_path != "", "Path to pretrained recovery policy must be provided in args with key 'recover_policy_path'"
+    rec_policy_path = args.get("recover_policy_path", "")
+    assert rec_policy_path != "", "Path to pretrained recovery policy must be provided in args with key 'recover_policy_path'"
 
-    # q_risk_path = args.get("q_risk_path", "")
-    # assert q_risk_path != "", "Path to pretrained q_risk module must be provided in args with key 'q_risk_path'"
+    q_risk_path = args.get("q_risk_path", "")
+    assert q_risk_path != "", "Path to pretrained q_risk module must be provided in args with key 'q_risk_path'"
 
     # Load the recovery policy backbone and create the recovery policy module
-    # recovery_policy_module = load_recovery_policy_module(rec_policy_path)
-    recovery_policy_module = create_actor_module(hyperparams, env)
+    recovery_policy_module = load_recovery_policy_module(rec_policy_path)
+    # recovery_policy_module = create_actor_module(hyperparams, env)
     # recovery policy for collecting data
     recovery_policy = ProbabilisticActor(
         module=recovery_policy_module,
@@ -103,8 +103,8 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     )
 
     # Load the q_risk backbone and create the q_risk module
-    # q_risk_backbone = load_q_risk_backbone(q_risk_path)
-    q_risk_backbone = create_critic(hyperparams, env)
+    q_risk_backbone = load_q_risk_backbone(q_risk_path)
+    # q_risk_backbone = create_critic(hyperparams, env)
     # q_risk module for collecting data
     q_risk_module = ValueOperator(
         module=q_risk_backbone,
@@ -131,10 +131,10 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     replay_buffer = create_replay_buffer(hyperparams)
 
     # Load replay buffer for q_risk and recovery policy
-    # offline_buffer_path = args.get("offline_buffer_path", "")
-    # assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
-    # offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
-    offline_replay_buffer = create_replay_buffer(hyperparams)
+    offline_buffer_path = args.get("offline_buffer_path", "")
+    assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
+    offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
+    # offline_replay_buffer = create_replay_buffer(hyperparams)
     
     # Create loss module
     print("Creating loss modules...")
@@ -291,25 +291,69 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
 
 def main():
     parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")
-    parser.add_argument('--jani_model', type=str, required=True, help="Path to the JANI model file.")
-    parser.add_argument('--jani_property', type=str, default="", help="Path to the JANI property file.")
-    parser.add_argument('--start_states', type=str, default="", help="Path to the start states file.")
-    parser.add_argument('--objective', type=str, default="", help="Path to the objective file.")
-    parser.add_argument('--failure_property', type=str, default="", help="Path to the failure property file.")
-    parser.add_argument('--goal_reward', type=float, default=1.0, help="Reward for reaching the goal.")
-    parser.add_argument('--failure_reward', type=float, default=-1.0, help="Reward for reaching failure state.")
-    parser.add_argument('--use_oracle', action='store_true', help="Use Tarjan oracle for unsafe state detection.")
-    parser.add_argument('--unsafe_reward', type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
-    parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
-    parser.add_argument('--total_timesteps', type=int, default=1_000_000, help="Total timesteps for training.")
-    parser.add_argument('--n_envs', type=int, default=1, help="Number of parallel environments.")
-    parser.add_argument('--max_steps', type=int, default=1000, help="Max steps per episode.")
-    parser.add_argument('--log_dir', type=str, default="./logs", help="Directory for logging.")
-    parser.add_argument('--model_save_dir', type=str, default="./models", help="Directory to save models.")
-    parser.add_argument('--eval_freq', type=int, default=2048, help="Evaluation frequency in timesteps.")
-    parser.add_argument('--n_eval_episodes', type=int, default=50, help="Number of episodes for each evaluation.")
-    parser.add_argument('--verbose', type=int, default=1, help="Verbosity level.")
-    parser.add_argument('--device', type=str, default='auto', help="Device to use for training (cpu or cuda).")
+    parser.add_argument(
+        '--jani_model', 
+        type=str, required=True, help="Path to the JANI model file.")
+    parser.add_argument(
+        '--jani_property', 
+        type=str, required=True, help="Path to the JANI property file.")
+    parser.add_argument(
+        '--start_states', 
+        type=str, required=True, help="Path to the start states file.")
+    parser.add_argument(
+        '--recover_policy_path', 
+        type=str, required=True, help="Path to the pretrained recovery policy.")
+    parser.add_argument(
+        '--q_risk_path', 
+        type=str, required=True, help="Path to the pretrained q_risk module.")
+    parser.add_argument(
+        '--offline_buffer_path', 
+        type=str, required=True, help="Path to the offline replay buffer for recovery policy and q_risk module.")
+    parser.add_argument(
+        '--objective', 
+        type=str, default="", help="Path to the objective file.")
+    parser.add_argument(
+        '--failure_property', 
+        type=str, default="", help="Path to the failure property file.")
+    parser.add_argument(
+        '--goal_reward', 
+        type=float, default=1.0, help="Reward for reaching the goal.")
+    parser.add_argument(
+        '--failure_reward', 
+        type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument(
+        '--use_oracle', 
+        action='store_true', help="Use Tarjan oracle for unsafe state detection.")
+    parser.add_argument(
+        '--unsafe_reward', 
+        type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
+    parser.add_argument(
+        '--seed', 
+        type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument(
+        '--total_timesteps', 
+        type=int, default=1_000_000, help="Total timesteps for training.")
+    parser.add_argument(
+        '--max_steps', 
+        type=int, default=1000, help="Max steps per episode.")
+    parser.add_argument(
+        '--log_dir', 
+        type=str, default="./logs", help="Directory for logging.")
+    parser.add_argument(
+        '--model_save_dir', 
+        type=str, default="./models", help="Directory to save models.")
+    parser.add_argument(
+        '--eval_freq', 
+        type=int, default=2048, help="Evaluation frequency in timesteps.")
+    parser.add_argument(
+        '--n_eval_episodes', 
+        type=int, default=50, help="Number of episodes for each evaluation.")
+    parser.add_argument(
+        '--verbose', 
+        type=int, default=1, help="Verbosity level.")
+    parser.add_argument(
+        '--device', 
+        type=str, default='auto', help="Device to use for training (cpu or cuda).")
 
     args = parser.parse_args()
     # Create training environment

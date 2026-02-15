@@ -85,10 +85,36 @@ def create_critic(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule
     return critic_module
 
 
-def load_q_risk_backbone(path: str, device: torch.device) -> TensorDictModule:
+def _strip_state_dict_prefix(state_dict: dict) -> dict:
+    """
+    Strip wrapper prefixes from state_dict keys to load into bare MLP.
+
+    TorchRL's TensorDictModule and ProbabilisticActor add prefixes like:
+    - TensorDictModule wrapping MLP: 'module.0.weight' -> '0.weight'
+    - ProbabilisticActor wrapping TensorDictModule wrapping MLP:
+      'module.0.module.0.weight' -> '0.weight'
+
+    This function strips these prefixes to match the bare MLP's expected keys.
+    """
+    import re
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        new_key = key
+        # First strip 'module.' prefix (from TensorDictModule)
+        if new_key.startswith('module.'):
+            new_key = new_key[7:]
+        # Then check for 'N.module.' pattern (from ProbabilisticActor's inner TensorDictModule)
+        match = re.match(r'^(\d+)\.module\.(.+)$', new_key)
+        if match:
+            new_key = match.group(2)
+        new_state_dict[new_key] = value
+    return new_state_dict
+
+
+def load_q_risk_backbone(path: str) -> TensorDictModule:
     """Load a pre-trained Q-risk model from the specified path."""
     # Load the checkpoint
-    checkpoint = torch.load(path, map_location=device)
+    checkpoint = torch.load(path)
     input_dim= checkpoint['input_dim']
     output_dim= checkpoint['output_dim'] # this should equal to the number of actions
     hidden_dims= checkpoint['hidden_dims']
@@ -100,8 +126,9 @@ def load_q_risk_backbone(path: str, device: torch.device) -> TensorDictModule:
         num_cells=hidden_dims,
     )
 
-    # Load the state dict into the backbone model
-    q_risk_backbone.load_state_dict(checkpoint['model_state_dict'])
+    # Strip wrapper prefixes and load the state dict into the backbone model
+    cleaned_state_dict = _strip_state_dict_prefix(checkpoint['state_dict'])
+    q_risk_backbone.load_state_dict(cleaned_state_dict)
 
     # Wrap in TensorDictModule
     # q_risk_model = ValueOperator(
@@ -113,10 +140,10 @@ def load_q_risk_backbone(path: str, device: torch.device) -> TensorDictModule:
     return q_risk_backbone
 
 
-def load_recovery_policy_module(path: str, device: torch.device) -> TensorDictModule:
+def load_recovery_policy_module(path: str) -> TensorDictModule:
     """Load a pre-trained recovery actor policy from the specified path."""
     # Load the checkpoint
-    checkpoint = torch.load(path, map_location=device)
+    checkpoint = torch.load(path)
     input_dim= checkpoint['input_dim']
     output_dim= checkpoint['output_dim'] # this should equal to the number of actions
     hidden_dims= checkpoint['hidden_dims']
@@ -128,8 +155,9 @@ def load_recovery_policy_module(path: str, device: torch.device) -> TensorDictMo
         num_cells=hidden_dims,
     )
 
-    # Load the state dict into the backbone model
-    recovery_policy_backbone.load_state_dict(checkpoint['model_state_dict'])
+    # Strip wrapper prefixes and load the state dict into the backbone model
+    cleaned_state_dict = _strip_state_dict_prefix(checkpoint['state_dict'])
+    recovery_policy_backbone.load_state_dict(cleaned_state_dict)
 
     # Wrap in TensorDictModule
     recovery_policy_module = TensorDictModule(
@@ -184,9 +212,11 @@ def create_replay_buffer(hyperparams: dict[str, any]) -> ReplayBuffer:
 
 def load_replay_buffer(path: str, hyperparams: dict[str, any]) -> ReplayBuffer:
     """Load a replay buffer from the specified path."""
-    replay_buffer = create_replay_buffer(hyperparams)
+    replay_buffer = create_replay_buffer(
+        {"replay_buffer_size": 500000}
+    )
     # Load the checkpoint
-    replay_buffer.loads(path) # TODO: Check whether the parameters like buffer size need to be strictly matched
+    replay_buffer.loads(path) # TODO: The buffer size must align with the one used during saving, otherwise it will cause issues when loading. We can either enforce this in the code or implement a more flexible loading that can handle different buffer sizes.
     return replay_buffer
 
 

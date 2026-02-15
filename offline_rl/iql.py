@@ -4,37 +4,36 @@ import torch
 
 from torchrl.objectives import DiscreteIQLLoss, SoftUpdate
 from tensordict import TensorDict
+from tensordict.nn import TensorDictModule
+
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
+from pathlib import Path
 
-from jani import JaniEnv
+from jani import TorchRLJANIEnv as JaniEnv
 
-from .load_dataset import read_trajectories, create_replay_buffer
+from .load_dataset import collect_trajectories
 from .models import create_q_module, create_v_module, create_actor
 from .loss import DiscreteIQLLossValueLB, DiscreteIQLLossQValueLB
 
 
-def evaluate_on_env(env, actor, num_episodes=10, max_steps=2048):
+def evaluate_on_env(
+        env: JaniEnv, 
+        actor: TensorDictModule, 
+        num_episodes: int = 100, 
+        max_steps: int = 256):
     """Evaluate the trained policy on the environment."""
+    
     total_rewards = []
     for _ in range(num_episodes):
-        obs, info = env.reset()
-        done = False
-        episode_reward = 0
-        while (not done) and (max_steps > 0):
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
-            action_mask = torch.tensor(info.get("action_mask"), dtype=torch.bool).unsqueeze(0)
-            td = TensorDict({"observation": obs_tensor, "action_mask": action_mask}, batch_size=[1])
-            with torch.no_grad():
-                action = actor(td).get("action").squeeze().item()
-            obs, reward, done, _, info = env.step(action)
-            episode_reward += reward
-            max_steps -= 1
-        total_rewards.append(episode_reward)
+        rollout = env.rollout(max_steps=max_steps, policy=actor)
+        total_rewards.append(rollout["next", "reward"].sum().item())
     total_rewards = np.array(total_rewards)
     avg_reward = np.mean(total_rewards)
-    success_rate = np.mean(total_rewards == 1.0)
-    failure_rate = np.mean(total_rewards == -1.0)
-    return {"avg_reward": avg_reward, "success_rate": success_rate, "failure_rate": failure_rate}
+
+    return avg_reward
+    # success_rate = np.mean(total_rewards == 1.0)
+    # failure_rate = np.mean(total_rewards == -1.0)
+    # return {"avg_reward": avg_reward, "success_rate": success_rate, "failure_rate": failure_rate}
 
 
 def create_loss(args, actor_module, q_module, v_module):
@@ -162,28 +161,35 @@ def hyperparameter_tuning(rb, env, args, n_trials=20):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--trajectory_path", 
-        type=str, required=True, help="Path to the CSV file containing trajectories.")
-    parser.add_argument(
-        "--model_path", type=str, required=True, help="Path to the JANI model file.")
+        "--model_path", 
+        type=str, required=True, help="Path to the JANI model file.")
     parser.add_argument(
         "--property_path",
         type=str, required=True, help="Path to the JANI property file.")
     parser.add_argument(
-        "--num_epochs", 
-        type=int, default=100, help="Number of training epochs.")
+        "--start_states", 
+        type=str, required=True, help="Path to the start states file.")
+    parser.add_argument(
+        "--objective", 
+        type=str, default="", help="Path to the objective file.")
+    parser.add_argument(
+        "--failure_property", 
+        type=str, default="", help="Path to the failure property file.")
+    parser.add_argument(
+        "--goal_reward", 
+        type=float, default=1.0, help="Reward for reaching the goal.")
+    parser.add_argument(
+        "--failure_reward", 
+        type=float, default=-1.0, help="Reward for reaching failure state.")
+    parser.add_argument(
+        "--use_oracle", 
+        action="store_true", help="Use Tarjan oracle for unsafe state detection.")
+    parser.add_argument(
+        "--unsafe_reward", 
+        type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
     parser.add_argument(
         "--batch_size", 
         type=int, default=64, help="Batch size for training.")
-    parser.add_argument(
-        "--num_slices",
-        type=int, default=32, help="Number of slices for replay buffer.")
-    parser.add_argument(
-        "--penalize_unsafe", 
-        action="store_true", help="Whether to penalize unsafe states.")
-    parser.add_argument(
-        "--penalization", 
-        type=float, default=-0.01, help="Penalization reward for unsafe states.")
     parser.add_argument(
         "--use_lower_bound", 
         action="store_true", help="Whether to use lower bound in IQL loss.")
@@ -207,37 +213,52 @@ def main():
         "--n_trials",
         type=int, default=20, help="Number of trials for hyperparameter tuning.")
     parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility.")
+        "--seed", 
+        type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument(
+        "--model_save_dir", 
+        type=str, default=None, help="Directory to save trained models and results.")
     parser.add_argument(
         "--write_eval_results", 
         type=str, default=None, help="Path to write evaluation results.")
     args = parser.parse_args()
 
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    # torch.manual_seed(args.seed)
+    # np.random.seed(args.seed)
 
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(args.seed)
-        torch.cuda.manual_seed_all(args.seed)
+    # if torch.cuda.is_available():
+    #     torch.cuda.manual_seed(args.seed)
+    #     torch.cuda.manual_seed_all(args.seed)
     
     # Make PyTorch deterministic (may impact performance)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
 
     # Initialize environment
-    env = JaniEnv(model_file=args.model_path, property_file=args.property_path, seed=args.seed)
-    action_dim = env.action_space.n
+    file_args = {
+        'jani_model_path': args.model_path,
+        'jani_property_path': args.property_path,
+        'start_states_path': args.start_states,
+        'objective_path': args.objective,
+        'failure_property_path': args.failure_property,
+        'goal_reward': args.goal_reward,
+        'failure_reward': args.failure_reward,
+        'seed': args.seed,
+        'use_oracle': args.use_oracle,
+        'unsafe_reward': args.unsafe_reward,
+    }
+    env = JaniEnv(**file_args)
+    action_dim = env.n_actions
 
-    # Load dataset and create replay buffer
-    if args.penalize_unsafe:
-        td = read_trajectories(args.trajectory_path, action_dim=action_dim, penalize_unsafe=True, unsafe_reward=args.penalization)
-    else:
-        td = read_trajectories(args.trajectory_path, action_dim=action_dim)
-    replay_buffer = create_replay_buffer(td, num_slices=args.num_slices, batch_size=args.batch_size)
+    # Collect trajectories and create replay buffer
+    print("Collecting trajectories...")
+    replay_buffer = collect_trajectories(
+        env, policy=None, 
+        num_total_steps=500000, 
+        n_steps=256)
 
     # Extract state and action dimensions
-    state_dim = td["observation"].shape[-1]
-    assert state_dim == env.observation_space.shape[0], "State dimension mismatch between dataset and environment."
+    state_dim = env.observation_spec["observation"].shape[0]
 
     best_params = {
         "lr": 1e-3,
@@ -283,7 +304,7 @@ def main():
     else:
         iql_loss = DiscreteIQLLoss(**kwargs)
 
-    actor, _, _ = train(
+    actor, q_net, v_net = train(
         args.total_timesteps, 
         best_params["steps_per_epoch"], 
         best_params["batch_size"], 
@@ -292,12 +313,45 @@ def main():
         iql_loss,
         print_info=True
     )
-    results = evaluate_on_env(env, actor, num_episodes=100)
-    if args.write_eval_results is not None:
-        import json
-        with open(args.write_eval_results, "w") as f:
-            json.dump(results, f, indent=4)
-    print(f"Final success rate over 100 episodes: {results['success_rate']:.2f}, avg reward: {results['avg_reward']:.2f}, failure rate: {results['failure_rate']:.2f}")
+    avg_reward = evaluate_on_env(env, actor, num_episodes=100)
+    print(f"Final average reward over 100 episodes: {avg_reward:.2f}")
+    # if args.write_eval_results is not None:
+    #     import json
+    #     with open(args.write_eval_results, "w") as f:
+    #         json.dump(results, f, indent=4)
+    # print(f"Final success rate over 100 episodes: {results['success_rate']:.2f}, avg reward: {results['avg_reward']:.2f}, failure rate: {results['failure_rate']:.2f}")
+
+    # Save the trained models and the replay_buffer
+    if args.model_save_dir is not None:
+        from utils import save_network
+
+        save_dir = Path(args.model_save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save the actor
+        save_network(actor, {
+            "input_dim": state_dim,
+            "output_dim": action_dim,
+            "hidden_dims": hidden_dims_actor_module
+        }, save_dir, "iql_actor")
+
+        # Save the Q-network
+        save_network(q_net, {
+            "input_dim": state_dim,
+            "output_dim": action_dim,
+            "hidden_dims": hidden_dims_q_module
+        }, save_dir, "iql_q_net")
+
+        # Save the V-network
+        save_network(v_net, {
+            "input_dim": state_dim,
+            "output_dim": 1,
+            "hidden_dims": hidden_dims_v_module
+        }, save_dir, "iql_v_net")
+
+        # Save the replay buffer
+        rb_path = save_dir / "replay_buffer.pt"
+        replay_buffer.dumps(rb_path)
 
 if __name__ == "__main__":
     main()
