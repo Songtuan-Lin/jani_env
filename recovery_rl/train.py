@@ -34,7 +34,9 @@ from .utils import (
     create_actor_module, 
     create_critic, 
     create_data_collector, 
-    create_replay_buffer,
+    create_rollout_buffer,
+    create_advantage_module,
+    create_loss_module,
     load_recovery_policy_module,
     load_q_risk_backbone,
     load_replay_buffer,
@@ -51,6 +53,7 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     batch_size = hyperparams.get("batch_size", 64)
     lr = hyperparams.get("learning_rate", 3e-4)
     n_eval_episodes = hyperparams.get("n_eval_episodes", 100)
+    n_epoches = hyperparams.get("n_epoches", 5)
 
     # Create actor and critic (i.e., q_value) networks
     print("Creating task policy and critic networks...")
@@ -66,9 +69,9 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     # Training view of the task policy (outputs "action" instead of "task_action")
     task_policy_training = ProbabilisticActor(
         module=task_policy_module,
-        in_keys={"logits": "logits"},
+        in_keys={"logits": "logits", "mask": "action_mask"},
         out_keys=["action"],
-        distribution_class=Categorical,
+        distribution_class=MaskedCategorical,
         return_log_prob=True, # Not sure whether this is actually need
     )
     # Critic for task policy value estimation
@@ -127,10 +130,11 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     )
 
     # Create replay buffer for training task policy and critic
-    print("Creating replay buffer...")
-    replay_buffer = create_replay_buffer(hyperparams)
+    print("Creating rollout buffer...")
+    rollout_buffer = create_rollout_buffer(hyperparams)
 
     # Load replay buffer for q_risk and recovery policy
+    print("Loading offline replay buffer for recovery policy and q_risk module...")
     offline_buffer_path = args.get("offline_buffer_path", "")
     assert offline_buffer_path != "", "Path to offline replay buffer must be provided in args with key 'offline_buffer_path'"
     offline_replay_buffer = load_replay_buffer(offline_buffer_path, hyperparams)
@@ -138,15 +142,13 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     
     # Create loss module
     print("Creating loss modules...")
-    task_loss_module = DiscreteSACLoss(
-        actor_network = task_policy_training,
-        qvalue_network = critic,
-        action_space = "categorical",
-        num_actions = env.n_actions,
-        delay_qvalue=True,
-        fixed_alpha=True,
-        alpha_init=0.1
-    )
+    # Task policy loss module (PPO)
+    ppo_loss_module = create_loss_module(
+        hyperparams, 
+        task_policy_training, 
+        critic)
+    
+    # Risk module loss (Discrete SAC loss with only Q-value loss)
     risk_loss_module = DiscreteSACLoss(
         actor_network = recovery_policy_training,
         qvalue_network = q_risk_module_training,
@@ -157,22 +159,22 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         alpha_init=1e-12, # Disable entropy regularization to simulate normal average value learning for the risk module
     )
 
+    # Create advantage module
+    print("Creating advantage module...")
+    advantage_module = create_advantage_module(hyperparams, critic)
+
     # Create data collector
     print("Creating data collector...")
     collector = create_data_collector(hyperparams, env, recovery_actor)
 
     # Create optimizer
     optim = torch.optim.Adam(
-        list(task_loss_module.parameters()) + list(risk_loss_module.parameters()), 
+        list(ppo_loss_module.parameters()) + list(risk_loss_module.parameters()), 
         lr=lr
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optim, total_timesteps // n_steps, 0.0
     )
-
-    # Target network update parameters
-    target_update_freq = hyperparams.get("target_update_freq", 1)  # Update target networks every N steps
-    polyak_tau = hyperparams.get("polyak_tau", 0.005)  # Soft update coefficient
 
     # Training loop
     with Progress(
@@ -194,15 +196,23 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             td_task_data = td_task_data.select(
                 "observation", 
                 "action",
-                "task_action", 
+                "task_action",
+                "task_action_log_prob", 
                 "action_mask", 
                 "next"
             )
             td_task_data.set_("action", td_task_data.get("task_action"))
+            # Rename "task_action_log_prob" to "action_log_prob" for PPO loss module
+            td_task_data.rename_key_("task_action_log_prob", "action_log_prob")
             del td_task_data["task_action"]
 
+            # Compute advantages for PPO loss
+            with torch.no_grad():
+                advantage_module(td_task_data)
+
             # Add the data to the replay buffer
-            replay_buffer.extend(td_task_data)
+            rollout_buffer.empty() # Clear the rollout buffer before adding new data
+            rollout_buffer.extend(td_task_data)
 
             td_risk_data = td_data.clone(recurse=True).detach()
             # The final action is the main action for risk policy training
@@ -222,51 +232,33 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             # Add the data to the replay buffer for risk module training
             offline_replay_buffer.extend(td_risk_data)
 
-            # Sample batches for task and risk training
-            batch_task_data = replay_buffer.sample(batch_size)
-            batch_risk_data = offline_replay_buffer.sample(batch_size)
+            for _ in range(n_epoches):
+                # Sample batches for task and risk training
+                for _ in range(n_steps // batch_size):
+                    batch_task_data = rollout_buffer.sample(batch_size)
+                    batch_risk_data = offline_replay_buffer.sample(batch_size)
 
-            task_loss = task_loss_module(batch_task_data)
-            risk_loss = risk_loss_module(batch_risk_data)
-            loss_value = (
-                task_loss["loss_actor"]
-                + task_loss["loss_qvalue"]
-                + risk_loss["loss_actor"]
-                + risk_loss["loss_qvalue"] # Only q_value loss for the risk module
-            )
+                    task_loss = ppo_loss_module(batch_task_data)
+                    risk_loss = risk_loss_module(batch_risk_data)
+                    loss_value = (
+                        task_loss["loss_objective"]
+                        + task_loss["loss_critic"]
+                        + task_loss["loss_entropy"]
+                        + risk_loss["loss_actor"]
+                        + risk_loss["loss_qvalue"] # Only q_value loss for the risk module
+                    )
 
-            # Optimizer step
-            optim.zero_grad()
-            loss_value.backward()
+                    # Optimizer step
+                    optim.zero_grad()
+                    loss_value.backward()
 
-            # Clip gradients to prevent explosion
-            torch.nn.utils.clip_grad_norm_(
-                list(task_loss_module.parameters()) + list(risk_loss_module.parameters()),
-                max_norm=1.0
-            )
-            
-            optim.step()
-
-            # Update target networks with soft update (Polyak averaging)
-            if (i + 1) % target_update_freq == 0:
-                with torch.no_grad():
-                    # Update task Q-value target network
-                    for param, target_param in zip(
-                        task_loss_module.qvalue_network_params.values(),
-                        task_loss_module.target_qvalue_network_params.values()
-                    ):
-                        target_param.data.copy_(
-                            polyak_tau * param.data + (1 - polyak_tau) * target_param.data
-                        )
-
-                    # Update risk Q-value target network
-                    for param, target_param in zip(
-                        risk_loss_module.qvalue_network_params.values(),
-                        risk_loss_module.target_qvalue_network_params.values()
-                    ):
-                        target_param.data.copy_(
-                            polyak_tau * param.data + (1 - polyak_tau) * target_param.data
-                        )
+                    # Clip gradients to prevent explosion
+                    torch.nn.utils.clip_grad_norm_(
+                        list(ppo_loss_module.parameters()) + list(risk_loss_module.parameters()),
+                        max_norm=1.0
+                    )
+                    
+                    optim.step()
             
             logs["loss"].append(loss_value.item())
             logs["reward"].append(td_data["next", "reward"].mean().item())
@@ -380,6 +372,13 @@ def main():
         'n_steps': 256,
         'batch_size': 64,
         'learning_rate': 3e-4,
+        'gae_lambda': 0.95,
+        'gamma': 0.99,
+        'clip_epsilon': 0.2,
+        'ent_coef': 1e-4,
+        'critic_coeff': 1.0,
+        'max_grad_norm': 0.5,
+        'n_epochs': 10,
         'device': args.device,
     }
     print(f"Training with hyperparameters: {hyperparams}")

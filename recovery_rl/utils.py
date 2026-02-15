@@ -71,7 +71,7 @@ def create_critic(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule
     # Build the critic network
     critic_backbone = MLP(
         in_features=input_size,
-        out_features=n_actions,
+        out_features=1,
         num_cells=hidden_sizes,
         dropout=dropout,
         activation_class=activation_fn,
@@ -80,7 +80,6 @@ def create_critic(hyperparams: Dict[str, Any], env: JANIEnv) -> TensorDictModule
     critic_module = ValueOperator(
         module=critic_backbone,
         in_keys=["observation"],
-        out_keys=["action_value"],
     )
     return critic_module
 
@@ -209,6 +208,22 @@ def create_replay_buffer(hyperparams: dict[str, any]) -> ReplayBuffer:
     )
     return replay_buffer
 
+def create_rollout_buffer(hyperparams: dict[str, any]) -> ReplayBuffer:
+    """Create a rollout buffer for PPO training."""
+    buffer_size = hyperparams.get("n_steps", 256)
+    # Create the storage
+    storage = LazyTensorStorage(
+        max_size=buffer_size,
+        device=hyperparams.get("device", "cpu"),
+    )
+    # Create the sampler
+    sampler = SamplerWithoutReplacement()
+    # Create the replay buffer
+    rollout_buffer = ReplayBuffer(
+        storage=storage,
+        sampler=sampler,
+    )
+    return rollout_buffer
 
 def load_replay_buffer(path: str, hyperparams: dict[str, any]) -> ReplayBuffer:
     """Load a replay buffer from the specified path."""
