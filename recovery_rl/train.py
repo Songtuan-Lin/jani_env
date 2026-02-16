@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import argparse
 
+from pathlib import Path
 from torch.distributions import Categorical
-
 from torchrl.modules import ProbabilisticActor, ValueOperator
 from torchrl.modules.distributions import MaskedCategorical
 from torchrl.objectives import DiscreteSACLoss
@@ -48,6 +48,22 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
     lr = hyperparams.get("learning_rate", 3e-4)
     n_eval_episodes = hyperparams.get("n_eval_episodes", 100)
     n_epoches = hyperparams.get("n_epoches", 5)
+
+    log_dir = args.get("log_dir", "")
+    log_safety_results = False
+    if log_dir != "":
+        log_dir = Path(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file_path = log_dir / "safety_evaluation_results.txt"
+        log_file_path.open("w").close() # Create an empty log file
+        log_safety_results = True
+
+    model_save_dir = args.get("model_save_dir", "")
+    save_models = False
+    if model_save_dir != "":
+        model_save_dir = Path(model_save_dir)
+        model_save_dir.mkdir(parents=True, exist_ok=True)
+        save_models = True
 
     # Create actor and critic (i.e., q_value) networks
     print("Creating task policy and critic networks...")
@@ -260,7 +276,61 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             with torch.no_grad():
                 safety_results = safety_evaluation(eval_env, recovery_actor)
             # TODO: log safety evaluation results and sync with wandb
-            print(f"Percentage of safe runs: {safety_results['safety_rate']}; Average reward : {safety_results['average_reward']}")
+            if log_safety_results:
+                with log_file_path.open("a") as f:
+                    f.write(f"{safety_results['safety_rate'] * 100:.2f}, {safety_results['average_reward']:.4f}\n")
+            
+            # Save model
+            if save_models:
+                # Set up directory for saving the model checkpoint
+                model_save_path = model_save_dir / f"checkpoint_{i}"
+                model_save_path.mkdir(parents=True, exist_ok=True)
+
+                # Save task policy
+                task_policy_path = model_save_path / "task_policy.pth"
+                task_policy_paras = {
+                    "input_dim": env.observation_spec["observation"].shape[0],
+                    "output_dim": env.n_actions,
+                    "hidden_dims": hyperparams.get("actor_hidden_sizes", [64, 128]),
+                    "dropout": hyperparams.get("actor_dropout", 0.2),
+                    "activation_fn": hyperparams.get("activation_fn", nn.Tanh),
+                    "state_dict": task_policy.state_dict()
+                }
+                torch.save(task_policy_paras, task_policy_path)
+
+                # Save critic
+                critic_path = model_save_path / "critic.pth"
+                critic_paras = {
+                    "input_dim": env.observation_spec["observation"].shape[0],
+                    "hidden_dims": hyperparams.get("critic_hidden_sizes", [64, 128]),
+                    "dropout": hyperparams.get("critic_dropout", 0.2),
+                    "activation_fn": hyperparams.get("activation_fn", nn.Tanh),
+                    "state_dict": critic.state_dict()
+                }
+                torch.save(critic_paras, critic_path)
+
+                # Save recovery policy
+                recovery_policy_path = model_save_path / "recovery_policy.pth"
+                recovery_policy_init = torch.load(rec_policy_path)
+                recovery_policy_paras = {
+                    "input_dim": env.observation_spec["observation"].shape[0],
+                    "output_dim": env.n_actions,
+                    "hidden_dims": recovery_policy_init["hidden_dims"],
+                    "state_dict": recovery_policy.state_dict()
+                }
+                torch.save(recovery_policy_paras, recovery_policy_path)
+
+                # Save q_risk module
+                q_risk_path = model_save_path / "q_risk_module.pth"
+                q_risk_init = torch.load(q_risk_path)
+                q_risk_paras = {
+                    "input_dim": env.observation_spec["observation"].shape[0],
+                    "output_dim": env.n_actions,
+                    "hidden_dims": q_risk_init["hidden_dims"],
+                }
+                torch.save(q_risk_paras, q_risk_path)
+
+            progress.console.print(f"Percentage of safe runs: {safety_results['safety_rate']}; Average reward : {safety_results['average_reward']}")
 
 
             if i % 100== 0:
@@ -332,10 +402,10 @@ def main():
         type=int, default=1000, help="Max steps per episode.")
     parser.add_argument(
         '--log_dir', 
-        type=str, default="./logs", help="Directory for logging.")
+        type=str, default="", help="Directory for logging.")
     parser.add_argument(
         '--model_save_dir', 
-        type=str, default="./models", help="Directory to save models.")
+        type=str, default="", help="Directory to save models.")
     parser.add_argument(
         '--eval_freq', 
         type=int, default=2048, help="Evaluation frequency in timesteps.")

@@ -52,22 +52,6 @@ def create_actor_module(
         in_keys=["observation"],
         out_keys=["logits"],
     )
-    # # Create the probabilistic actor with masked categorical distribution
-    # actor = ProbabilisticActor(
-    #     module=actor_module,
-    #     in_keys={"logits": "logits", "mask": "action_mask"},
-    #     out_keys=["task_action"],
-    #     distribution_class=MaskedCategorical,
-    #     return_log_prob=True, # Not sure whether this is actually need
-    # )
-
-    # actor_training = ProbabilisticActor(
-    #     module=actor_module,
-    #     in_keys={"logits": "logits", "mask": "action_mask"},
-    #     out_keys=["action"],
-    #     distribution_class=MaskedCategorical,
-    #     return_log_prob=True, # Not sure whether this is actually need
-    # )
     return actor_module
 
 
@@ -138,13 +122,6 @@ def load_q_risk_backbone(path: str) -> TensorDictModule:
     # Strip wrapper prefixes and load the state dict into the backbone model
     cleaned_state_dict = _strip_state_dict_prefix(checkpoint['state_dict'])
     q_risk_backbone.load_state_dict(cleaned_state_dict)
-
-    # Wrap in TensorDictModule
-    # q_risk_model = ValueOperator(
-    #     module=q_risk_backbone,
-    #     in_keys=["observation"],
-    #     out_keys=["q_risk_value"],
-    # )
     
     return q_risk_backbone
 
@@ -174,15 +151,6 @@ def load_recovery_policy_module(path: str) -> TensorDictModule:
         in_keys=["observation"],
         out_keys=["logits"],
     )
-
-    # Create the probabilistic actor with masked categorical distribution
-    # recovery_policy = ProbabilisticActor(
-    #     module=recovery_policy_module,
-    #     in_keys={"logits": "logits", "mask": "action_mask"},
-    #     out_keys=["recovery_action"],
-    #     distribution_class=MaskedCategorical,
-    #     return_log_prob=True, # Not sure whether this is actually need
-    # )
     
     return recovery_policy_module
 
