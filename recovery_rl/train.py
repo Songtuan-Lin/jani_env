@@ -146,7 +146,6 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
         qvalue_network = q_risk_module_training,
         action_space = "categorical",
         num_actions = env.n_actions,
-        delay_qvalue=True,
         fixed_alpha=True,
         alpha_init=1e-12, # Disable entropy regularization to simulate normal average value learning for the risk module
     )
@@ -261,15 +260,17 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             with torch.no_grad():
                 safety_results = safety_evaluation(eval_env, recovery_actor)
             # TODO: log safety evaluation results and sync with wandb
+            print(f"Percentage of safe runs: {safety_results['safety_rate']}; Average reward : {safety_results['average_reward']}")
+
 
             if i % 100== 0:
                 # Evaluation
                 eval_rewards = []
                 for _ in range(n_eval_episodes):
-                    with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-                        eval_rollout = eval_env.rollout(max_steps=1000, policy=recovery_actor)
-                        eval_reward = eval_rollout["next", "reward"].sum().item()
-                        eval_rewards.append(eval_reward)
+                    # with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
+                    eval_rollout = eval_env.rollout(max_steps=1000, policy=recovery_actor)
+                    eval_reward = eval_rollout["next", "reward"].sum().item()
+                    eval_rewards.append(eval_reward)
                 mean_eval_reward = sum(eval_rewards) / n_eval_episodes
                 eval_reward_str = f" | 🧪 Eval reward={mean_eval_reward: 4.4f}"
                 progress.console.print(f"{training_reward_str}{avg_loss_str}{eval_reward_str}")
@@ -365,7 +366,9 @@ def main():
     env = JANIEnv(**file_args)
 
     # Create evaluation environment
-    eval_file_args = create_safety_eval_file_args(file_args, use_oracle=False)
+    eval_file_args = file_args.copy()
+    eval_file_args["start_states_path"] = args.eval_start_states
+    eval_file_args["use_oracle"] = False  # Disable oracle for evaluation
     eval_env = JANIEnv(**eval_file_args)
 
     # Define hyperparameters

@@ -291,8 +291,8 @@ def safety_evaluation(env: JANIEnv, actor: TensorDictModule, max_steps: int = 25
     ) as progress:
         task = progress.add_task("Evaluating safety...", total=num_init_states)
 
-        episode_reward = 0.0
         for idx in range(num_init_states):
+            episode_reward = 0.0
             td_reset = TensorDict({"idx": torch.tensor(idx)}, batch_size=())
             obs_td = env.reset(td_reset)
             done = False
@@ -315,9 +315,9 @@ def safety_evaluation(env: JANIEnv, actor: TensorDictModule, max_steps: int = 25
 
                 # Step the environment
                 next_td = env.step(td_action)
-                done = next_td.get("done").item()
-                episode_reward += next_td.get("reward").item()
-                obs_td = next_td
+                done = next_td.get(("next", "done")).item()
+                episode_reward += next_td.get(("next", "reward")).item()
+                obs_td = next_td.get("next")
                 step_count += 1
             assert episode_reward == 0 or episode_reward == env._goal_reward or episode_reward == env._failure_reward, "Unexpected episode reward: {}".format(episode_reward)
             rewards.append(episode_reward)
