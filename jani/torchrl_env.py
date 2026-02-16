@@ -41,7 +41,7 @@ class JANIEnv(EnvBase):
         self._oracle: Optional[TarjanOracle] = TarjanOracle(self._engine)
         self._use_oracle = use_oracle
         self._unsafe_reward: Optional[float] = None
-        if self._oracle is not None:
+        if self._use_oracle:
             self._unsafe_reward = unsafe_reward
         
         self.n_actions = self._engine.get_num_actions()
@@ -115,7 +115,11 @@ class JANIEnv(EnvBase):
         return torch.tensor(condition_values, dtype=torch.float32)
 
     def _reset(self, td: TensorDictBase) -> TensorDictBase:
-        state_vec = self._engine.reset()
+        if td is not None and "idx" in td:
+            idx = td.get("idx").item()
+            state_vec = self._engine.reset_with_idx(idx)
+        else:
+            state_vec = self._engine.reset()
         self._reseted = True
         assert not self._engine.reach_goal_current(), "Initial state should not be a goal state."
         obs = {
@@ -183,6 +187,9 @@ class JANIEnv(EnvBase):
             }, batch_size=())
 
         return next_td
+    
+    def get_init_state_pool_size(self) -> int:
+        return self._engine.get_init_state_pool_size()
 
     def is_state_action_safe(self, action: int) -> bool:
         if self._oracle is None:

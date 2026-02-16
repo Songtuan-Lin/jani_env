@@ -2,19 +2,12 @@ import torch
 import torch.nn as nn
 import argparse
 
-from tensordict.nn import TensorDictModule, TensorDictModuleBase
-
 from torch.distributions import Categorical
 
-from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
+from torchrl.modules import ProbabilisticActor, ValueOperator
 from torchrl.modules.distributions import MaskedCategorical
 from torchrl.objectives import DiscreteSACLoss
-from torchrl.objectives.value import GAE
-from torchrl.collectors import SyncDataCollector
-from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, Sampler
-from torchrl.data.replay_buffers.storages import LazyTensorStorage
-from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
+from torchrl.envs.utils import ExplorationType, set_exploration_type
 
 from typing import Dict, Any
 from collections import defaultdict
@@ -28,7 +21,7 @@ from rich.progress import (
 )
 
 from jani.torchrl_env import JANIEnv
-from utils import create_eval_file_args
+from utils import create_safety_eval_file_args
 
 from .utils import (
     create_actor_module, 
@@ -40,6 +33,7 @@ from .utils import (
     load_recovery_policy_module,
     load_q_risk_backbone,
     load_replay_buffer,
+    safety_evaluation
 )
 from .actor import RecoveryActor
 
@@ -87,7 +81,6 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
 
     # Load the recovery policy backbone and create the recovery policy module
     recovery_policy_module = load_recovery_policy_module(rec_policy_path)
-    # recovery_policy_module = create_actor_module(hyperparams, env)
     # recovery policy for collecting data
     recovery_policy = ProbabilisticActor(
         module=recovery_policy_module,
@@ -107,7 +100,6 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
 
     # Load the q_risk backbone and create the q_risk module
     q_risk_backbone = load_q_risk_backbone(q_risk_path)
-    # q_risk_backbone = create_critic(hyperparams, env)
     # q_risk module for collecting data
     q_risk_module = ValueOperator(
         module=q_risk_backbone,
@@ -264,6 +256,12 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             logs["reward"].append(td_data["next", "reward"].mean().item())
             training_reward_str = f"📊 Average training reward={logs['reward'][-1]: 4.4f} (Init={logs['reward'][0]: 4.4f})"
             avg_loss_str = f" | 🧑‍🏫 Loss={logs['loss'][-1]: 4.4f}"
+            
+            # Evaluate policy's safety
+            with torch.no_grad():
+                safety_results = safety_evaluation(eval_env, recovery_actor)
+            # TODO: log safety evaluation results and sync with wandb
+
             if i % 100== 0:
                 # Evaluation
                 eval_rewards = []
@@ -292,6 +290,9 @@ def main():
     parser.add_argument(
         '--start_states', 
         type=str, required=True, help="Path to the start states file.")
+    parser.add_argument(
+        '--eval_start_states',
+        type=str, default="", help="Path to the start states file for evaluation environment.")
     parser.add_argument(
         '--recover_policy_path', 
         type=str, required=True, help="Path to the pretrained recovery policy.")
@@ -362,8 +363,9 @@ def main():
         'unsafe_reward': args.unsafe_reward,
     }
     env = JANIEnv(**file_args)
+
     # Create evaluation environment
-    eval_file_args = create_eval_file_args(file_args)
+    eval_file_args = create_safety_eval_file_args(file_args, use_oracle=False)
     eval_env = JANIEnv(**eval_file_args)
 
     # Define hyperparameters

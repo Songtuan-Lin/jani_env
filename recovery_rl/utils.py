@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictModuleBase
 
 from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
@@ -12,6 +13,15 @@ from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, RandomSampler
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
+
+from rich.progress import (
+    Progress, 
+    SpinnerColumn, 
+    TextColumn, 
+    BarColumn, 
+    TimeRemainingColumn, 
+    TimeElapsedColumn
+)
 
 from typing import Dict, Any
 
@@ -264,3 +274,60 @@ def create_loss_module(hyperparams: Dict[str, Any], actor_module: TensorDictModu
         loss_critic_type="smooth_l1",
     )
     return loss_module
+
+
+def safety_evaluation(env: JANIEnv, actor: TensorDictModule, max_steps: int = 256) -> Dict[str, float]:
+    """Evaluate the safety of the current policy."""
+    num_init_states = env.get_init_state_pool_size()
+    
+    num_unsafe = 0
+    rewards = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TimeRemainingColumn(),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task("Evaluating safety...", total=num_init_states)
+
+        episode_reward = 0.0
+        for idx in range(num_init_states):
+            td_reset = TensorDict({"idx": torch.tensor(idx)}, batch_size=())
+            obs_td = env.reset(td_reset)
+            done = False
+            keep_using_oracle = True
+            step_count = 0
+            while not done and step_count < max_steps:
+                assert "observation" in obs_td, "Observation key missing in reset output"
+                # Action selection using the actor
+                td_action = actor(obs_td)
+                assert "action" in td_action, "Action key missing in actor output"
+                action = td_action.get("action").item()
+
+                # Check whether the action is a safe action under the current state
+                if keep_using_oracle:
+                    is_safe = env.is_state_action_safe(action)
+                    if not is_safe:
+                        num_unsafe += 1
+                        # If an unsafe action is found, no need to keep using the oracle
+                        keep_using_oracle = False
+
+                # Step the environment
+                next_td = env.step(td_action)
+                done = next_td.get("done").item()
+                episode_reward += next_td.get("reward").item()
+                obs_td = next_td
+                step_count += 1
+            assert episode_reward == 0 or episode_reward == env._goal_reward or episode_reward == env._failure_reward, "Unexpected episode reward: {}".format(episode_reward)
+            rewards.append(episode_reward)
+            progress.update(task, advance=1)
+
+    # Compute safety rate and average reward  
+    safety_rate = 1 - num_unsafe / num_init_states
+    average_reward = sum(rewards) / len(rewards)
+    results = {
+        "safety_rate": safety_rate,
+        "average_reward": average_reward,
+    }
+    return results
