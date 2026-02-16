@@ -1,6 +1,6 @@
+import sys
 import torch
 import torch.nn as nn
-import argparse
 
 from pathlib import Path
 from torch.distributions import Categorical
@@ -40,14 +40,23 @@ from .actor import RecoveryActor
 
 def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_env: JANIEnv) -> None:
     """Train the PPO agent."""
-    logs = defaultdict(list)
     # Some hyperparameters
     total_timesteps = hyperparams.get("total_timesteps", 1024000)
     n_steps = hyperparams.get("n_steps", 256)
     batch_size = hyperparams.get("batch_size", 64)
     lr = hyperparams.get("learning_rate", 3e-4)
-    n_eval_episodes = hyperparams.get("n_eval_episodes", 100)
     n_epoches = hyperparams.get("n_epoches", 5)
+
+    # Setup wandb logging
+    use_wandb = not args.get("disable_wandb", False)
+    if use_wandb:
+        import wandb
+        wandb.init(
+            project=args.get("wandb_project", "recovery-rl"),
+            entity=args.get("wandb_entity"),
+            name=args.get("experiment_name"),
+            config={**hyperparams, **args},
+        )
 
     log_dir = args.get("log_dir", "")
     log_safety_results = False
@@ -194,8 +203,10 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
             TextColumn("•"),
             TimeRemainingColumn(),
             transient=False,
+            disable=not sys.stdout.isatty(),
         ) as progress:
-        task = progress.add_task("Training Recovery RL Agent", total=hyperparams.get("total_timesteps", 1024000))
+        training_task = progress.add_task("Training Recovery RL Agent", total=hyperparams.get("total_timesteps", 1024000))
+        safety_eval_task = progress.add_task("Evaluating safety...", total=100, visible=False)
 
         for i, td_data in enumerate(collector):
             td_task_data = td_data.clone(recurse=True).detach()
@@ -267,15 +278,25 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
                     
                     optim.step()
             
-            logs["loss"].append(loss_value.item())
-            logs["reward"].append(td_data["next", "reward"].mean().item())
-            training_reward_str = f"📊 Average training reward={logs['reward'][-1]: 4.4f} (Init={logs['reward'][0]: 4.4f})"
-            avg_loss_str = f" | 🧑‍🏫 Loss={logs['loss'][-1]: 4.4f}"
-            
             # Evaluate policy's safety
             with torch.no_grad():
-                safety_results = safety_evaluation(eval_env, recovery_actor)
-            # TODO: log safety evaluation results and sync with wandb
+                safety_results = safety_evaluation(eval_env, recovery_actor, progress=progress, task_id=safety_eval_task)
+
+            # Log to wandb
+            if use_wandb:
+                wandb.log({
+                    "loss/total": loss_value.item(),
+                    "loss/ppo_objective": task_loss["loss_objective"].item(),
+                    "loss/ppo_critic": task_loss["loss_critic"].item(),
+                    "loss/ppo_entropy": task_loss["loss_entropy"].item(),
+                    "loss/risk_actor": risk_loss["loss_actor"].item(),
+                    "loss/risk_qvalue": risk_loss["loss_qvalue"].item(),
+                    "safety/safety_rate": safety_results["safety_rate"],
+                    "safety/average_reward": safety_results["average_reward"],
+                    "train/reward": td_data["next", "reward"].mean().item(),
+                    "train/timesteps": (i + 1) * n_steps,
+                })
+
             if log_safety_results:
                 with log_file_path.open("a") as f:
                     f.write(f"{safety_results['safety_rate'] * 100:.2f}, {safety_results['average_reward']:.4f}\n")
@@ -332,25 +353,18 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
 
             progress.console.print(f"Percentage of safe runs: {safety_results['safety_rate']}; Average reward : {safety_results['average_reward']}")
 
-
-            if i % 100== 0:
-                # Evaluation
-                eval_rewards = []
-                for _ in range(n_eval_episodes):
-                    # with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-                    eval_rollout = eval_env.rollout(max_steps=1000, policy=recovery_actor)
-                    eval_reward = eval_rollout["next", "reward"].sum().item()
-                    eval_rewards.append(eval_reward)
-                mean_eval_reward = sum(eval_rewards) / n_eval_episodes
-                eval_reward_str = f" | 🧪 Eval reward={mean_eval_reward: 4.4f}"
-                progress.console.print(f"{training_reward_str}{avg_loss_str}{eval_reward_str}")
-
-            progress.update(task, advance=n_steps)
+            progress.update(training_task, advance=n_steps)
             progress.refresh()
             scheduler.step()
 
+    # Finish wandb logging
+    if use_wandb:
+        wandb.finish()
+
 
 def main():
+    import argparse
+
     parser = argparse.ArgumentParser(description="Train Masked PPO on JANI Environments")
     parser.add_argument(
         '--jani_model', 
@@ -412,6 +426,18 @@ def main():
     parser.add_argument(
         '--n_eval_episodes', 
         type=int, default=50, help="Number of episodes for each evaluation.")
+    parser.add_argument(
+        '--disable_wandb', 
+        action='store_true', help="Disable logging to Weights & Biases.")   
+    parser.add_argument(
+        '--wandb_project', 
+        type=str, default="recovery-rl", help="Weights & Biases project name.")
+    parser.add_argument(
+        '--experiment_name', 
+        type=str, default=None, help="Experiment name for Weights & Biases logging.")
+    parser.add_argument(
+        '--wandb_entity', 
+        type=str, default=None, help="Weights & Biases entity name.")
     parser.add_argument(
         '--verbose', 
         type=int, default=1, help="Verbosity level.")

@@ -1,3 +1,4 @@
+import sys
 import torch
 import torch.nn as nn
 
@@ -244,21 +245,29 @@ def create_loss_module(hyperparams: Dict[str, Any], actor_module: TensorDictModu
     return loss_module
 
 
-def safety_evaluation(env: JANIEnv, actor: TensorDictModule, max_steps: int = 256) -> Dict[str, float]:
-    """Evaluate the safety of the current policy."""
+def safety_evaluation(
+    env: JANIEnv,
+    actor: TensorDictModule,
+    max_steps: int = 256,
+    progress: Progress = None,
+    task_id = None
+) -> Dict[str, float]:
+    """Evaluate the safety of the current policy.
+
+    Args:
+        env: The environment to evaluate on.
+        actor: The actor module to evaluate.
+        max_steps: Maximum steps per episode.
+        progress: Optional Progress instance to use for progress bar.
+        task_id: Optional task ID within the progress instance.
+    """
     num_init_states = env.get_init_state_pool_size()
-    
+
     num_unsafe = 0
     rewards = []
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TimeRemainingColumn(),
-        TimeElapsedColumn(),
-    ) as progress:
-        task = progress.add_task("Evaluating safety...", total=num_init_states)
 
+    def _run_evaluation(prog, tid):
+        nonlocal num_unsafe
         for idx in range(num_init_states):
             episode_reward = 0.0
             td_reset = TensorDict({"idx": torch.tensor(idx)}, batch_size=())
@@ -289,9 +298,27 @@ def safety_evaluation(env: JANIEnv, actor: TensorDictModule, max_steps: int = 25
                 step_count += 1
             assert episode_reward == 0 or episode_reward == env._goal_reward or episode_reward == env._failure_reward, "Unexpected episode reward: {}".format(episode_reward)
             rewards.append(episode_reward)
-            progress.update(task, advance=1)
+            prog.update(tid, advance=1)
 
-    # Compute safety rate and average reward  
+    if progress is not None and task_id is not None:
+        # Use the provided progress bar
+        progress.reset(task_id, total=num_init_states, visible=True)
+        _run_evaluation(progress, task_id)
+        progress.update(task_id, visible=False)
+    else:
+        # Create a standalone progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeRemainingColumn(),
+            TimeElapsedColumn(),
+            disable=not sys.stdout.isatty(),
+        ) as prog:
+            tid = prog.add_task("Evaluating safety...", total=num_init_states)
+            _run_evaluation(prog, tid)
+
+    # Compute safety rate and average reward
     safety_rate = 1 - num_unsafe / num_init_states
     average_reward = sum(rewards) / len(rewards)
     results = {
