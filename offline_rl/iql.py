@@ -350,7 +350,7 @@ def main():
         }, save_dir, "iql_v_net")
 
         # Save the replay buffer
-        rb_path = save_dir / "replay_buffer.pt"
+        rb_path = save_dir / "replay_buffer"
         replay_buffer.dumps(rb_path)
 
 if __name__ == "__main__":
