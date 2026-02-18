@@ -125,7 +125,7 @@ def main():
 
         python_prefix = [
             "-m",
-            "dagger.train",
+            "offline_rl.iql",
         ]
 
         line = python_prefix.copy()
