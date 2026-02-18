@@ -126,6 +126,8 @@ def collect_trajectories(
     )
 
     # Collect rollouts
+    import sys
+
     with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -136,6 +138,7 @@ def collect_trajectories(
             TextColumn("•"),
             TimeRemainingColumn(),
             transient=False,
+            disable=not sys.stdout.isatty()
         ) as progress:
         task = progress.add_task("Collecting trajectories", total=10000)
         for _ in range(10000):
