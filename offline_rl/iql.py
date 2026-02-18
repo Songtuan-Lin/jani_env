@@ -1,4 +1,4 @@
-import argparse
+import sys
 import numpy as np
 import torch
 
@@ -68,6 +68,7 @@ def train(total_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss, print_
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeElapsedColumn(),
         expand=True,
+        disable=not sys.stdout.isatty()
     ) as progress:
         epoch_task = progress.add_task("Training epochs", total=num_epochs)
         step_task = progress.add_task("", total=steps_per_epoch, visible=False)
@@ -159,6 +160,8 @@ def hyperparameter_tuning(rb, env, args, n_trials=20):
 
 
 def main():
+    import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model_path", 
