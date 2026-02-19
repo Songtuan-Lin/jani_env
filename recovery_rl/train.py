@@ -421,12 +421,6 @@ def main():
         '--model_save_dir', 
         type=str, default="", help="Directory to save models.")
     parser.add_argument(
-        '--eval_freq', 
-        type=int, default=2048, help="Evaluation frequency in timesteps.")
-    parser.add_argument(
-        '--n_eval_episodes', 
-        type=int, default=50, help="Number of episodes for each evaluation.")
-    parser.add_argument(
         '--disable_wandb', 
         action='store_true', help="Disable logging to Weights & Biases.")   
     parser.add_argument(
