@@ -238,7 +238,7 @@ def create_loss_module(hyperparams: Dict[str, Any], actor_module: TensorDictModu
         critic_network=critic_module,
         clip_epsilon=clip_epsilon,
         entropy_bonus=bool(entropy_coef),
-        entropy_coef=entropy_coef,
+        entropy_coeff=entropy_coef,
         critic_coeff=critic_coeff,
         loss_critic_type="smooth_l1",
     )
