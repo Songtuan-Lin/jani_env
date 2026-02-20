@@ -342,14 +342,14 @@ def train(hyperparams: Dict[str, Any], args: dict[str, any], env: JANIEnv, eval_
                 torch.save(recovery_policy_paras, recovery_policy_path)
 
                 # Save q_risk module
-                q_risk_path = model_save_path / "q_risk_module.pth"
+                q_module_path = model_save_path / "q_risk_module.pth"
                 q_risk_init = torch.load(q_risk_path)
                 q_risk_paras = {
                     "input_dim": env.observation_spec["observation"].shape[0],
                     "output_dim": env.n_actions,
                     "hidden_dims": q_risk_init["hidden_dims"],
                 }
-                torch.save(q_risk_paras, q_risk_path)
+                torch.save(q_risk_paras, q_module_path)
 
             progress.console.print(f"Percentage of safe runs: {safety_results['safety_rate']}; Average reward : {safety_results['average_reward']}")
 
