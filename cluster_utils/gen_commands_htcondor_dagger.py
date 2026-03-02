@@ -70,6 +70,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "num_workers": shared_args.get("num_workers", 4) if use_multiprocessors else False,
             "max_steps": shared_args.get("max_steps", 256),
             "disable_oracle_cache": shared_args.get("disable_oracle_cache", False),
+            "reduced_memory_mode": shared_args.get("reduced_memory_mode", False),
             "use_strict_rule": shared_args.get("use_strict_rule", False),
             "use_multiprocessors": use_multiprocessors,
             "empty_buffer": True,
@@ -94,6 +95,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "unsafe_reward": args.get("unsafe_reward", -0.01),
             "use_oracle": True,
             "disable_oracle_cache": args.get("disable_oracle_cache", False),
+            "reduced_memory_mode": args.get("reduced_memory_mode", False),
             "max_steps": args.get("max_steps", 256)
         }
         list_configs.append((args, file_args))
@@ -140,6 +142,7 @@ def main():
     parser.add_argument("--use_strict_rule", action="store_true", help="Use strict rules for trajectory collection")
     parser.add_argument("--use_multiprocessors", action="store_true", help="Whether to use multi-processors")
     parser.add_argument("--disable_oracle_cache", action="store_true", help="Disable caching in the oracle")
+    parser.add_argument("--reduced_memory_mode", action="store_true", help="Whether to use reduced memory mode in the oracle")
     parser.add_argument("--disable_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training")
@@ -150,6 +153,7 @@ def main():
         "log_directory": args.log_directory,
         "disable_wandb": args.disable_wandb,
         "disable_oracle_cache": args.disable_oracle_cache,
+        "reduced_memory_mode": args.reduced_memory_mode,
         "num_workers": args.num_workers,
         "num_iterations": args.num_iterations,
         "steps_per_iteration": args.steps_per_iteration,
