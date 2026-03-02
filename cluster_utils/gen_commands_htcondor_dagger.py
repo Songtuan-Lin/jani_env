@@ -143,6 +143,7 @@ def main():
     parser.add_argument("--use_multiprocessors", action="store_true", help="Whether to use multi-processors")
     parser.add_argument("--disable_oracle_cache", action="store_true", help="Disable caching in the oracle")
     parser.add_argument("--reduced_memory_mode", action="store_true", help="Whether to use reduced memory mode in the oracle")
+    parser.add_argument("--max_steps", type=int, default=256, help="Maximum steps per episode")
     parser.add_argument("--disable_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training (e.g., 'cuda' or 'cpu')")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training")
@@ -157,6 +158,7 @@ def main():
         "num_workers": args.num_workers,
         "num_iterations": args.num_iterations,
         "steps_per_iteration": args.steps_per_iteration,
+        "max_steps": args.max_steps,
         "use_strict_rule": args.use_strict_rule,
         "policy_filename": args.policy_filename,
         "condor_dir_prefix": args.condor_dir_prefix,

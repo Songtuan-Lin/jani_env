@@ -16,6 +16,7 @@ POLICY_FILENAME="best_model.pth"
 NUM_WORKERS=4
 NUM_ITERATIONS=50
 STEPS_PER_ITERATION=5
+MAX_STEPS=256
 SEED=42
 USE_STRICT_RULE=false
 USE_MULTIPROCESSORS=false
@@ -52,6 +53,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --steps_per_iteration)
             STEPS_PER_ITERATION="$2"
+            shift 2
+            ;;
+        --max_steps)
+            MAX_STEPS="$2"
             shift 2
             ;;
         --use_strict_rule)
@@ -195,6 +200,7 @@ process_model_file() {
     cmd+=" --experiment_name ${experiment_name}"
     cmd+=" --log_directory ${log_dir}"
     cmd+=" --model_save_dir ${model_save_dir}"
+    cmd+=" --max_steps ${MAX_STEPS}"
     cmd+=" --seed ${SEED}"
 
     # Add boolean flags
