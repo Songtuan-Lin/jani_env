@@ -16,6 +16,8 @@ POLICY_FILENAME="best_model.pth"
 NUM_WORKERS=4
 NUM_ITERATIONS=50
 STEPS_PER_ITERATION=5
+NUM_SAMPLES=256
+BATCH_SIZE=64
 MAX_STEPS=256
 SEED=42
 USE_STRICT_RULE=false
@@ -53,6 +55,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --steps_per_iteration)
             STEPS_PER_ITERATION="$2"
+            shift 2
+            ;;
+        --num_samples)
+            NUM_SAMPLES="$2"
+            shift 2
+            ;;
+        --batch_size)
+            BATCH_SIZE="$2"
             shift 2
             ;;
         --max_steps)
@@ -135,12 +145,12 @@ process_model_file() {
 
     if [[ "$variant_name" == "models" ]]; then
         property_dir="${domain_dir}/additional_properties"
-        policy_dir="${domain_dir}/ppo_policies/${jani_name}"
+        policy_dir="${domain_dir}/ppo_policies"
         log_dir="${CONDOR_DIR_PREFIX}/${LOG_DIRECTORY}/${domain_name}/${jani_name}"
         experiment_name="dagger"
     else
         property_dir="${domain_dir}/additional_properties/${variant_name}"
-        policy_dir="${domain_dir}/ppo_policies/${variant_name}/${jani_name}_${variant_name}"
+        policy_dir="${domain_dir}/ppo_policies/${variant_name}"
         log_dir="${CONDOR_DIR_PREFIX}/${LOG_DIRECTORY}/${domain_name}/${variant_name}/${jani_name}"
         experiment_name="dagger_${variant_name}"
     fi
@@ -195,6 +205,8 @@ process_model_file() {
     cmd+=" --unsafe_reward -0.01"
     cmd+=" --num_init_states 20000"
     cmd+=" --num_iterations ${NUM_ITERATIONS}"
+    cmd+=" --num_samples ${NUM_SAMPLES}"
+    cmd+=" --batch_size ${BATCH_SIZE}"
     cmd+=" --steps_per_iteration ${STEPS_PER_ITERATION}"
     cmd+=" --wandb_project ${jani_name}_clean"
     cmd+=" --experiment_name ${experiment_name}"
