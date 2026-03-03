@@ -22,6 +22,7 @@ MAX_STEPS=256
 SEED=42
 USE_STRICT_RULE=false
 USE_MULTIPROCESSORS=false
+EMPTY_BUFFER=false
 DISABLE_ORACLE_CACHE=false
 REDUCED_MEMORY_MODE=false
 DISABLE_WANDB=false
@@ -75,6 +76,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --use_multiprocessors)
             USE_MULTIPROCESSORS=true
+            shift
+            ;;
+        --empty_buffer)
+            EMPTY_BUFFER=true
             shift
             ;;
         --disable_oracle_cache)
@@ -216,7 +221,9 @@ process_model_file() {
     cmd+=" --seed ${SEED}"
 
     # Add boolean flags
-    cmd+=" --empty_buffer"
+    if [[ "$EMPTY_BUFFER" == true ]]; then
+        cmd+=" --empty_buffer"
+    fi
 
     if [[ "$USE_MULTIPROCESSORS" == true ]]; then
         cmd+=" --use_multiprocessors"

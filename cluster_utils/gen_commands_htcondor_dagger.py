@@ -75,7 +75,7 @@ def get_configs_for_benchmark(variant_dir: str, domain_dir: str, shared_args: di
             "reduced_memory_mode": shared_args.get("reduced_memory_mode", False),
             "use_strict_rule": shared_args.get("use_strict_rule", False),
             "use_multiprocessors": use_multiprocessors,
-            "empty_buffer": True,
+            "empty_buffer": shared_args.get("empty_buffer", False),
             "steps_per_iteration": shared_args.get("steps_per_iteration", 5),
             "wandb_project": f"{jani_name}_clean",
             "experiment_name": f"dagger_{variant_name}" if variant_name != "models" else "dagger",
@@ -149,6 +149,8 @@ def main():
     parser.add_argument(
         "--num_workers", 
         type=int, default=4, help="Number of rollout workers per trainer")
+    parser.add_argument("--empty_buffer", 
+        action="store_true", help="Whether to empty the replay buffer at the beginning of each iteration")
     parser.add_argument(
         "--num_iterations", 
         type=int, default=50, help="Number of training iterations per benchmark")
@@ -202,6 +204,7 @@ def main():
         "batch_size": args.batch_size,
         "max_steps": args.max_steps,
         "use_strict_rule": args.use_strict_rule,
+        "empty_buffer": args.empty_buffer,
         "policy_filename": args.policy_filename,
         "condor_dir_prefix": args.condor_dir_prefix,
         "use_multiprocessors": args.use_multiprocessors,
