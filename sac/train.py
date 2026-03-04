@@ -1,4 +1,5 @@
 import sys
+import json
 import torch
 import torch.nn as nn
 import argparse
@@ -29,6 +30,47 @@ from rich.progress import (
 
 from jani.torchrl_env import JANIEnv
 from utils import create_safety_eval_file_args, safety_evaluation
+
+
+def load_hyperparams_from_file(file_path: str) -> Dict[str, Any]:
+    """Load hyperparameters from a JSON file.
+
+    The file should contain a JSON object with hyperparameter key-value pairs.
+    Activation functions should be specified as strings: "ReLU", "Tanh", "LeakyReLU".
+    """
+    with open(file_path, 'r') as f:
+        params = json.load(f)
+
+    # Convert activation function string to actual class
+    if "activation" in params:
+        activation_map = {
+            "ReLU": nn.ReLU,
+            "Tanh": nn.Tanh,
+            "LeakyReLU": nn.LeakyReLU,
+        }
+        params["activation_fn"] = activation_map.get(params.pop("activation"), nn.ReLU)
+
+    # Convert hidden_size and n_layers to hidden_sizes lists if present
+    if "hidden_size" in params and "n_layers" in params:
+        hidden_sizes = [params.pop("hidden_size")] * params.pop("n_layers")
+        params["actor_hidden_sizes"] = hidden_sizes
+        params["critic_hidden_sizes"] = hidden_sizes
+
+    # Map tuning param names to training param names
+    param_mapping = {
+        "lr_actor": "learning_rate_actor",
+        "lr_critic": "learning_rate_critic",
+        "dropout": "actor_dropout",
+    }
+    for old_key, new_key in param_mapping.items():
+        if old_key in params:
+            params[new_key] = params.pop(old_key)
+
+    # If dropout is set, apply to both actor and critic
+    if "actor_dropout" in params and "critic_dropout" not in params:
+        params["critic_dropout"] = params["actor_dropout"]
+
+    return params
 
 
 def create_actor_module(hyperparams: Dict[str, Any], env: JANIEnv) -> ProbabilisticActor:
@@ -149,7 +191,10 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
     total_timesteps = hyperparams.get("total_timesteps", 1024000)
     n_steps = hyperparams.get("n_steps", 256)
     batch_size = hyperparams.get("batch_size", 64)
+    # Support separate learning rates for actor and critic
     lr = hyperparams.get("learning_rate", 3e-4)
+    lr_actor = hyperparams.get("learning_rate_actor", lr)
+    lr_critic = hyperparams.get("learning_rate_critic", lr)
     max_grad_norm = hyperparams.get("max_grad_norm", 1.0)
     n_updates_per_step = hyperparams.get("n_updates_per_step", 1)
     target_update_freq = hyperparams.get("target_update_freq", 5)
@@ -216,9 +261,9 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
     replay_buffer = create_replay_buffer(hyperparams)
 
     # Create optimizers (separate for actor, Q-value, and alpha)
-    actor_optim = torch.optim.Adam(actor_train.parameters(), lr=lr)
-    qvalue_optim = torch.optim.Adam(qvalue_network.parameters(), lr=lr)
-    alpha_optim = torch.optim.Adam([loss_module.log_alpha], lr=lr)
+    actor_optim = torch.optim.Adam(actor_train.parameters(), lr=lr_actor)
+    qvalue_optim = torch.optim.Adam(qvalue_network.parameters(), lr=lr_critic)
+    alpha_optim = torch.optim.Adam([loss_module.log_alpha], lr=lr_actor)
 
     # Learning rate schedulers
     actor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -453,8 +498,43 @@ def main():
     parser.add_argument(
         '--device',
         type=str, default='auto', help="Device to use for training (cpu or cuda).")
+    parser.add_argument(
+        '--hyperparams_file',
+        type=str, default="", help="Path to JSON file with hyperparameters (e.g., from Optuna tuning).")
+
+    # Tuning arguments
+    parser.add_argument(
+        '--tune',
+        action='store_true', help="Run hyperparameter tuning before training.")
+    parser.add_argument(
+        '--n_trials',
+        type=int, default=50, help="Number of Optuna trials for tuning.")
+    parser.add_argument(
+        '--tuning_timesteps',
+        type=int, default=100000, help="Timesteps per trial during tuning (shorter than full training).")
+    parser.add_argument(
+        '--tuning_eval_interval',
+        type=int, default=10, help="Evaluation interval during tuning (in collector iterations).")
+    parser.add_argument(
+        '--study_name',
+        type=str, default="sac_tuning", help="Optuna study name for tuning.")
+    parser.add_argument(
+        '--tuning_storage',
+        type=str, default=None, help="Optuna storage URL for tuning (e.g., sqlite:///study.db).")
+    parser.add_argument(
+        '--tuning_pruner',
+        type=str, default="median", choices=["median", "hyperband", "none"], help="Pruner type for tuning.")
 
     args = parser.parse_args()
+
+    # Additional PyTorch seeding for full reproducibility
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+    
+    # Make PyTorch deterministic (may impact performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     # Create training environment
     file_args = {
@@ -478,12 +558,52 @@ def main():
     eval_file_args["use_oracle"] = False  # Disable oracle for evaluation
     eval_env = JANIEnv(**eval_file_args)
 
-    # Define hyperparameters
+    # Run hyperparameter tuning if requested
+    tuned_params_file = None
+    if args.tune:
+        print("=" * 60)
+        print("STARTING HYPERPARAMETER TUNING")
+        print("=" * 60)
+
+        from sac.tune import run_tuning
+
+        # Determine output directory for tuning results
+        tuning_output_dir = args.log_dir if args.log_dir else "."
+
+        _, tuned_params_file = run_tuning(
+            jani_model=args.jani_model,
+            eval_start_states=args.eval_start_states,
+            start_states=args.start_states,
+            jani_property=args.jani_property,
+            objective_path=args.objective,
+            failure_property=args.failure_property,
+            goal_reward=args.goal_reward,
+            failure_reward=args.failure_reward,
+            use_oracle=args.use_oracle,
+            unsafe_reward=args.unsafe_reward,
+            no_memory_reduced_mode=args.no_memory_reduced_mode,
+            max_steps=args.max_steps,
+            seed=args.seed,
+            device=args.device,
+            n_trials=args.n_trials,
+            tuning_timesteps=args.tuning_timesteps,
+            eval_interval=args.tuning_eval_interval,
+            study_name=args.study_name,
+            storage=args.tuning_storage,
+            pruner=args.tuning_pruner,
+            output_dir=tuning_output_dir,
+        )
+
+        print("\n" + "=" * 60)
+        print("TUNING COMPLETE - STARTING FULL TRAINING")
+        print("=" * 60 + "\n")
+
+    # Define default hyperparameters
     hyperparams = {
         'total_timesteps': args.total_timesteps,
         'n_steps': 256,
-        'batch_size': 64,
-        'learning_rate': 3e-4,
+        'batch_size': 128,
+        'learning_rate': 1e-3,
         'gamma': 0.99,
         'tau': 0.01,  # Soft update coefficient
         'target_update_freq': 1,  # Frequency of target network updates
@@ -491,8 +611,8 @@ def main():
         'target_entropy': 'auto',  # Automatic target entropy
         'replay_buffer_size': 100000,
         'warmup_steps': 2000,
-        'n_updates_per_step': 16,
-        'max_grad_norm': 1.0,
+        'n_updates_per_step': 8,
+        'max_grad_norm': 0.5,
         'n_eval_episodes': args.n_eval_episodes,
         'device': args.device,
         'actor_hidden_sizes': [256, 256],
@@ -501,6 +621,17 @@ def main():
         'critic_dropout': 0.0,
         'activation_fn': nn.ReLU,
     }
+
+    # Load hyperparameters from tuning or file (tuning takes precedence, then file)
+    if tuned_params_file:
+        file_params = load_hyperparams_from_file(tuned_params_file)
+        hyperparams.update(file_params)
+        print(f"Using tuned hyperparameters from: {tuned_params_file}")
+    elif args.hyperparams_file:
+        file_params = load_hyperparams_from_file(args.hyperparams_file)
+        hyperparams.update(file_params)
+        print(f"Loaded hyperparameters from: {args.hyperparams_file}")
+
     print(f"Training with hyperparameters: {hyperparams}")
 
     # Start training
