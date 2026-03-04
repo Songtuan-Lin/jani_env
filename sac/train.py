@@ -53,16 +53,6 @@ def create_actor_module(hyperparams: Dict[str, Any], env: JANIEnv) -> Probabilis
         out_keys=["logits"],
     )
     return actor_module
-    # Create the probabilistic actor with masked categorical distribution
-    actor = ProbabilisticActor(
-        module=actor_module,
-        in_keys={"logits": "logits", "mask": "action_mask"},
-        out_keys=["action"],
-        distribution_class=MaskedCategorical,
-        return_log_prob=True,
-    )
-    return actor
-
 
 def create_qvalue_network(hyperparams: Dict[str, Any], env: JANIEnv) -> ValueOperator:
     """Create the Q-value network for SAC.
@@ -142,6 +132,7 @@ def create_loss_module(
         num_actions=env.n_actions,
         delay_qvalue=True,
         alpha_init=alpha_init,
+        fixed_alpha=True,
         target_entropy=target_entropy,
     )
     # Set gamma via the value estimator (DiscreteSACLoss doesn't take gamma directly)
@@ -291,10 +282,10 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                 actor_optim.step()
 
                 # Update alpha (entropy coefficient)
-                alpha_loss = loss_dict["loss_alpha"]
-                alpha_optim.zero_grad()
-                alpha_loss.backward()
-                alpha_optim.step()
+                # alpha_loss = loss_dict["loss_alpha"]
+                # alpha_optim.zero_grad()
+                # alpha_loss.backward()
+                # alpha_optim.step()
 
                 # Soft update target networks
                 if (i + 1) % target_update_freq == 0:
@@ -494,12 +485,12 @@ def main():
         'batch_size': 64,
         'learning_rate': 3e-4,
         'gamma': 0.99,
-        'tau': 0.005,  # Soft update coefficient
+        'tau': 0.01,  # Soft update coefficient
         'target_update_freq': 1,  # Frequency of target network updates
-        'alpha_init': 0.1,  # Initial entropy coefficient
+        'alpha_init': 0.05,  # Initial entropy coefficient
         'target_entropy': 'auto',  # Automatic target entropy
         'replay_buffer_size': 100000,
-        'warmup_steps': 1000,
+        'warmup_steps': 2000,
         'n_updates_per_step': 16,
         'max_grad_norm': 1.0,
         'n_eval_episodes': args.n_eval_episodes,
