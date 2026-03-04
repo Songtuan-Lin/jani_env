@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 from tensordict.nn import TensorDictModule
 
+from torch.distributions import Categorical
 from torchrl.modules import MLP, ProbabilisticActor, ValueOperator
 from torchrl.modules.distributions import MaskedCategorical
 from torchrl.objectives import DiscreteSACLoss
@@ -27,15 +28,15 @@ from rich.progress import (
 )
 
 from jani.torchrl_env import JANIEnv
-from utils import create_eval_file_args
+from utils import create_safety_eval_file_args, safety_evaluation
 
 
-def create_actor(hyperparams: Dict[str, Any], env: JANIEnv) -> ProbabilisticActor:
+def create_actor_module(hyperparams: Dict[str, Any], env: JANIEnv) -> ProbabilisticActor:
     """Create the actor network for the policy."""
     n_actions = env.n_actions
     input_size = env.observation_spec["observation"].shape[0]
-    hidden_sizes = hyperparams.get("actor_hidden_sizes", [64, 128])
-    dropout = hyperparams.get("actor_dropout", 0.2)
+    hidden_sizes = hyperparams.get("actor_hidden_sizes", [64, 64])
+    dropout = hyperparams.get("actor_dropout", 0.0)
     activation_fn = hyperparams.get("activation_fn", nn.Tanh)
     # Build the actor network
     actor_backbone = MLP(
@@ -51,6 +52,7 @@ def create_actor(hyperparams: Dict[str, Any], env: JANIEnv) -> ProbabilisticActo
         in_keys=["observation"],
         out_keys=["logits"],
     )
+    return actor_module
     # Create the probabilistic actor with masked categorical distribution
     actor = ProbabilisticActor(
         module=actor_module,
@@ -138,11 +140,12 @@ def create_loss_module(
         qvalue_network=qvalue_network,
         action_space="categorical",
         num_actions=env.n_actions,
+        delay_qvalue=True,
         alpha_init=alpha_init,
         target_entropy=target_entropy,
     )
     # Set gamma via the value estimator (DiscreteSACLoss doesn't take gamma directly)
-    loss_module.make_value_estimator(gamma=gamma)
+    # loss_module.make_value_estimator(gamma=gamma)
 
     return loss_module
 
@@ -158,8 +161,9 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
     lr = hyperparams.get("learning_rate", 3e-4)
     max_grad_norm = hyperparams.get("max_grad_norm", 1.0)
     n_updates_per_step = hyperparams.get("n_updates_per_step", 1)
+    target_update_freq = hyperparams.get("target_update_freq", 5)
     tau = hyperparams.get("tau", 0.005)  # Soft update coefficient
-    n_eval_episodes = hyperparams.get("n_eval_episodes", 100)
+
     warmup_steps = hyperparams.get("warmup_steps", 1000)
 
     # Setup wandb logging
@@ -191,32 +195,46 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
 
     # Create actor and Q-value networks
     print("Creating actor and Q-value networks...")
-    actor = create_actor(hyperparams, env)
+    actor_module = create_actor_module(hyperparams, env)
+    actor_rollout = ProbabilisticActor(
+        module=actor_module,
+        in_keys={"logits": "logits", "mask": "action_mask"},
+        out_keys=["action"],
+        distribution_class=MaskedCategorical,
+        return_log_prob=True,
+    )
+    actor_train = ProbabilisticActor(
+        module=actor_module,
+        in_keys=['logits'],
+        out_keys=['action'],
+        distribution_class=Categorical,
+        return_log_prob=True,
+    )
     qvalue_network = create_qvalue_network(hyperparams, env)
 
     # Create loss module
     print("Creating loss module...")
-    loss_module = create_loss_module(hyperparams, actor, qvalue_network, env)
+    loss_module = create_loss_module(hyperparams, actor_train, qvalue_network, env)
 
     # Create data collector
     print("Creating data collector...")
-    collector = create_data_collector(hyperparams, env, actor)
+    collector = create_data_collector(hyperparams, env, actor_rollout)
 
     # Create replay buffer
     print("Creating replay buffer...")
     replay_buffer = create_replay_buffer(hyperparams)
 
     # Create optimizers (separate for actor, Q-value, and alpha)
-    actor_optim = torch.optim.Adam(actor.parameters(), lr=lr)
+    actor_optim = torch.optim.Adam(actor_train.parameters(), lr=lr)
     qvalue_optim = torch.optim.Adam(qvalue_network.parameters(), lr=lr)
     alpha_optim = torch.optim.Adam([loss_module.log_alpha], lr=lr)
 
     # Learning rate schedulers
     actor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        actor_optim, total_timesteps // n_steps, 0.0
+        actor_optim, total_timesteps // n_steps, 1e-5
     )
     qvalue_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        qvalue_optim, total_timesteps // n_steps, 0.0
+        qvalue_optim, total_timesteps // n_steps, 1e-5
     )
 
     # Training loop
@@ -234,6 +252,7 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
             disable=not sys.stdout.isatty(),
         ) as progress:
         training_task = progress.add_task("Training Discrete SAC Agent", total=total_timesteps)
+        eval_task = progress.add_task("Policy Safety Evaluation", total=100, visible=False)
 
         for i, td_data in enumerate(collector):
             # Add collected data to replay buffer
@@ -268,7 +287,7 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                 actor_loss = loss_dict["loss_actor"]
                 actor_optim.zero_grad()
                 actor_loss.backward()
-                torch.nn.utils.clip_grad_norm_(actor.parameters(), max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(actor_train.parameters(), max_grad_norm)
                 actor_optim.step()
 
                 # Update alpha (entropy coefficient)
@@ -278,9 +297,19 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                 alpha_optim.step()
 
                 # Soft update target networks
-                loss_module.target_qvalue_network_params.data.lerp_(
-                    loss_module.qvalue_network_params.data, tau
-                )
+                if (i + 1) % target_update_freq == 0:
+                    with torch.no_grad():
+                        # Update task Q-value target network
+                        for param, target_param in zip(
+                            loss_module.qvalue_network_params.values(),
+                            loss_module.target_qvalue_network_params.values()
+                        ):
+                            target_param.data.copy_(
+                                tau * param.data + (1 - tau) * target_param.data
+                            )
+                # loss_module.target_qvalue_network_params.data.lerp_(
+                #     loss_module.qvalue_network_params.data, tau
+                # )
 
             # Logging
             logs["loss_actor"].append(loss_dict["loss_actor"].item())
@@ -289,22 +318,15 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
             logs["alpha"].append(loss_dict["alpha"].item())
             logs["reward"].append(td_data["next", "reward"].mean().item())
 
-            training_reward_str = f"📊 Avg reward={logs['reward'][-1]: 4.4f}"
-            loss_str = f" | 🧑‍🏫 Actor={logs['loss_actor'][-1]: 4.4f} Q={logs['loss_qvalue'][-1]: 4.4f}"
-            alpha_str = f" | α={logs['alpha'][-1]: 4.4f}"
-
             # Periodic evaluation
-            if i % 100 == 0:
-                eval_rewards = []
-                for _ in range(n_eval_episodes):
-                    with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-                        eval_rollout = eval_env.rollout(max_steps=1000, policy=actor)
-                        eval_reward = eval_rollout["next", "reward"].sum().item()
-                        eval_rewards.append(eval_reward)
-                mean_eval_reward = sum(eval_rewards) / n_eval_episodes
-                logs["eval_reward"].append(mean_eval_reward)
-                eval_str = f" | 🧪 Eval={mean_eval_reward: 4.4f}"
-                progress.console.print(f"{training_reward_str}{loss_str}{alpha_str}{eval_str}")
+            if i % 1 == 0:
+                eval_result = safety_evaluation(
+                    eval_env, 
+                    actor_rollout, 
+                    max_steps=hyperparams.get("max_steps", 256), 
+                    progress=progress, 
+                    task_id=eval_task
+                )
 
                 # Log to wandb
                 if use_wandb:
@@ -314,16 +336,21 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                         "loss/alpha": logs["loss_alpha"][-1],
                         "train/alpha": logs["alpha"][-1],
                         "train/reward": logs["reward"][-1],
-                        "eval/reward": mean_eval_reward,
+                        "eval/safety_rate": eval_result["safety_rate"],
+                        "eval/average_reward": eval_result["average_reward"],
                         "train/timesteps": total_steps_collected,
                     })
 
                 if log_results:
                     with log_file_path.open("a") as f:
-                        f.write(f"{total_steps_collected}, {mean_eval_reward:.4f}, {logs['loss_actor'][-1]:.4f}, {logs['loss_qvalue'][-1]:.4f}\n")
+                        f.write(f"{eval_result['safety_rate'] * 100:.2f}, {eval_result['average_reward']:.4f}\n")
+                loss_str = f" | 🧑‍🏫 Actor={logs['loss_actor'][-1]: 4.4f} Q={logs['loss_qvalue'][-1]: 4.4f}"
+                alpha_str = f" | α={logs['alpha'][-1]: 4.4f}"
+                progress.console.print(f"Step {total_steps_collected}: Eval Safety Rate: {eval_result['safety_rate']:.4f}, Eval Average Reward: {eval_result['average_reward']:.4f}")
+                progress.console.print(f"{loss_str}{alpha_str}")
 
             # Save model checkpoints
-            if save_models and i % 100 == 0:
+            if save_models and i % 1 == 0:
                 model_save_path = model_save_dir / f"checkpoint_{i}"
                 model_save_path.mkdir(parents=True, exist_ok=True)
 
@@ -332,10 +359,10 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                 actor_params = {
                     "input_dim": env.observation_spec["observation"].shape[0],
                     "output_dim": env.n_actions,
-                    "hidden_dims": hyperparams.get("actor_hidden_sizes", [64, 128]),
-                    "dropout": hyperparams.get("actor_dropout", 0.2),
+                    "hidden_dims": hyperparams.get("actor_hidden_sizes", [64, 64]),
+                    "dropout": hyperparams.get("actor_dropout", 0.0),
                     "activation_fn": hyperparams.get("activation_fn", nn.Tanh),
-                    "state_dict": actor.state_dict()
+                    "state_dict": actor_module.state_dict()
                 }
                 torch.save(actor_params, actor_path)
 
@@ -344,7 +371,7 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                 qvalue_params = {
                     "input_dim": env.observation_spec["observation"].shape[0],
                     "output_dim": env.n_actions,
-                    "hidden_dims": hyperparams.get("critic_hidden_sizes", [64, 128]),
+                    "hidden_dims": hyperparams.get("critic_hidden_sizes", [64, 64]),
                     "dropout": hyperparams.get("critic_dropout", 0.0),
                     "activation_fn": hyperparams.get("activation_fn", nn.Tanh),
                     "state_dict": qvalue_network.state_dict()
@@ -372,6 +399,9 @@ def main():
     parser.add_argument(
         '--start_states',
         type=str, default="", help="Path to the start states file.")
+    parser.add_argument(
+        '--eval_start_states', 
+        type=str, required=True, help="Path to the evaluation start states file (optional). If not provided, training start states will be used for evaluation.")
     parser.add_argument(
         '--objective',
         type=str, default="", help="Path to the objective file.")
@@ -452,7 +482,9 @@ def main():
     env = JANIEnv(**file_args)
 
     # Create evaluation environment
-    eval_file_args = create_eval_file_args(file_args)
+    eval_file_args = file_args.copy()
+    eval_file_args["start_states_path"] = args.eval_start_states
+    eval_file_args["use_oracle"] = False  # Disable oracle for evaluation
     eval_env = JANIEnv(**eval_file_args)
 
     # Define hyperparameters
@@ -463,19 +495,20 @@ def main():
         'learning_rate': 3e-4,
         'gamma': 0.99,
         'tau': 0.005,  # Soft update coefficient
-        'alpha_init': 1.0,  # Initial entropy coefficient
+        'target_update_freq': 1,  # Frequency of target network updates
+        'alpha_init': 0.1,  # Initial entropy coefficient
         'target_entropy': 'auto',  # Automatic target entropy
         'replay_buffer_size': 100000,
         'warmup_steps': 1000,
-        'n_updates_per_step': 1,
+        'n_updates_per_step': 16,
         'max_grad_norm': 1.0,
         'n_eval_episodes': args.n_eval_episodes,
         'device': args.device,
-        'actor_hidden_sizes': [64, 128],
-        'critic_hidden_sizes': [64, 128],
-        'actor_dropout': 0.2,
+        'actor_hidden_sizes': [256, 256],
+        'critic_hidden_sizes': [256, 256],
+        'actor_dropout': 0.0,
         'critic_dropout': 0.0,
-        'activation_fn': nn.Tanh,
+        'activation_fn': nn.ReLU,
     }
     print(f"Training with hyperparameters: {hyperparams}")
 
