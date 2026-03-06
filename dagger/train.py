@@ -130,21 +130,31 @@ def train_step(
     return loss.item()
 
 
-def load_policy(checkpoint) -> nn.Module:
+def load_policy(checkpoint, use_torchrl: bool = False) -> nn.Module:
     """Load a policy network from a checkpoint."""
     input_dim = checkpoint['input_dim']
     output_dim = checkpoint['output_dim']
     hidden_dims = checkpoint['hidden_dims']
     policy = Policy(input_dim, output_dim, hidden_dims)
-    # Mapping sb3 state dict to our Policy state dict
-    mapped = {
-        "model.0.weight": checkpoint['state_dict']["mlp_extractor.policy_net.0.weight"],
-        "model.0.bias":   checkpoint['state_dict']["mlp_extractor.policy_net.0.bias"],
-        "model.2.weight": checkpoint['state_dict']["mlp_extractor.policy_net.2.weight"],
-        "model.2.bias":   checkpoint['state_dict']["mlp_extractor.policy_net.2.bias"],
-        "model.4.weight": checkpoint['state_dict']["action_net.weight"],
-        "model.4.bias":   checkpoint['state_dict']["action_net.bias"],
-    }
+    if use_torchrl:
+        mapped = dict()
+        for layer in range(len(hidden_dims)+1):
+            local_key_weight = f"model.{layer*2}.weight"
+            local_key_bias = f"model.{layer*2}.bias"
+            incoming_key_weight = f"module.{layer*3}.weight"
+            incoming_key_bias = f"module.{layer*3}.bias"
+            mapped[local_key_weight] = checkpoint['state_dict'][incoming_key_weight]
+            mapped[local_key_bias] = checkpoint['state_dict'][incoming_key_bias]
+    else:
+        # Mapping sb3 state dict to our Policy state dict
+        mapped = {
+            "model.0.weight": checkpoint['state_dict']["mlp_extractor.policy_net.0.weight"],
+            "model.0.bias":   checkpoint['state_dict']["mlp_extractor.policy_net.0.bias"],
+            "model.2.weight": checkpoint['state_dict']["mlp_extractor.policy_net.2.weight"],
+            "model.2.bias":   checkpoint['state_dict']["mlp_extractor.policy_net.2.bias"],
+            "model.4.weight": checkpoint['state_dict']["action_net.weight"],
+            "model.4.bias":   checkpoint['state_dict']["action_net.bias"],
+        }
     policy.load_state_dict(mapped, strict=True)
     return policy
 
@@ -159,7 +169,7 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
     # Load initial policy
     print(f"Loading initial policy from {policy_path}")
     checkpoint = torch.load(policy_path, map_location=device, weights_only=False)
-    policy = load_policy(checkpoint)
+    policy = load_policy(checkpoint, use_torchrl=True)
     print("Initial policy loaded.")
 
     # Set up logging directory
