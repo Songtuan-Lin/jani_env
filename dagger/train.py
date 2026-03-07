@@ -320,7 +320,8 @@ def train(args: dict, file_args: dict, hyperparams: dict, device: torch.device =
                             env=safety_eval_env, 
                             policy=policy, 
                             idx=idx, 
-                            max_horizon=hyperparams.get("max_horizon", 1024))
+                            max_horizon=hyperparams.get("max_horizon", 1024),
+                            no_safety_check=args.get("no_safety_check", False))
                     else:
                         eval_rollout = collect_trajectory(
                             env=safety_eval_env, 
@@ -446,6 +447,9 @@ def main():
     parser.add_argument(
         '--empty_buffer', 
         action='store_true', help="Empty the replay buffer at each iteration.")
+    parser.add_argument(
+        '--no_safety_check',
+        action='store_true', help="Disable safety check during evaluation (treat all states as unsafe).")
     parser.add_argument(
         '--device', 
         type=str, default="cpu", help="Device to use for training (cpu or cuda).")
