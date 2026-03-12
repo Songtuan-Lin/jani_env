@@ -400,11 +400,11 @@ def train(hyperparams: Dict[str, Any], args: Dict[str, Any], env: JANIEnv, eval_
                 "next"
             )
             # Relabel all goal reached rewards to 0 for risk module training
-            # td_risk_data["next", "reward"] = torch.where(
-            #     td_risk_data["next", "reward"] == env._goal_reward,
-            #     torch.tensor(0.0, dtype=torch.float32),
-            #     td_risk_data["next", "reward"]
-            # )
+            td_risk_data["next", "reward"] = torch.where(
+                td_risk_data["next", "reward"] == env._goal_reward,
+                torch.tensor(0.0, dtype=torch.float32),
+                td_risk_data["next", "reward"]
+            )
             # Add the data to the offline replay buffer for risk module training
             offline_replay_buffer.extend(td_risk_data.reshape(-1))
 
