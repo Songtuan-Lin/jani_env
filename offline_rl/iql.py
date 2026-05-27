@@ -18,23 +18,37 @@ from .loss import DiscreteIQLLossValueLB, DiscreteIQLLossQValueLB, DiscreteIQLLo
 
 
 def evaluate_on_env(
-        env: JaniEnv, 
-        actor: TensorDictModule, 
-        num_episodes: int = 100, 
-        max_steps: int = 256):
-    """Evaluate the trained policy on the environment."""
-    
+        env: JaniEnv,
+        actor: TensorDictModule,
+        num_episodes: int = 100,
+        max_steps: int = 256) -> dict:
+    """Evaluate the trained policy on the environment.
+
+    Returns:
+        A dictionary containing:
+        - avg_reward: Average total reward per episode
+        - success_rate: Fraction of episodes reaching the goal (reward == goal_reward)
+        - failure_rate: Fraction of episodes reaching failure (reward == failure_reward)
+        - timeout_rate: Fraction of episodes that timed out (neither goal nor failure)
+    """
     total_rewards = []
     for _ in range(num_episodes):
         rollout = env.rollout(max_steps=max_steps, policy=actor)
         total_rewards.append(rollout["next", "reward"].sum().item())
     total_rewards = np.array(total_rewards)
-    avg_reward = np.mean(total_rewards)
 
-    return avg_reward
-    # success_rate = np.mean(total_rewards == 1.0)
-    # failure_rate = np.mean(total_rewards == -1.0)
-    # return {"avg_reward": avg_reward, "success_rate": success_rate, "failure_rate": failure_rate}
+    avg_reward = np.mean(total_rewards)
+    # Goal reward is typically 1.0, failure is -1.0
+    success_rate = np.mean(total_rewards >= 1.0)
+    failure_rate = np.mean(total_rewards <= -1.0)
+    timeout_rate = np.mean((total_rewards > -1.0) & (total_rewards < 1.0))
+
+    return {
+        "avg_reward": avg_reward,
+        "success_rate": success_rate,
+        "failure_rate": failure_rate,
+        "timeout_rate": timeout_rate
+    }
 
 
 def create_loss(args, actor_module, q_module, v_module):
@@ -353,13 +367,18 @@ def main():
         iql_loss,
         print_info=True
     )
-    avg_reward = evaluate_on_env(env, actor, num_episodes=100)
-    print(f"Final average reward over 100 episodes: {avg_reward:.2f}")
-    # if args.write_eval_results is not None:
-    #     import json
-    #     with open(args.write_eval_results, "w") as f:
-    #         json.dump(results, f, indent=4)
-    # print(f"Final success rate over 100 episodes: {results['success_rate']:.2f}, avg reward: {results['avg_reward']:.2f}, failure rate: {results['failure_rate']:.2f}")
+    results = evaluate_on_env(env, actor, num_episodes=100)
+    print(f"\nEvaluation over 100 episodes:")
+    print(f"  Average reward: {results['avg_reward']:.4f}")
+    print(f"  Success rate (goal reached): {results['success_rate']:.2%}")
+    print(f"  Failure rate (failure reached): {results['failure_rate']:.2%}")
+    print(f"  Timeout rate (neither): {results['timeout_rate']:.2%}")
+
+    if args.write_eval_results is not None:
+        import json
+        with open(args.write_eval_results, "w") as f:
+            json.dump(results, f, indent=4)
+        print(f"Evaluation results saved to {args.write_eval_results}")
 
     # Save the trained models and the replay_buffer
     if args.model_save_dir is not None:
