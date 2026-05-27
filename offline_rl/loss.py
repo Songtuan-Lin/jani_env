@@ -4,6 +4,7 @@ import warnings
 from dataclasses import dataclass
 
 import torch
+from torch import Tensor
 from tensordict import TensorDict, TensorDictBase, TensorDictParams
 from tensordict.nn import dispatch, TensorDictModule
 from tensordict.utils import NestedKey
@@ -118,7 +119,11 @@ class DiscreteIQLLossValueLB(DiscreteIQLLoss):
 
 class DiscreteIQLLossQValueLB(DiscreteIQLLoss):
     """
-    IQL loss with lower bound on Q-value.
+    IQL loss with lower bound on Q-value based on state safety.
+
+    This uses the state safety information to apply a lower bound on Q-value targets.
+    Note: This approach is NOT recommended per SAFETY_AWARE_IQL.md.
+    Use DiscreteIQLLossActionSafeLB instead for action-based lower bounds.
     """
     @dataclass
     class _AcceptedKeys:
@@ -151,11 +156,11 @@ class DiscreteIQLLossQValueLB(DiscreteIQLLoss):
     value_network: TensorDictModule | None
     value_network_params: TensorDictParams | None
     target_value_network_params: TensorDictParams | None
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def qvalue_loss(self, tensordict: TensorDictBase) -> tuple[Tensor, dict]:
+    def qvalue_loss(self, tensordict: TensorDictBase) -> tuple[torch.Tensor, dict]:
         obs_keys = self.actor_network.in_keys
         next_td = tensordict.select(
             "next", *obs_keys, self.tensor_keys.action, strict=False
@@ -212,7 +217,134 @@ class DiscreteIQLLossQValueLB(DiscreteIQLLoss):
             "target_value_network_params",
         )
         return loss_qval, metadata
-    
+
+
+class DiscreteIQLLossActionSafeLB(DiscreteIQLLoss):
+    """
+    Discrete IQL loss with lower bound on Q-value targets for safe actions.
+
+    For transitions where the action taken was safe, the Q-value target
+    is lower-bounded by 0, reflecting the fact that safe actions guarantee
+    the existence of a policy that avoids failure.
+
+    This is the recommended approach per SAFETY_AWARE_IQL.md:
+    - Only rectify Q-value targets (not V-value targets)
+    - Use action-level safety (is_action_safe), not state-level safety
+    - Preserves action discrimination while correcting pessimism from bad offline data
+
+    Key insight: If an action is safe, the optimal Q-value for that action is
+    guaranteed to be >= 0 because you can never reach failure (reward -1).
+    """
+
+    @dataclass
+    class _AcceptedKeys:
+        value: NestedKey = "state_value"
+        action: NestedKey = "action"
+        log_prob: NestedKey = "_log_prob"
+        priority: NestedKey = "td_error"
+        state_action_value: NestedKey = "state_action_value"
+        reward: NestedKey = "reward"
+        done: NestedKey = "done"
+        terminated: NestedKey = "terminated"
+        is_action_safe: NestedKey = "is_action_safe"
+
+    tensor_keys: _AcceptedKeys
+    default_keys = _AcceptedKeys
+    default_value_estimator = ValueEstimators.TD0
+    out_keys = [
+        "loss_actor",
+        "loss_qvalue",
+        "loss_value",
+        "entropy",
+    ]
+
+    actor_network: TensorDictModule
+    actor_network_params: TensorDictParams
+    target_actor_network_params: TensorDictParams
+    qvalue_network: TensorDictModule
+    qvalue_network_params: TensorDictParams
+    target_qvalue_network_params: TensorDictParams
+    value_network: TensorDictModule | None
+    value_network_params: TensorDictParams | None
+    target_value_network_params: TensorDictParams | None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def qvalue_loss(self, tensordict: TensorDictBase) -> tuple[Tensor, dict]:
+        """
+        Compute Q-value loss with lower bound for safe actions.
+
+        The target is computed as:
+            target = r + γ * V(s')
+            if is_action_safe:
+                target = max(target, 0)  # Lower bound of 0 for safe actions
+            loss = (Q(s, a) - target)^2
+        """
+        obs_keys = self.actor_network.in_keys
+        next_td = tensordict.select(
+            "next", *obs_keys, self.tensor_keys.action, strict=False
+        )
+
+        with torch.no_grad():
+            # Standard target value computation: r + γ * V(s')
+            target_value = self.value_estimator.value_estimate(
+                next_td, target_params=self.target_value_network_params
+            ).squeeze(-1)
+
+            # Apply lower bound for safe actions
+            is_action_safe = tensordict.get(self.tensor_keys.is_action_safe).squeeze(-1)
+            target_value = torch.where(
+                is_action_safe,
+                torch.maximum(target_value, torch.zeros_like(target_value)),
+                target_value
+            )
+
+        # Predict current Q value (unchanged from standard IQL)
+        td_q = tensordict.select(*self.qvalue_network.in_keys, strict=False)
+        td_q = self._vmap_qvalue_networkN0(td_q, self.qvalue_network_params)
+        state_action_value = td_q.get(self.tensor_keys.state_action_value)
+        action = tensordict.get(self.tensor_keys.action)
+
+        if self.action_space == "categorical":
+            if action.ndim < (state_action_value.ndim - (td_q.ndim - tensordict.ndim)):
+                # unsqueeze the action if it lacks on trailing singleton dim
+                action = action.unsqueeze(-1)
+            if self.deactivate_vmap:
+                vmap = _pseudo_vmap
+            else:
+                vmap = torch.vmap
+            pred_val = vmap(
+                lambda state_action_value, action: torch.gather(
+                    state_action_value, -1, index=action
+                ).squeeze(-1),
+                (0, None),
+            )(state_action_value, action)
+        elif self.action_space == "one_hot":
+            action = action.to(torch.float)
+            pred_val = (state_action_value * action).sum(-1)
+        else:
+            raise RuntimeError(f"Unknown action space {self.action_space}.")
+
+        td_error = (pred_val - target_value.expand_as(pred_val)).pow(2)
+        loss_qval = distance_loss(
+            pred_val,
+            target_value.expand_as(pred_val),
+            loss_function=self.loss_function,
+        ).sum(0)
+        loss_qval = _reduce(loss_qval, reduction=self.reduction)
+        metadata = {"td_error": td_error.detach()}
+        self._clear_weakrefs(
+            tensordict,
+            "actor_network_params",
+            "qvalue_network_params",
+            "value_network_params",
+            "target_actor_network_params",
+            "target_qvalue_network_params",
+            "target_value_network_params",
+        )
+        return loss_qval, metadata
+
 
 if __name__ == "__main__":
     from torchrl.objectives import SoftUpdate

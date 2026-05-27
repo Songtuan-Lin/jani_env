@@ -15,6 +15,31 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRe
 from jani import TorchRLJANIEnv as JANIEnv
 
 
+def load_replay_buffer(path: str, batch_size: int = 64) -> TensorDictReplayBuffer:
+    """
+    Load a replay buffer from disk that was saved using storage.dumps().
+
+    This loads replay buffers saved by sample.py's sample_trajectories function.
+    The loaded buffer contains transitions with safety information (is_action_safe,
+    is_state_safe) required for DiscreteIQLLossActionSafeLB.
+
+    Args:
+        path: Path to the saved replay buffer directory (created by storage.dumps()).
+        batch_size: Batch size for sampling from the buffer.
+
+    Returns:
+        A TensorDictReplayBuffer ready for training.
+    """
+    storage = LazyTensorStorage(max_size=1)  # Will be replaced by loaded storage
+    storage.loads(path)
+    replay_buffer = TensorDictReplayBuffer(
+        storage=storage,
+        sampler=RandomSampler(),
+        batch_size=batch_size
+    )
+    return replay_buffer
+
+
 def read_trajectories(file_path: str, action_dim: int = None, penalize_unsafe: bool = False, unsafe_reward: float = -0.01) -> TensorDict:
     df = pd.read_csv(file_path, header=None)
     if action_dim is None:
@@ -111,13 +136,25 @@ def create_replay_buffer(tensordict: TensorDict, num_slices: int = 32, batch_siz
 
 
 def collect_trajectories(
-        env: JANIEnv, 
-        policy: TensorDictModuleBase | None, 
-        num_total_steps: int, 
-        n_steps: int) -> TensorDictReplayBuffer:
-    """Collect trajectories from the environment using the provided policy."""
-    # Transform the environment to accept action mask
-    transformed_env = TransformedEnv(env, ActionMask())
+        env: JANIEnv,
+        policy: TensorDictModuleBase | None,
+        num_total_steps: int,
+        n_steps: int,
+        include_safety: bool = True) -> TensorDictReplayBuffer:
+    """Collect trajectories from the environment using the provided policy.
+
+    Args:
+        env: The JANI environment to collect from.
+        policy: The policy to use for action selection. If None, uses random valid actions.
+        num_total_steps: Maximum number of steps to collect.
+        n_steps: Maximum steps per episode.
+        include_safety: If True, includes is_action_safe and is_state_safe in transitions.
+                       Required for DiscreteIQLLossActionSafeLB.
+
+    Returns:
+        A replay buffer containing the collected transitions.
+    """
+    import sys
 
     # Create the replay buffer
     replay_buffer = TensorDictReplayBuffer(
@@ -125,8 +162,30 @@ def collect_trajectories(
         sampler=RandomSampler(),
     )
 
-    # Collect rollouts
-    import sys
+    if not include_safety:
+        # Use fast rollout-based collection without safety info
+        transformed_env = TransformedEnv(env, ActionMask())
+        with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
+                TimeElapsedColumn(),
+                TextColumn("•"),
+                TimeRemainingColumn(),
+                transient=False,
+                disable=not sys.stdout.isatty()
+            ) as progress:
+            task = progress.add_task("Collecting trajectories", total=10000)
+            for _ in range(10000):
+                rollout = transformed_env.rollout(max_steps=n_steps)
+                replay_buffer.extend(rollout)
+                progress.update(task, advance=1)
+        return replay_buffer
+
+    # Collection with safety information
+    total_steps = 0
 
     with Progress(
             SpinnerColumn(),
@@ -140,11 +199,79 @@ def collect_trajectories(
             transient=False,
             disable=not sys.stdout.isatty()
         ) as progress:
-        task = progress.add_task("Collecting trajectories", total=10000)
-        for _ in range(10000):
-            rollout = transformed_env.rollout(max_steps=n_steps)
-            replay_buffer.extend(rollout)
-            progress.update(task, advance=1)
+        task = progress.add_task("Collecting trajectories with safety", total=num_total_steps)
+
+        while total_steps < num_total_steps:
+            # Reset environment
+            td = env.reset()
+            episode_transitions = []
+
+            for _ in range(n_steps):
+                # Store current state info
+                current_obs = td.get("observation").clone()
+                current_action_mask = td.get("action_mask").clone()
+
+                # Select action
+                if policy is not None:
+                    td_with_action = policy(td.clone())
+                    action = td_with_action.get("action").item()
+                else:
+                    # Random valid action
+                    valid_actions = torch.where(current_action_mask)[0]
+                    if len(valid_actions) == 0:
+                        break
+                    action = valid_actions[torch.randint(len(valid_actions), (1,)).item()].item()
+
+                # Get safety information using oracle
+                current_is_state_safe, safe_action = env.current_state_safety_with_action(action)
+                is_action_safe = (safe_action == action)
+
+                # Take the step
+                td.set("action", torch.tensor(action, dtype=torch.int64))
+                next_td = env.step(td)
+
+                # Extract transition data
+                reward = next_td.get(("next", "reward")).item()
+                done = next_td.get(("next", "done")).item()
+                terminated = next_td.get(("next", "terminated")).item()
+                truncated = next_td.get(("next", "truncated")).item()
+                next_obs = next_td.get(("next", "observation")).clone()
+                next_action_mask = next_td.get(("next", "action_mask")).clone()
+
+                # Create transition tensordict with safety info
+                transition = TensorDict({
+                    "observation": current_obs,
+                    "action": torch.tensor(action, dtype=torch.int64),
+                    "action_mask": current_action_mask,
+                    "is_action_safe": torch.tensor([is_action_safe], dtype=torch.bool),
+                    "is_state_safe": torch.tensor([current_is_state_safe], dtype=torch.bool),
+                    "next": TensorDict({
+                        "observation": next_obs,
+                        "action_mask": next_action_mask,
+                        "reward": torch.tensor([reward], dtype=torch.float32),
+                        "done": torch.tensor([done], dtype=torch.bool),
+                        "terminated": torch.tensor([terminated], dtype=torch.bool),
+                        "truncated": torch.tensor([truncated], dtype=torch.bool),
+                    }, batch_size=[]),
+                }, batch_size=[])
+
+                episode_transitions.append(transition)
+                total_steps += 1
+                progress.update(task, advance=1)
+
+                if done or total_steps >= num_total_steps:
+                    break
+
+                # Update for next iteration
+                td = next_td.get("next").clone()
+
+            # Add episode transitions to replay buffer
+            if episode_transitions:
+                episode_td = torch.stack(episode_transitions, dim=0)
+                replay_buffer.extend(episode_td)
+
+            if total_steps >= num_total_steps:
+                break
 
     return replay_buffer
 

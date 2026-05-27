@@ -11,9 +11,10 @@ from pathlib import Path
 
 from jani import TorchRLJANIEnv as JaniEnv
 
-from .load_dataset import collect_trajectories
+from .load_dataset import load_replay_buffer
+from .sample import sample_trajectories
 from .models import create_q_module, create_v_module, create_actor
-from .loss import DiscreteIQLLossValueLB, DiscreteIQLLossQValueLB
+from .loss import DiscreteIQLLossValueLB, DiscreteIQLLossQValueLB, DiscreteIQLLossActionSafeLB
 
 
 def evaluate_on_env(
@@ -37,7 +38,17 @@ def evaluate_on_env(
 
 
 def create_loss(args, actor_module, q_module, v_module):
-    """Create the IQL loss function based on the provided arguments."""
+    """Create the IQL loss function based on the provided arguments.
+
+    Lower bound types:
+    - "value": Lower bound on V-value targets based on state safety (not recommended)
+    - "qvalue": Lower bound on Q-value targets based on state safety (not recommended)
+    - "action_safe": Lower bound on Q-value targets based on action safety (recommended)
+
+    The "action_safe" type implements the approach from SAFETY_AWARE_IQL.md:
+    For safe actions, Q-value targets are lower-bounded by 0, correcting pessimism
+    while preserving action discrimination.
+    """
     kwargs = {
         "actor_network": actor_module,
         "qvalue_network": q_module,
@@ -49,6 +60,8 @@ def create_loss(args, actor_module, q_module, v_module):
             iql_loss = DiscreteIQLLossValueLB(**kwargs)
         elif args.lower_bound_type == "qvalue":
             iql_loss = DiscreteIQLLossQValueLB(**kwargs)
+        elif args.lower_bound_type == "action_safe":
+            iql_loss = DiscreteIQLLossActionSafeLB(**kwargs)
         else:
             raise ValueError(f"Invalid lower_bound_type: {args.lower_bound_type}")
     else:
@@ -191,10 +204,22 @@ def main():
         "--unsafe_reward", 
         type=float, default=-0.01, help="Reward for unsafe states when using oracle.")
     parser.add_argument(
-        "--batch_size", 
+        "--dataset_path",
+        type=str, default=None,
+        help="Path to pre-sampled replay buffer (from sample.py). If not provided, samples on the fly.")
+    parser.add_argument(
+        "--num_episodes",
+        type=int, default=2000,
+        help="Number of episodes to sample if dataset_path is not provided.")
+    parser.add_argument(
+        "--max_steps_per_episode",
+        type=int, default=256,
+        help="Maximum steps per episode when sampling.")
+    parser.add_argument(
+        "--batch_size",
         type=int, default=64, help="Batch size for training.")
     parser.add_argument(
-        "--use_lower_bound", 
+        "--use_lower_bound",
         action="store_true", help="Whether to use lower bound in IQL loss.")
     parser.add_argument(
         "--total_timesteps", 
@@ -203,9 +228,9 @@ def main():
         "--steps_per_epoch", 
         type=int, default=1000, help="Number of steps per epoch.")
     parser.add_argument(
-        "--lower_bound_type", 
-        type=str, choices=["value", "qvalue"], 
-        default="value", help="Type of lower bound to use in IQL loss.")
+        "--lower_bound_type",
+        type=str, choices=["value", "qvalue", "action_safe"],
+        default="action_safe", help="Type of lower bound to use in IQL loss. 'action_safe' is recommended.")
     parser.add_argument(
         "--expectile",
         type=float, default=0.7, help="Expectile value for IQL loss.")
@@ -253,12 +278,22 @@ def main():
     env = JaniEnv(**file_args)
     action_dim = env.n_actions
 
-    # Collect trajectories and create replay buffer
-    print("Collecting trajectories...")
-    replay_buffer = collect_trajectories(
-        env, policy=None, 
-        num_total_steps=500000, 
-        n_steps=256)
+    # Load or sample trajectories
+    if args.dataset_path is not None:
+        # Load pre-sampled replay buffer from disk
+        print(f"Loading replay buffer from {args.dataset_path}...")
+        replay_buffer = load_replay_buffer(args.dataset_path, batch_size=args.batch_size)
+        print(f"Loaded {len(replay_buffer)} transitions")
+    else:
+        # Sample trajectories on the fly using sample.py's sample_trajectories
+        print(f"Sampling {args.num_episodes} episodes with max {args.max_steps_per_episode} steps each...")
+        replay_buffer = sample_trajectories(
+            env=env,
+            policy=None,
+            num_episodes=args.num_episodes,
+            max_steps_per_episode=args.max_steps_per_episode,
+            seed=args.seed
+        )
 
     # Extract state and action dimensions
     state_dim = env.observation_spec["observation"].shape[0]
@@ -302,6 +337,8 @@ def main():
             iql_loss = DiscreteIQLLossValueLB(**kwargs)
         elif args.lower_bound_type == "qvalue":
             iql_loss = DiscreteIQLLossQValueLB(**kwargs)
+        elif args.lower_bound_type == "action_safe":
+            iql_loss = DiscreteIQLLossActionSafeLB(**kwargs)
         else:
             raise ValueError(f"Invalid lower_bound_type: {args.lower_bound_type}")
     else:

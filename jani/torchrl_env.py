@@ -200,7 +200,28 @@ class JANIEnv(EnvBase):
         if self._oracle is None:
             raise RuntimeError("Oracle is not enabled for this environment.")
         return self._oracle.is_engine_state_action_safe(action)
-    
+
+    def current_state_safety_with_action(self, start_action_id: int = -1) -> tuple[bool, int]:
+        """
+        Check if the current state is safe and return a safe action if one exists.
+
+        This method queries the oracle to determine:
+        1. Whether the current state is safe (i.e., there exists at least one safe action)
+        2. A safe action to take if one exists
+
+        Args:
+            start_action_id: Optional hint for where to start searching for a safe action.
+                           If -1 (default), searches from the beginning.
+
+        Returns:
+            A tuple of (is_state_safe, safe_action):
+            - is_state_safe: True if the current state is safe
+            - safe_action: A safe action if the state is safe, otherwise -1
+        """
+        if self._oracle is None:
+            raise RuntimeError("Oracle is not enabled for this environment.")
+        return self._oracle.engine_state_safety_with_action(start_action_id)
+
     def _set_seed(self, seed: int | None) -> None:
         if seed is None:
             seed = torch.seed()
