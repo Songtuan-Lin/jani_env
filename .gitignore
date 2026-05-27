@@ -9,6 +9,7 @@ training_results/
 benchmarks/
 state_generated.json
 build/
+examples/
 cluster_utils/commands*
 cluster_utils/commands.txt
 cluster_utils/commands_no_oracle.txt
