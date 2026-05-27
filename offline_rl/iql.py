@@ -12,7 +12,7 @@ from pathlib import Path
 from jani import TorchRLJANIEnv as JaniEnv
 
 from .load_dataset import load_replay_buffer
-from .sample import sample_trajectories
+from .sample import sample_trajectories, sample_trajectories_with_safety_ratio
 from .models import create_q_module, create_v_module, create_actor
 from .loss import DiscreteIQLLossValueLB, DiscreteIQLLossQValueLB, DiscreteIQLLossActionSafeLB
 
@@ -230,6 +230,14 @@ def main():
         type=int, default=256,
         help="Maximum steps per episode when sampling.")
     parser.add_argument(
+        "--target_safe_ratio",
+        type=float, default=None,
+        help="Target ratio of safe actions (0-1) when sampling. If set, biases sampling toward safe actions to get more successful trajectories.")
+    parser.add_argument(
+        "--save_sampled_dataset",
+        type=str, default=None,
+        help="Path to save sampled trajectories. Only used when sampling on the fly (dataset_path not provided).")
+    parser.add_argument(
         "--batch_size",
         type=int, default=64, help="Batch size for training.")
     parser.add_argument(
@@ -301,13 +309,31 @@ def main():
     else:
         # Sample trajectories on the fly using sample.py's sample_trajectories
         print(f"Sampling {args.num_episodes} episodes with max {args.max_steps_per_episode} steps each...")
-        replay_buffer = sample_trajectories(
-            env=env,
-            policy=None,
-            num_episodes=args.num_episodes,
-            max_steps_per_episode=args.max_steps_per_episode,
-            seed=args.seed
-        )
+        if args.target_safe_ratio is not None:
+            print(f"  Using safety-biased sampling with target safe ratio: {args.target_safe_ratio:.0%}")
+            replay_buffer = sample_trajectories_with_safety_ratio(
+                env=env,
+                policy=None,
+                num_episodes=args.num_episodes,
+                max_steps_per_episode=args.max_steps_per_episode,
+                target_safe_ratio=args.target_safe_ratio,
+                seed=args.seed
+            )
+        else:
+            replay_buffer = sample_trajectories(
+                env=env,
+                policy=None,
+                num_episodes=args.num_episodes,
+                max_steps_per_episode=args.max_steps_per_episode,
+                seed=args.seed
+            )
+
+        # Save sampled trajectories if requested
+        if args.save_sampled_dataset is not None:
+            save_path = Path(args.save_sampled_dataset)
+            save_path.mkdir(parents=True, exist_ok=True)
+            replay_buffer.storage.dumps(str(save_path))
+            print(f"Saved sampled trajectories to {save_path}")
 
     # Extract state and action dimensions
     state_dim = env.observation_spec["observation"].shape[0]

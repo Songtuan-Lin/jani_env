@@ -10,9 +10,10 @@ from torchrl.data import Bounded, Binary, Categorical, Composite
 from torchrl.envs import EnvBase
 
 # Dynamically add the JANI engine binding directory to sys.path
+# Use insert(0, ...) to prioritize over any conflicting 'backend' package
 current_dir = Path(__file__).resolve().parent
 binding_dir = current_dir / "engine" / "build"
-sys.path.append(str(binding_dir))
+sys.path.insert(0, str(binding_dir))
 
 from backend import JANIEngine, TarjanOracle
 

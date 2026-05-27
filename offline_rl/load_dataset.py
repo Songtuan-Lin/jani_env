@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import pandas as pd
 
+from pathlib import Path
+
 from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
 from torchrl.data.replay_buffers import LazyTensorStorage
 from torchrl.data.replay_buffers.samplers import RandomSampler
@@ -30,8 +32,20 @@ def load_replay_buffer(path: str, batch_size: int = 64) -> TensorDictReplayBuffe
     Returns:
         A TensorDictReplayBuffer ready for training.
     """
-    storage = LazyTensorStorage(max_size=1)  # Will be replaced by loaded storage
+    import json
+
+    path = Path(path)
+
+    # Read meta.json to get the storage shape (max_size)
+    meta_path = path / "meta.json"
+    with open(meta_path) as f:
+        meta = json.load(f)
+    max_size = meta["shape"][0]
+
+    # Create storage with correct size and load data
+    storage = LazyTensorStorage(max_size=max_size)
     storage.loads(path)
+
     replay_buffer = TensorDictReplayBuffer(
         storage=storage,
         sampler=RandomSampler(),
