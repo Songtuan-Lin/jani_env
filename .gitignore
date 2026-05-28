@@ -10,6 +10,7 @@ benchmarks/
 state_generated.json
 build/
 examples/
+sampled_*
 sampled_trajectories/
 cluster_utils/commands*
 cluster_utils/commands.txt

@@ -30,7 +30,7 @@ class JANIEnv(EnvBase):
                  failure_reward: float = -1.0,
                  use_oracle: bool = False,
                  disable_oracle_cache: bool = False,
-                 reduced_memory_mode: bool = False,
+                 reduced_memory_mode: bool = True,
                  unsafe_reward: float = -0.01) -> None:
         super().__init__()
         self._engine = JANIEngine(jani_model_path, 
