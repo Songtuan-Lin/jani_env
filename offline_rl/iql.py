@@ -393,8 +393,8 @@ def main():
         iql_loss,
         print_info=True
     )
-    results = evaluate_on_env(env, actor, num_episodes=100)
-    print(f"\nEvaluation over 100 episodes:")
+    results = evaluate_on_env(env, actor, num_episodes=1000)
+    print(f"\nEvaluation over 1000 episodes:")
     print(f"  Average reward: {results['avg_reward']:.4f}")
     print(f"  Success rate (goal reached): {results['success_rate']:.2%}")
     print(f"  Failure rate (failure reached): {results['failure_rate']:.2%}")

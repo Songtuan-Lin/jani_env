@@ -10,6 +10,7 @@ benchmarks/
 state_generated.json
 build/
 examples/
+sampled_trajectories/
 cluster_utils/commands*
 cluster_utils/commands.txt
 cluster_utils/commands_no_oracle.txt

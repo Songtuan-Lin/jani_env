@@ -127,6 +127,11 @@ def sample_trajectories(
     episode_rewards = []
     safe_action_counts = []
 
+    # Track trajectory outcomes
+    num_goal_reached = 0
+    num_failure_reached = 0
+    num_horizon_exceeded = 0
+
     progress_context = Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -204,10 +209,20 @@ def sample_trajectories(
                     episode_safe_actions += 1
 
                 if done:
+                    # Track outcome based on termination type
+                    if terminated:
+                        # Distinguish goal vs failure by reward
+                        if reward > 0:
+                            num_goal_reached += 1
+                        else:
+                            num_failure_reached += 1
                     break
 
                 # Update for next iteration
                 td = next_td.get("next").clone()
+            else:
+                # Loop completed without break - max horizon exceeded
+                num_horizon_exceeded += 1
 
             # Add episode transitions to replay buffer
             if episode_transitions:
@@ -229,6 +244,10 @@ def sample_trajectories(
         print(f"  Avg safe actions per episode: {np.mean(safe_action_counts):.2f}")
         safe_action_rate = sum(safe_action_counts) / sum(episode_lengths) if sum(episode_lengths) > 0 else 0
         print(f"  Overall safe action rate: {safe_action_rate:.2%}")
+        print(f"\nTrajectory outcomes:")
+        print(f"  Goal reached: {num_goal_reached}")
+        print(f"  Failure state reached: {num_failure_reached}")
+        print(f"  Max horizon exceeded: {num_horizon_exceeded}")
 
     return replay_buffer
 
@@ -289,6 +308,11 @@ def sample_trajectories_with_safety_ratio(
 
     total_safe = 0
     total_unsafe = 0
+
+    # Track trajectory outcomes
+    num_goal_reached = 0
+    num_failure_reached = 0
+    num_horizon_exceeded = 0
 
     with progress_context as progress:
         task = progress.add_task("Sampling with safety ratio", total=num_episodes)
@@ -388,18 +412,33 @@ def sample_trajectories_with_safety_ratio(
                 replay_buffer.add(transition)
 
                 if done:
+                    # Track outcome based on termination type
+                    if terminated:
+                        # Distinguish goal vs failure by reward
+                        if reward > 0:
+                            num_goal_reached += 1
+                        else:
+                            num_failure_reached += 1
                     break
 
                 td = next_td.get("next").clone()
+            else:
+                # Loop completed without break - max horizon exceeded
+                num_horizon_exceeded += 1
 
             progress.update(task, advance=1)
 
     if show_progress:
         final_ratio = total_safe / (total_safe + total_unsafe) if (total_safe + total_unsafe) > 0 else 0
         print(f"\nSampling complete:")
+        print(f"  Total episodes: {num_episodes}")
         print(f"  Total transitions: {len(replay_buffer)}")
         print(f"  Safe actions: {total_safe}, Unsafe actions: {total_unsafe}")
         print(f"  Final safe action ratio: {final_ratio:.2%} (target: {target_safe_ratio:.2%})")
+        print(f"\nTrajectory outcomes:")
+        print(f"  Goal reached: {num_goal_reached}")
+        print(f"  Failure state reached: {num_failure_reached}")
+        print(f"  Max horizon exceeded: {num_horizon_exceeded}")
 
     return replay_buffer
 
