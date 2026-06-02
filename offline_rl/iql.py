@@ -15,6 +15,7 @@ from .load_dataset import load_replay_buffer
 from .sample import sample_trajectories, sample_trajectories_with_safety_ratio
 from .models import create_q_module, create_v_module, create_actor
 from .loss import DiscreteIQLLossValueLB, DiscreteIQLLossQValueLB, DiscreteIQLLossActionSafeLB
+from .advantage_diagnostic import build_episode_outcomes, diagnose_advantage_distribution
 
 
 def evaluate_on_env(
@@ -83,11 +84,26 @@ def create_loss(args, actor_module, q_module, v_module):
     return iql_loss
 
 
-def train(total_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss, print_info=False):
-    """Train the IQL agent."""
+def train(total_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss, print_info=False,
+          diagnose_advantages=False, diagnose_every=None):
+    """Train the IQL agent.
+
+    If ``diagnose_advantages`` is True, periodically log the distribution of IQL
+    advantages for safe actions, split by trajectory outcome (goal vs failure).
+    This is the diagnostic for the safe-action lower-bound "advantage collapse"
+    hypothesis (see advantage_diagnostic.py). ``diagnose_every`` controls the
+    epoch interval (defaults to every 100 epochs, like print_info).
+    """
     optimizer = torch.optim.Adam(iql_loss.parameters(), lr=lr)
     updater = SoftUpdate(iql_loss, eps=0.95)
     num_epochs = total_timesteps // steps_per_epoch
+
+    episode_outcomes = None
+    if diagnose_advantages:
+        if diagnose_every is None:
+            diagnose_every = max(1, num_epochs // 10)
+        # Outcome labels are fixed by the offline dataset, so build them once.
+        episode_outcomes = build_episode_outcomes(rb)
 
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -119,6 +135,14 @@ def train(total_timesteps, steps_per_epoch, batch_size, lr, rb, iql_loss, print_
             if print_info:
                 if (epoch + 1) % 100 == 0:
                     print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss.item():.4f}")
+
+            if diagnose_advantages and (epoch + 1) % diagnose_every == 0:
+                print(f"\n[advantage diagnostic @ epoch {epoch+1}/{num_epochs}]")
+                diagnose_advantage_distribution(iql_loss, rb, episode_outcomes)
+
+    if diagnose_advantages:
+        print("\n[advantage diagnostic @ final]")
+        diagnose_advantage_distribution(iql_loss, rb, episode_outcomes)
 
     return iql_loss.actor_network, iql_loss.qvalue_network, iql_loss.value_network
 
@@ -269,8 +293,14 @@ def main():
         "--model_save_dir", 
         type=str, default=None, help="Directory to save trained models and results.")
     parser.add_argument(
-        "--write_eval_results", 
+        "--write_eval_results",
         type=str, default=None, help="Path to write evaluation results.")
+    parser.add_argument(
+        "--diagnose_advantages",
+        action="store_true",
+        help="Periodically log the IQL advantage distribution for safe actions, "
+             "split by trajectory outcome (goal vs failure). Diagnostic for the "
+             "safe-action lower-bound advantage-collapse hypothesis.")
     args = parser.parse_args()
 
     # torch.manual_seed(args.seed)
@@ -388,10 +418,11 @@ def main():
         args.total_timesteps, 
         best_params["steps_per_epoch"], 
         best_params["batch_size"], 
-        best_params["lr"], 
-        replay_buffer, 
+        best_params["lr"],
+        replay_buffer,
         iql_loss,
-        print_info=True
+        print_info=True,
+        diagnose_advantages=args.diagnose_advantages,
     )
     results = evaluate_on_env(
         env, 
