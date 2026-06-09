@@ -8,7 +8,7 @@ from torchrl.data import TensorDictReplayBuffer, TensorStorage, SliceSampler
 from torchrl.data.replay_buffers import LazyTensorStorage
 from torchrl.data.replay_buffers.samplers import RandomSampler
 from torchrl.envs.transforms import ActionMask, TransformedEnv
-from torchrl.collectors import SyncDataCollector
+# from torchrl.collectors import SyncDataCollector
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModuleBase
 
